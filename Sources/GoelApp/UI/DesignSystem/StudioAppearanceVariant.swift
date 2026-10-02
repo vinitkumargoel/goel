@@ -1,8 +1,5 @@
 import AppKit
 
-// Moved out of Theme.swift unchanged: both the old palette and the Studio tokens resolve
-// through these, and Theme.swift is deleted once the Studio rewrite lands.
-
 /// Which of the four system appearances a drawing pass resolved to. The high-contrast
 /// variants are what AppKit hands us when Increase Contrast is on.
 struct AppearanceVariant: Equatable {
@@ -77,11 +74,8 @@ enum IncreaseContrast {
     }
 }
 
-/// WCAG 2.1 contrast arithmetic, shared by the old palette and the Studio token tests.
+/// WCAG 2.1 contrast arithmetic, used by the Studio token tests.
 enum WCAG {
-
-    private static let lightInk: UInt32 = 0xFFFFFF
-    private static let darkInk:  UInt32 = 0x0E1116
 
     /// Constants are fixed by WCAG 2.1 §1.4.3 — do not round them.
     static func relativeLuminance(_ hex: UInt32) -> Double {
@@ -97,18 +91,5 @@ enum WCAG {
     static func contrastRatio(_ a: UInt32, _ b: UInt32) -> Double {
         let la = relativeLuminance(a), lb = relativeLuminance(b)
         return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
-    }
-
-    static func ink(on fill: UInt32) -> UInt32 {
-        contrastRatio(lightInk, fill) >= contrastRatio(darkInk, fill) ? lightInk : darkInk
-    }
-
-    /// Linear sRGB-channel blend: `t = 0` is `a`, `t = 1` is `b`.
-    static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
-        func channel(_ shift: UInt32) -> UInt32 {
-            let x = Double((a >> shift) & 0xFF), y = Double((b >> shift) & 0xFF)
-            return UInt32((x + (y - x) * t).rounded()) << shift
-        }
-        return channel(16) | channel(8) | channel(0)
     }
 }

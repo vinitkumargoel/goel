@@ -25,17 +25,22 @@ final class StudioDesignSystemTests: XCTestCase {
         }
     }
 
-    func testNewStoredValuesRoundTripAndStayReadableByTheOldThemeEnum() {
+    func testNewStoredValuesRoundTrip() {
         for mode in StudioAppearanceMode.allCases {
             XCTAssertEqual(StudioAppearanceMode(storedValue: mode.storedValue), mode)
-            // Old views still read `AppSettings.theme` through `AppTheme`; the new values must map
-            // to a palette of the same lightness there.
-            let legacy = AppTheme(settingsValue: mode.storedValue)
-            switch mode {
-            case .light: XCTAssertEqual(legacy, .frostLight)
-            case .dark, .system: XCTAssertEqual(legacy, .frostDark)
-            }
         }
+    }
+
+    func testRemotePortalThemeKeepsItsOwnTokens() {
+        for theme in RemotePortalTheme.allCases {
+            XCTAssertEqual(RemotePortalTheme(storedValue: theme.storedValue), theme)
+        }
+        XCTAssertEqual(RemotePortalTheme.allCases.map(\.storedValue),
+                       ["frost-light", "frost-dark", "dracula", "nord"])
+        XCTAssertEqual(RemotePortalTheme(storedValue: "light"), .frostLight)
+        XCTAssertEqual(RemotePortalTheme(storedValue: "system"), .frostDark)
+        XCTAssertEqual(RemotePortalTheme(storedValue: "aurora"), .frostDark)
+        XCTAssertEqual(RemotePortalTheme(storedValue: AppSettings().remoteTheme), .frostDark)
     }
 
     func testToggleFlipsTheLookOnScreen() {

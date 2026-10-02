@@ -107,7 +107,7 @@ extension Studio {
 }
 
 /// The same scaling `.scaledFont(size:)` uses (`@ScaledMetric` relative to `.body`), so Studio text
-/// follows the text-size setting exactly as the old views do.
+/// follows the text-size setting.
 private struct StudioScaledFont: ViewModifier {
     @ScaledMetric(relativeTo: .body) private var factor: CGFloat = 100
 

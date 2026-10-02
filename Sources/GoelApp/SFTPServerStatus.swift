@@ -10,14 +10,6 @@ enum ServerReachability: Equatable {
     case online
     case offline
 
-    var tint: Color {
-        switch self {
-        case .unknown: return .secondary
-        case .online: return Theme.green
-        case .offline: return Theme.red
-        }
-    }
-
     var help: String {
         switch self {
         case .unknown: return "Checking…"
@@ -55,18 +47,6 @@ struct ServerOS: Equatable {
         case "freebsd", "openbsd", "netbsd": return "shippingbox"
         case "darwin", "macos": return "apple.logo"
         default: return "server.rack"
-        }
-    }
-
-    var tint: Color {
-        switch id {
-        case "ubuntu": return Theme.orange
-        case "debian", "raspbian", "centos", "rhel", "rocky", "almalinux", "redhat":
-            return Theme.red
-        case "fedora", "alpine", "arch", "manjaro", "nixos": return Theme.accent
-        case "opensuse", "suse", "gentoo": return Theme.green
-        case "darwin", "macos": return .secondary
-        default: return Theme.indigo
         }
     }
 

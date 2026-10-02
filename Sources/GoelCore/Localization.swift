@@ -43,7 +43,7 @@ public enum L10n {
         return key
     }
 
-    /// Ambient language, mirroring `ThemePalette.current`. Views deep in the tree have no
+    /// Ambient language. Views deep in the tree have no
     /// `AppViewModel` to ask, and a `Text` initializer cannot await one.
     public static var currentLanguage: String {
         get {

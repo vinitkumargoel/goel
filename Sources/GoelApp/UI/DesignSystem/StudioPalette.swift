@@ -3,7 +3,7 @@ import AppKit
 
 /// The Studio design system's namespace. Tokens live in nested enums (`Studio.Palette`,
 /// `Studio.Space`, `Studio.Radius`, `Studio.Elevation`, `Studio.TextStyle`); components are
-/// top-level `Studio…` views so they never clash with the old UI's `Theme`, `KindBadge`, etc.
+/// top-level `Studio…` views.
 enum Studio {}
 
 /// One token's four resolutions: light, dark, and both under Increase Contrast.

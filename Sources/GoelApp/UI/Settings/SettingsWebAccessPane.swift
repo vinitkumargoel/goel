@@ -176,7 +176,7 @@ struct WebAccessSettingsPane: View {
             SettingRow(L10n.t("Web theme"),
                        detail: L10n.t("The portal’s look. Independent of the app theme — the desktop and the browser each keep their own.")) {
                 SettingsSelect(selection: $vm.remoteTheme,
-                               options: AppTheme.allCases.map { SettingsOption($0, $0.rawValue) },
+                               options: RemotePortalTheme.allCases.map { SettingsOption($0, $0.title) },
                                width: 140, accessibilityName: L10n.t("Web portal theme"))
             }
             SettingRow(L10n.t("API token"),

@@ -1,8 +1,8 @@
 import SwiftUI
 import GoelCore
 
-// Symbols other areas still call by name (PORTING §5): `setting(vm, \.keyPath)`, `SettingSwitch`
-// (onboarding) and `\.settingRowName` (the old `Dropdown`). They now render in Studio style.
+// Small helpers shared by the settings panes (and the onboarding): `setting(vm, \.keyPath)`,
+// `SettingSwitch` and `\.settingRowName`, which lets a control in a row name itself.
 
 /// A binding to one `AppSettings` field that writes through `vm.update`.
 @MainActor

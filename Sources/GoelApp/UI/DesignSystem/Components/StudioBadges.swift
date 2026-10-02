@@ -169,7 +169,7 @@ struct StudioBadge: View {
 }
 
 /// The protocol badge: HTTP, BT, HLS, FTP, SFTP. Labels come from `DownloadKind.badgeLabel` and
-/// the spoken name from `DownloadKind.accessibilityName`, the same ones the old list uses.
+/// the spoken name from `DownloadKind.accessibilityName`, the same ones VoiceOver hears elsewhere.
 struct StudioKindBadge: View {
     let kind: DownloadKind
     var style: StudioBadge.Style = .plain

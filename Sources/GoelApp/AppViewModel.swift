@@ -69,10 +69,6 @@ final class AppViewModel: ObservableObject {
     @Published var tasks: [DownloadTask] = []
     @Published private(set) var settings = AppSettings() {
         didSet {
-            let selected = AppTheme(settingsValue: settings.theme)
-            if ThemePalette.current != selected {
-                ThemePalette.current = selected
-            }
             // Must land before the `@Published` change publishes, or the redraw reads the old language.
             if L10n.currentLanguage != settings.language {
                 L10n.currentLanguage = settings.language
@@ -225,15 +221,10 @@ final class AppViewModel: ObservableObject {
     private var speedSampler: Task<Void, Never>?
     private var lastPersistedSpeedHistory: [String: [SpeedHistoryPoint]] = [:]
 
-    var theme: AppTheme {
-        get { AppTheme(settingsValue: settings.theme) }
-        set { update { $0.theme = newValue.settingsValue } }
-    }
-
-    /// Deliberately independent of ``theme``: setting it must never touch ``ThemePalette/current``.
-    var remoteTheme: AppTheme {
-        get { AppTheme(settingsValue: settings.remoteTheme) }
-        set { update { $0.remoteTheme = newValue.settingsValue } }
+    /// The web portal's theme. Deliberately independent of ``appearanceMode``.
+    var remoteTheme: RemotePortalTheme {
+        get { RemotePortalTheme(storedValue: settings.remoteTheme) }
+        set { update { $0.remoteTheme = newValue.storedValue } }
     }
 
     /// Plaintext is salted-hashed, never persisted; "" clears the password.

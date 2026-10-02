@@ -131,7 +131,7 @@ struct SettingsSelect<Value: Hashable>: View {
     let options: [SettingsOption<Value>]
     var width: CGFloat? = 160
     var accessibilityName: String?
-    /// Called after a pick, with the new value (the old Dropdown's `onSelect`).
+    /// Called after a pick, with the new value (like ``Dropdown``'s `onSelect`).
     var onSelect: (Value) -> Void = { _ in }
 
     @State private var isOpen = false

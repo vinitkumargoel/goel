@@ -9,10 +9,9 @@ import GoelCore
 /// is backward compatible both ways:
 /// - old values are read through ``init(storedValue:)`` (Frost Light → Light; Frost Dark, Dracula,
 ///   Nord → Dark; anything unknown → System) and are never rewritten behind the user's back;
-/// - the new values `"system"`, `"light"` and `"dark"` were already legacy aliases the old
-///   `AppTheme(settingsValue:)` accepts, so an old build (or an old view still on screen) reading
-///   them keeps working.
-/// The web portal's look is a separate field (`AppSettings.remoteTheme`) and is untouched.
+/// - the new values `"system"`, `"light"` and `"dark"` were already aliases the old palette
+///   picker accepted, so an older build reading them keeps working.
+/// The web portal's look is a separate field (`AppSettings.remoteTheme`, see ``RemotePortalTheme``).
 enum StudioAppearanceMode: String, CaseIterable, Identifiable, Sendable {
     case system
     case light

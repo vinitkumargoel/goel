@@ -155,17 +155,6 @@ struct SFTPTransfer: Identifiable {
 }
 
 extension SFTPTransfer {
-    var tint: Color {
-        switch state {
-        case .failed: return Theme.red
-        case .finished: return Theme.green
-        case .cancelled: return .secondary
-        case .running: return Theme.accent
-        case .waiting: return .secondary
-        case .paused: return Theme.orange
-        }
-    }
-
     func iconName(filledWhenFinished: Bool) -> String {
         let base: String
         switch direction {
@@ -181,14 +170,6 @@ extension SFTPTransfer {
         case .upload:     return "arrow.up"
         case .download:   return "arrow.down"
         case .remoteCopy: return "arrow.left.arrow.right"
-        }
-    }
-
-    var directionTint: Color {
-        switch direction {
-        case .upload:     return Theme.teal
-        case .download:   return Theme.green
-        case .remoteCopy: return Theme.accent
         }
     }
 
