@@ -1304,14 +1304,6 @@ final class AppViewModel: ObservableObject {
         add(rawLines: entry.locator, saveDirectory: nil, priority: .normal)
     }
 
-    func deleteHistoryEntry(_ id: UUID) {
-        Task {
-            await manager.removeHistoryEntry(id)
-            bumpHistoryRevision(after: 0.3)
-        }
-        toastSuccess(L10n.t("Entry removed"))
-    }
-
     func relocateHistoryEntry(_ entry: HistoryEntry, to path: String) {
         Task {
             await manager.relocateHistoryEntry(entry, to: path)
