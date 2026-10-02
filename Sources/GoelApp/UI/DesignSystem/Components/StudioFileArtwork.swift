@@ -259,104 +259,133 @@ private struct StudioArtworkPattern: View {
         Canvas { context, size in
             let ink = GraphicsContext.Shading.color(Studio.Palette.artHighlight)
             switch kind {
-            case .video:
-                // Film perforations along the top and bottom edge.
-                var x: CGFloat = 7
-                while x < size.width {
-                    context.fill(Path(CGRect(x: x, y: 0, width: 4, height: 5)), with: ink)
-                    context.fill(Path(CGRect(x: x, y: size.height - 5, width: 4, height: 5)), with: ink)
-                    x += 11
-                }
-            case .audio:
-                // Ripples from the bottom-right corner.
-                let corner = CGPoint(x: size.width, y: size.height)
-                let reach = hypot(size.width, size.height)
-                var r: CGFloat = 5.75
-                while r < reach {
-                    context.stroke(Path(ellipseIn: CGRect(x: corner.x - r, y: corner.y - r,
-                                                          width: r * 2, height: r * 2)),
-                                   with: ink, lineWidth: 1.5)
-                    r += 6.5
-                }
-            case .disc:
-                let centre = CGPoint(x: size.width / 2, y: size.height / 2)
-                let reach = hypot(size.width, size.height) / 2
-                var r: CGFloat = 5.5
-                while r < reach {
-                    context.stroke(Path(ellipseIn: CGRect(x: centre.x - r, y: centre.y - r,
-                                                          width: r * 2, height: r * 2)),
-                                   with: ink, lineWidth: 1)
-                    r += 6
-                }
-            case .archive:
-                // 135° stripes: 3 pt bands every 9 pt.
-                var stripes = Path()
-                var offset: CGFloat = -size.height
-                while offset < size.width + size.height {
-                    stripes.move(to: CGPoint(x: offset + 6, y: 0))
-                    stripes.addLine(to: CGPoint(x: offset + 9, y: 0))
-                    stripes.addLine(to: CGPoint(x: offset + 9 + size.height, y: size.height))
-                    stripes.addLine(to: CGPoint(x: offset + 6 + size.height, y: size.height))
-                    stripes.closeSubpath()
-                    offset += 9 * 1.414
-                }
-                context.fill(stripes, with: ink)
-            case .app:
-                // A dot grid on 8 pt centres.
-                var dots = Path()
-                var y: CGFloat = 4
-                while y < size.height {
-                    var x: CGFloat = 4
-                    while x < size.width {
-                        dots.addEllipse(in: CGRect(x: x - 1.6, y: y - 1.6, width: 3.2, height: 3.2))
-                        x += 8
-                    }
-                    y += 8
-                }
-                context.fill(dots, with: ink)
-            case .doc:
-                // Ruled lines.
-                var y: CGFloat = 6
-                while y < size.height {
-                    context.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 1.5)), with: ink)
-                    y += 7.5
-                }
-            case .folder:
-                // A hard-edged highlight across the top-left (`linear-gradient(160deg, hi 0 30%, transparent 30%)`).
-                var wedge = Path()
-                wedge.move(to: .zero)
-                wedge.addLine(to: CGPoint(x: size.width, y: 0))
-                wedge.addLine(to: CGPoint(x: size.width, y: size.height * 0.12))
-                wedge.addLine(to: CGPoint(x: 0, y: size.height * 0.42))
-                wedge.closeSubpath()
-                context.fill(wedge, with: ink)
-            case .image:
-                // A sun and a hill line.
-                let sun = min(size.width, size.height) * 0.16
-                context.fill(Path(ellipseIn: CGRect(x: size.width * 0.72 - sun, y: size.height * 0.28 - sun,
-                                                    width: sun * 2, height: sun * 2)), with: ink)
-                var hill = Path()
-                hill.move(to: CGPoint(x: 0, y: size.height * 0.78))
-                hill.addQuadCurve(to: CGPoint(x: size.width, y: size.height * 0.70),
-                                  control: CGPoint(x: size.width * 0.45, y: size.height * 0.50))
-                hill.addLine(to: CGPoint(x: size.width, y: size.height))
-                hill.addLine(to: CGPoint(x: 0, y: size.height))
-                hill.closeSubpath()
-                context.fill(hill, with: ink)
-            case .other:
-                // A folded corner.
-                let fold = min(size.width, size.height) * 0.32
-                var corner = Path()
-                corner.move(to: CGPoint(x: size.width - fold, y: 0))
-                corner.addLine(to: CGPoint(x: size.width, y: 0))
-                corner.addLine(to: CGPoint(x: size.width, y: fold))
-                corner.closeSubpath()
-                context.fill(corner, with: ink)
-            case .magnet:
-                break
+            case .video: Self.videoPattern(context, size: size, ink: ink)
+            case .audio: Self.audioPattern(context, size: size, ink: ink)
+            case .disc: Self.discPattern(context, size: size, ink: ink)
+            case .archive: Self.archivePattern(context, size: size, ink: ink)
+            case .app: Self.appPattern(context, size: size, ink: ink)
+            case .doc: Self.docPattern(context, size: size, ink: ink)
+            case .folder: Self.folderPattern(context, size: size, ink: ink)
+            case .image: Self.imagePattern(context, size: size, ink: ink)
+            case .other: Self.otherPattern(context, size: size, ink: ink)
+            case .magnet: break
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// One drawing per family, so each pattern reads on its own.
+private extension StudioArtworkPattern {
+    static func videoPattern(_ context: GraphicsContext, size: CGSize, ink: GraphicsContext.Shading) {
+        // Film perforations along the top and bottom edge.
+        var x: CGFloat = 7
+        while x < size.width {
+            context.fill(Path(CGRect(x: x, y: 0, width: 4, height: 5)), with: ink)
+            context.fill(Path(CGRect(x: x, y: size.height - 5, width: 4, height: 5)), with: ink)
+            x += 11
+        }
+    }
+
+    static func audioPattern(_ context: GraphicsContext, size: CGSize, ink: GraphicsContext.Shading) {
+        // Ripples from the bottom-right corner.
+        let corner = CGPoint(x: size.width, y: size.height)
+        let reach = hypot(size.width, size.height)
+        var r: CGFloat = 5.75
+        while r < reach {
+            context.stroke(Path(ellipseIn: CGRect(x: corner.x - r, y: corner.y - r,
+                                                  width: r * 2, height: r * 2)),
+                           with: ink, lineWidth: 1.5)
+            r += 6.5
+        }
+    }
+
+    static func discPattern(_ context: GraphicsContext, size: CGSize, ink: GraphicsContext.Shading) {
+        let centre = CGPoint(x: size.width / 2, y: size.height / 2)
+        let reach = hypot(size.width, size.height) / 2
+        var r: CGFloat = 5.5
+        while r < reach {
+            context.stroke(Path(ellipseIn: CGRect(x: centre.x - r, y: centre.y - r,
+                                                  width: r * 2, height: r * 2)),
+                           with: ink, lineWidth: 1)
+            r += 6
+        }
+    }
+
+    static func archivePattern(_ context: GraphicsContext, size: CGSize, ink: GraphicsContext.Shading) {
+        // 135° stripes: 3 pt bands every 9 pt.
+        var stripes = Path()
+        var offset: CGFloat = -size.height
+        while offset < size.width + size.height {
+            stripes.move(to: CGPoint(x: offset + 6, y: 0))
+            stripes.addLine(to: CGPoint(x: offset + 9, y: 0))
+            stripes.addLine(to: CGPoint(x: offset + 9 + size.height, y: size.height))
+            stripes.addLine(to: CGPoint(x: offset + 6 + size.height, y: size.height))
+            stripes.closeSubpath()
+            offset += 9 * 1.414
+        }
+        context.fill(stripes, with: ink)
+    }
+
+    static func appPattern(_ context: GraphicsContext, size: CGSize, ink: GraphicsContext.Shading) {
+        // A dot grid on 8 pt centres.
+        var dots = Path()
+        var y: CGFloat = 4
+        while y < size.height {
+            var x: CGFloat = 4
+            while x < size.width {
+                dots.addEllipse(in: CGRect(x: x - 1.6, y: y - 1.6, width: 3.2, height: 3.2))
+                x += 8
+            }
+            y += 8
+        }
+        context.fill(dots, with: ink)
+    }
+
+    static func docPattern(_ context: GraphicsContext, size: CGSize, ink: GraphicsContext.Shading) {
+        // Ruled lines.
+        var y: CGFloat = 6
+        while y < size.height {
+            context.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 1.5)), with: ink)
+            y += 7.5
+        }
+    }
+
+    static func folderPattern(_ context: GraphicsContext, size: CGSize, ink: GraphicsContext.Shading) {
+        // A hard-edged highlight across the top-left (`linear-gradient(160deg, hi 0 30%, transparent 30%)`).
+        var wedge = Path()
+        wedge.move(to: .zero)
+        wedge.addLine(to: CGPoint(x: size.width, y: 0))
+        wedge.addLine(to: CGPoint(x: size.width, y: size.height * 0.12))
+        wedge.addLine(to: CGPoint(x: 0, y: size.height * 0.42))
+        wedge.closeSubpath()
+        context.fill(wedge, with: ink)
+    }
+
+    static func imagePattern(_ context: GraphicsContext, size: CGSize, ink: GraphicsContext.Shading) {
+        // A sun and a hill line.
+        let sun = min(size.width, size.height) * 0.16
+        context.fill(Path(ellipseIn: CGRect(x: size.width * 0.72 - sun, y: size.height * 0.28 - sun,
+                                            width: sun * 2, height: sun * 2)), with: ink)
+        var hill = Path()
+        hill.move(to: CGPoint(x: 0, y: size.height * 0.78))
+        hill.addQuadCurve(to: CGPoint(x: size.width, y: size.height * 0.70),
+                          control: CGPoint(x: size.width * 0.45, y: size.height * 0.50))
+        hill.addLine(to: CGPoint(x: size.width, y: size.height))
+        hill.addLine(to: CGPoint(x: 0, y: size.height))
+        hill.closeSubpath()
+        context.fill(hill, with: ink)
+    }
+
+    static func otherPattern(_ context: GraphicsContext, size: CGSize, ink: GraphicsContext.Shading) {
+        // A folded corner.
+        let fold = min(size.width, size.height) * 0.32
+        var corner = Path()
+        corner.move(to: CGPoint(x: size.width - fold, y: 0))
+        corner.addLine(to: CGPoint(x: size.width, y: 0))
+        corner.addLine(to: CGPoint(x: size.width, y: fold))
+        corner.closeSubpath()
+        context.fill(corner, with: ink)
     }
 }
 

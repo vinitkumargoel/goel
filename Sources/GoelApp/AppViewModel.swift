@@ -221,12 +221,6 @@ final class AppViewModel: ObservableObject {
     private var speedSampler: Task<Void, Never>?
     private var lastPersistedSpeedHistory: [String: [SpeedHistoryPoint]] = [:]
 
-    /// The web portal's theme. Deliberately independent of ``appearanceMode``.
-    var remoteTheme: RemotePortalTheme {
-        get { RemotePortalTheme(storedValue: settings.remoteTheme) }
-        set { update { $0.remoteTheme = newValue.storedValue } }
-    }
-
     /// Plaintext is salted-hashed, never persisted; "" clears the password.
     func setRemotePassword(_ plain: String) {
         let hash = RemotePassword.hash(plain)
@@ -381,13 +375,6 @@ final class AppViewModel: ObservableObject {
     /// Weak: scripting must never keep a discarded view model alive.
     static private(set) weak var shared: AppViewModel?
 
-    /// Production: opens the queue database in Application Support and builds the real engines.
-    /// Nothing starts until ``start()``.
-    convenience init(system: SystemActions = LiveSystemActions()) {
-        let opened = Self.makeStore()
-        self.init(system: system, opened: opened, manager: DownloadManager(store: opened.store))
-    }
-
     /// The seam behind the production init. The DEBUG snapshot harness passes an in-memory store
     /// and a manager with inert engines, so a model can be built without touching the user's
     /// database, Keychain or network; `start()` is what brings the engine up, and it never calls it.
@@ -413,41 +400,6 @@ final class AppViewModel: ObservableObject {
     /// The queue isn't being saved to disk: its banner can't be dismissed, so running without
     /// persistence is never silent.
     let isStoreEphemeral: Bool
-
-    private static func makeStore() -> OpenedStore {
-        let fm = FileManager.default
-        guard let dir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            GoelLog.persistence.error("No Application Support folder for the download database")
-            return temporaryStore(reason: L10n.t("no Application Support folder"), recovery: nil)
-        }
-        let appDir = dir.appendingPathComponent("GoelDownloader", isDirectory: true)
-        let path = appDir.appendingPathComponent("queue.sqlite").path
-        do {
-            try fm.createDirectory(at: appDir, withIntermediateDirectories: true)
-            return OpenedStore(store: try PersistenceStore(path: path))
-        } catch {
-            // The reason is what tells "locked by another copy" from "corrupt" from "newer version".
-            GoelLog.persistence.error("Couldn't open the download database", .detail(String(describing: error)))
-            let reason = error.localizedDescription
-            // Moving the file aside fixes a damaged database only; for "locked" or "newer version"
-            // it would hide the user's queue behind an empty one.
-            let recovery = PersistenceStore.isCorruption(error) ? DatabaseRecovery(path: path, reason: reason) : nil
-            return temporaryStore(reason: reason, recovery: recovery)
-        }
-    }
-
-    private static func temporaryStore(reason: String, recovery: DatabaseRecovery?) -> OpenedStore {
-        do {
-            return OpenedStore(store: try PersistenceStore(),
-                               warning: L10n.t("Couldn’t open the database (%@) — downloads won’t survive relaunch.", reason),
-                               recovery: recovery)
-        } catch {
-            GoelLog.persistence.error("Couldn't open even a temporary database", .detail(String(describing: error)))
-            return OpenedStore(store: nil,
-                               warning: L10n.t("Couldn’t open the database (%@) — nothing you add will be saved.", reason),
-                               recovery: recovery)
-        }
-    }
 
     func start() async {
         guard !didStart else { return }

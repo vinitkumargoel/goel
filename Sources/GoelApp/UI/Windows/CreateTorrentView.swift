@@ -85,7 +85,8 @@ struct CreateTorrentView: View {
             .accessibilityLabel(L10n.t("Source file or folder"))
         } else {
             WindowsCompactCard(isSelected: dropTargeted,
-                               padding: EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)) {
+                               padding: EdgeInsets(top: Studio.Space.m, leading: Studio.Space.m, bottom: Studio.Space.m,
+                                                   trailing: Studio.Space.m)) {
                 StudioFileArtwork(kind: summary?.isFolder == false ? .other : .folder, size: .l)
                 VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     Text((sourcePath as NSString).lastPathComponent)
