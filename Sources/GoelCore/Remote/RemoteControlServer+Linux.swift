@@ -200,7 +200,7 @@ public actor RemoteControlServer {
         let cfg = routerConfig
 
         // Deliberately pre-auth: the login page cannot render without them, and they are public bytes.
-        if request.method == "GET", let asset = RemoteRouter.staticAsset(path: request.path) {
+        if request.method == "GET", let asset = RemoteRouter.staticAsset(path: request.path, acceptEncoding: request.headers["accept-encoding"]) {
             return asset
         }
 

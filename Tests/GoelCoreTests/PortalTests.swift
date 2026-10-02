@@ -305,6 +305,63 @@ final class PortalTests: XCTestCase {
         XCTAssertFalse(head.contains("'unsafe-inline'"), "inline execution must not be allowed")
     }
 
+    func testAcceptsGzipReadsTheHeaderLikeAClientWouldSendIt() {
+        XCTAssertTrue(RemoteRouter.acceptsGzip("gzip, deflate, br"))
+        XCTAssertTrue(RemoteRouter.acceptsGzip("br;q=1.0, GZIP;q=0.5"))
+        XCTAssertTrue(RemoteRouter.acceptsGzip("*"))
+        XCTAssertFalse(RemoteRouter.acceptsGzip("gzip;q=0, br"))
+        XCTAssertFalse(RemoteRouter.acceptsGzip("br, deflate"))
+        XCTAssertFalse(RemoteRouter.acceptsGzip(nil))
+    }
+
+    func testTextAssetsAreServedPreGzippedOnlyToClientsThatAcceptIt() throws {
+        let plain = try XCTUnwrap(RemoteRouter.staticAsset(path: PortalBundle.jsPath))
+        let plainHead = String(decoding: plain.prefix(600), as: UTF8.self)
+        XCTAssertFalse(plainHead.contains("Content-Encoding"))
+        XCTAssertTrue(plainHead.contains("Vary: Accept-Encoding"), "caches must key on the encoding")
+
+        let zipped = try XCTUnwrap(RemoteRouter.staticAsset(path: PortalBundle.jsPath,
+                                                            acceptEncoding: "gzip, deflate, br"))
+        let split = try XCTUnwrap(zipped.range(of: Data("\r\n\r\n".utf8)))
+        let head = String(decoding: zipped[..<split.lowerBound], as: UTF8.self)
+        let body = zipped[split.upperBound...]
+        XCTAssertTrue(head.contains("Content-Encoding: gzip"))
+        XCTAssertTrue(head.contains("Vary: Accept-Encoding"))
+        XCTAssertTrue(head.contains("Content-Type: application/javascript"))
+        XCTAssertTrue(head.contains("Content-Length: \(body.count)"))
+        XCTAssertEqual(Array(body.prefix(2)), [0x1f, 0x8b], "a gzip stream starts with its magic bytes")
+        XCTAssertLessThan(body.count, PortalBundle.js.utf8.count / 2)
+
+        // Anything that is not a text asset (a font) is never labelled gzip.
+        let font = try XCTUnwrap(PortalBundle.fonts.keys.first)
+        let fontOut = RemoteRouter.staticAsset(path: "/assets/\(font)", acceptEncoding: "gzip")
+        XCTAssertFalse(String(decoding: fontOut?.prefix(400) ?? Data(), as: UTF8.self).contains("Content-Encoding"))
+    }
+
+    /// The pre-gzipped body must decompress to exactly the plain bundle, for every text asset.
+    func testPreGzippedBodiesRoundTripToThePlainAssets() throws {
+        #if os(macOS) || os(Linux)
+        for (name, asset) in PortalBundle.assets {
+            let b64 = try XCTUnwrap(PortalBundle.gzipped[name], "\(name) needs a gzipped twin")
+            let gz = try XCTUnwrap(Data(base64Encoded: b64, options: .ignoreUnknownCharacters))
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let file = dir.appendingPathComponent("a.gz")
+            try gz.write(to: file)
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")
+            process.arguments = ["-c", file.path]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            try process.run()
+            let out = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            XCTAssertEqual(String(decoding: out, as: UTF8.self), asset.body, name)
+        }
+        #endif
+    }
+
     func testAssetsAreImmutablyCachedAndPagesAreNot() {
         let asset = String(decoding: RemoteRouter.staticAsset(path: PortalBundle.jsPath) ?? Data(),
                            as: UTF8.self)
