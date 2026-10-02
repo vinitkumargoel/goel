@@ -69,10 +69,10 @@ final class DisplayFormatTests: XCTestCase {
         let now = todayAt(hour: 15, minute: 0)
         let today = todayAt(hour: 14, minute: 3)
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: todayAt(hour: 23, minute: 45))!
-        XCTAssertEqual(DisplayFormat.compactDateTime(today, locale: british, now: now), "14:03")
+        XCTAssertEqual(DisplayFormat.compactDateTime(today, locale: british, now: now), "Today 14:03")
         let older = DisplayFormat.compactDateTime(yesterday, locale: english, now: now)
-        XCTAssertFalse(older.contains("Yesterday"), "abbreviated to fit")
-        XCTAssertLessThanOrEqual(older.count, 13, older)
+        XCTAssertFalse(older.contains(" at "), "no “at”, so it fits the column")
+        XCTAssertLessThanOrEqual(older.count, 18, older)
     }
 
     // MARK: Enum titles

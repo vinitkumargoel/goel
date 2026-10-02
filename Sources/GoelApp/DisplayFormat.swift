@@ -30,16 +30,17 @@ enum DisplayFormat {
         return absoluteFormatter(locale).string(from: date)
     }
 
-    /// The list's Added column: "14:03" today, "Yest 14:02", then "12 Mar" (or "Mar 12"), and
-    /// the year only once it differs. The tooltip carries the full ``relativeDateTime``.
+    /// The list's Added column, one style throughout: "Today 14:03", "Yesterday 14:02", then
+    /// "12 Mar" (or "Mar 12"), and the year only once it differs. The tooltip carries the full
+    /// ``relativeDateTime``.
     static func compactDateTime(_ date: Date, locale: Locale, now: Date = Date()) -> String {
         let calendar = Calendar.current
         if calendar.isDate(date, inSameDayAs: now) {
-            return compactTimeFormatter(locale).string(from: date)
+            return L10n.t("Today %@", compactTimeFormatter(locale).string(from: date))
         }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
            calendar.isDate(date, inSameDayAs: yesterday) {
-            return L10n.t("Yest %@", compactTimeFormatter(locale).string(from: date))
+            return L10n.t("Yesterday %@", compactTimeFormatter(locale).string(from: date))
         }
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
         return (sameYear ? compactDateFormatter(locale) : compactYearDateFormatter(locale)).string(from: date)
