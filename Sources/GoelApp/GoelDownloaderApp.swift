@@ -60,7 +60,7 @@ struct GoelDownloaderApp: App {
                 .environmentObject(viewModel.telemetry)
                 .environmentObject(viewModel.sftpStore)
                 .preferredColorScheme(appearance.colorScheme)
-                .frame(width: 760, height: 560)
+                .frame(width: 1080, height: 720)
         }
 
         MenuBarExtra(isInserted: menuBarInserted) {

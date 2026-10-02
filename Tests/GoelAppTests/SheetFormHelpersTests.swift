@@ -194,15 +194,16 @@ final class SettingsSearchTests: XCTestCase {
         XCTAssertEqual(SettingsSearch.resultAnnouncement(count: 3), "3 panes match")
     }
 
-    /// Scrapes every `SetRow(name: L10n.t("…"))` title out of the settings pane sources: a row added
-    /// without a keyword would be invisible to search.
+    /// Scrapes every `SettingRow(L10n.t("…"))` title out of the settings pane sources (every file
+    /// under `UI/Settings`, recursively): a row added without a keyword would be invisible to search.
     func testEverySetRowTitleIsInTheSearchIndex() throws {
-        let views = URL(fileURLWithPath: #filePath)
+        let settings = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/GoelApp/Views")
-        let files = try FileManager.default.contentsOfDirectory(at: views, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "swift" }
-        let pattern = try NSRegularExpression(pattern: #"SetRow\(\s*name:\s*L10n\.t\("((?:[^"\\]|\\.)*)""#)
+            .appendingPathComponent("Sources/GoelApp/UI/Settings")
+        let enumerator = try XCTUnwrap(FileManager.default.enumerator(at: settings, includingPropertiesForKeys: nil))
+        let files = enumerator.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+        XCTAssertFalse(files.isEmpty, "found the settings pane sources")
+        let pattern = try NSRegularExpression(pattern: #"SettingRow\(\s*L10n\.t\("((?:[^"\\]|\\.)*)""#)
         let indexed = Set(SettingsView.Pane.allCases.flatMap(\.searchKeywords))
         var titles: [String] = []
         for file in files {
@@ -215,6 +216,6 @@ final class SettingsSearchTests: XCTestCase {
         }
         XCTAssertGreaterThan(titles.count, 50, "the scrape found the settings rows")
         let missing = Set(titles).subtracting(indexed).sorted()
-        XCTAssertEqual(missing, [], "SetRow titles missing from SettingsView.Pane.searchKeywords")
+        XCTAssertEqual(missing, [], "SettingRow titles missing from SettingsView.Pane.searchKeywords")
     }
 }
