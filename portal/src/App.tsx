@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PlayerDialog } from './components/detail/PlayerDialog'
 import { PaletteHost } from './components/dialogs/CommandPalette'
@@ -72,22 +73,32 @@ function AppHeader({ app }: Props) {
 function AppRail({ app }: Props) {
   const { state, model, nav, data, menus, canWrite } = app
   const { bandwidth, actions } = data
-  // On a phone the status bar's controls move into the filter drawer.
-  const drawerFooter =
-    app.phone && (!BOOT.readOnly || bandwidth.state) ? (
-      <DrawerFooter
-        readOnly={BOOT.readOnly}
-        canWrite={canWrite}
-        bandwidth={bandwidth}
-        bandwidthMenuOpen={state.menu?.owner === 'bandwidth'}
-        onBandwidthMenu={menus.openBandwidthMenu}
-        onPauseAll={actions.pauseAll}
-        onResumeAll={actions.resumeAll}
-      />
-    ) : null
+  const { phone } = app
+  const { setSidebarOpen } = state
+  const bandwidthMenuOpen = state.menu?.owner === 'bandwidth'
+  const { openBandwidthMenu } = menus
+  const { pauseAll, resumeAll } = actions
+  // On a phone the status bar's controls move into the filter drawer. Memoised so the memoised
+  // Rail below does not see a new element on every snapshot tick.
+  const drawerFooter = useMemo(
+    () =>
+      phone && (!BOOT.readOnly || bandwidth.state) ? (
+        <DrawerFooter
+          readOnly={BOOT.readOnly}
+          canWrite={canWrite}
+          bandwidth={bandwidth}
+          bandwidthMenuOpen={bandwidthMenuOpen}
+          onBandwidthMenu={openBandwidthMenu}
+          onPauseAll={pauseAll}
+          onResumeAll={resumeAll}
+        />
+      ) : null,
+    [phone, canWrite, bandwidth, bandwidthMenuOpen, openBandwidthMenu, pauseAll, resumeAll],
+  )
+  const closeSidebar = useCallback(() => setSidebarOpen(false), [setSidebarOpen])
   return (
     <Rail
-      variant={app.phone ? 'drawer' : 'rail'}
+      variant={phone ? 'drawer' : 'rail'}
       view={state.view}
       filter={state.filter}
       counts={model.counts}
@@ -102,7 +113,7 @@ function AppRail({ app }: Props) {
       expanded={state.railExpanded && !app.narrow}
       onToggleExpanded={state.toggleRail}
       open={state.sidebarOpen}
-      onClose={() => state.setSidebarOpen(false)}
+      onClose={closeSidebar}
       returnFocusTo={app.drawerButtonRef}
       footer={drawerFooter}
     />

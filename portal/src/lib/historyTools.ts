@@ -1,3 +1,4 @@
+import i18n from '../i18n'
 import type { HistoryRow, TaskKind } from './types'
 
 export type KindFilter = TaskKind | 'all'
@@ -53,6 +54,18 @@ export function groupHistory(rows: readonly HistoryRow[], nowMs: number = Date.n
   )
 }
 
+/** The groups cut after `limit` rows in all, for incremental rendering; whole groups when they fit. */
+export function limitGroups(groups: readonly HistoryGroup[], limit: number): HistoryGroup[] {
+  let left = limit
+  const out: HistoryGroup[] = []
+  for (const g of groups) {
+    if (left <= 0) break
+    out.push(g.rows.length <= left ? g : { ...g, rows: g.rows.slice(0, left) })
+    left -= g.rows.length
+  }
+  return out
+}
+
 /**
  * One CSV cell. A value a spreadsheet would run as a formula (leading = + - @, or a tab/CR that
  * some apps strip first) is prefixed with `'`; anything with a quote, comma or line break is quoted.
@@ -64,11 +77,21 @@ export function csvCell(value: string | number | null | undefined): string {
   return s
 }
 
-export const CSV_HEADER = ['Name', 'Protocol', 'Size (bytes)', 'Completed', 'Saved to', 'Source']
+/** The column titles in the chosen language; the values (ISO dates, raw bytes) stay machine-readable. */
+export function csvHeader(): string[] {
+  return [
+    i18n.t('history.csv.name'),
+    i18n.t('history.csv.protocol'),
+    i18n.t('history.csv.size'),
+    i18n.t('history.csv.completed'),
+    i18n.t('history.csv.savedTo'),
+    i18n.t('history.csv.source'),
+  ]
+}
 
 /** RFC 4180 CSV (CRLF line ends) of the given rows; completion times are ISO 8601 in UTC. */
 export function historyCSV(rows: readonly HistoryRow[]): string {
-  const lines = [CSV_HEADER.map(csvCell).join(',')]
+  const lines = [csvHeader().map(csvCell).join(',')]
   for (const r of rows) {
     lines.push(
       [

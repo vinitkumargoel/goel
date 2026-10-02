@@ -1,6 +1,6 @@
 import { memo, useCallback, type ComponentProps, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { fmtEta, fmtShortWhen, fmtSize, fmtSpeed, pct } from '../../lib/format'
+import { fmtEta, fmtNumber, fmtShortWhen, fmtSize, fmtSpeed, pct } from '../../lib/format'
 import type { CardStyle } from '../../lib/lanes'
 import { canSave, saveToDevice, saveURL } from '../../lib/saveFile'
 import { sourceHost } from '../../lib/search'
@@ -10,7 +10,7 @@ import type { TaskRow } from '../../lib/types'
 import { Art } from '../ui/Art'
 import { Icon } from '../ui/Icon'
 import { Bar, Ring } from '../ui/Meter'
-import { ACTION_ICON, ItemButton, MoreButton, SelectTick, failureOf, optionProps, type ItemProps } from './itemShared'
+import { ACTION_ICON, ItemButton, MoreButton, SelectTick, failureOf, optionProps, statusLabel, type ItemProps } from './itemShared'
 
 type MeterTone = ComponentProps<typeof Ring>['tone']
 
@@ -59,7 +59,7 @@ function Rates({ task, children }: { task: TaskRow; children?: ReactNode }) {
   return (
     <div className="stats">
       {task.statusToken === 'verifying' ? (
-        <span>{task.status}</span>
+        <span>{statusLabel(task, t)}</span>
       ) : (
         <span className="acc">↓ {fmtSpeed(task.downSpeed)}</span>
       )}
@@ -80,6 +80,7 @@ function ActionButton({ task, canWrite, phone, onAction, className }: ItemProps 
       label={t(`common.${action}`)}
       name={task.name}
       phone={phone}
+      busy={task.busy}
       className={className}
       onPress={() => onAction(task.id, action)}
     >
@@ -131,7 +132,7 @@ function CompactBody(props: BoardCardProps) {
 
   switch (task.statusToken) {
     case 'queued': {
-      const parts = [badge, size, task.status]
+      const parts = [badge, size, statusLabel(task, t)]
       if (task.queuePosition != null) parts.push(`#${task.queuePosition + 1}`)
       if (task.startAt) parts.push(t('board.card.startsAt', { when: fmtShortWhen(task.startAt, now) }))
       line = <span className="mt">{parts.join(' · ')}</span>
@@ -155,7 +156,7 @@ function CompactBody(props: BoardCardProps) {
       line = (
         <>
           <span className="why" title={failure ?? undefined}>
-            {failure ?? task.status}
+            {failure ?? statusLabel(task, t)}
           </span>
           {props.canWrite && (
             <span className="bc-row">
@@ -163,6 +164,7 @@ function CompactBody(props: BoardCardProps) {
                 label={t('common.retry')}
                 name={task.name}
                 phone={props.phone}
+                busy={task.busy}
                 className="btn sm soft"
                 onPress={() => props.onAction(task.id, 'retry')}
               >
@@ -175,12 +177,12 @@ function CompactBody(props: BoardCardProps) {
       )
       break
     case 'paused':
-      line = <span className="mt">{[task.status, `${whole}%`, size].join(' · ')}</span>
+      line = <span className="mt">{[statusLabel(task, t), `${whole}%`, size].join(' · ')}</span>
       meter = <Bar value={task.progress} thin tone="paused" label={t('library.progress')} />
       trailing = <ActionButton {...props} className="ibtn sm b bc-act" />
       break
     case 'seeding': {
-      const parts = [t('board.card.seeding', { ratio: task.ratio.toFixed(2) })]
+      const parts = [t('board.card.seeding', { ratio: fmtNumber(task.ratio, 2) })]
       if (task.upSpeed > 0) parts.push(`↑ ${fmtSpeed(task.upSpeed)}`)
       line = <span className="mt upc">{parts.join(' · ')}</span>
       meter = <Bar value={meterFraction(task)} thin tone="up" label={t('library.progress')} />

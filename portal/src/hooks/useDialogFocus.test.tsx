@@ -55,4 +55,38 @@ describe('useDialogFocus', () => {
     await userEvent.keyboard('{Escape}')
     expect(onEscape).toHaveBeenCalledTimes(1)
   })
+
+  it('moves focus to the first control on mount', () => {
+    render(<Dialog onEscape={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'First' })).toHaveFocus()
+  })
+
+  it('focuses the sheet itself when it holds no control', () => {
+    function Empty() {
+      const ref = useRef<HTMLDivElement>(null)
+      useDialogFocus(ref)
+      return (
+        <div ref={ref} role="dialog">
+          <p>Just text</p>
+        </div>
+      )
+    }
+    render(<Empty />)
+    expect(screen.getByRole('dialog')).toHaveFocus()
+  })
+
+  it('leaves focus alone when the content already took it', () => {
+    function Auto() {
+      const ref = useRef<HTMLDivElement>(null)
+      useDialogFocus(ref)
+      return (
+        <div ref={ref} role="dialog">
+          <button>First</button>
+          <input aria-label="Url" autoFocus />
+        </div>
+      )
+    }
+    render(<Auto />)
+    expect(screen.getByRole('textbox', { name: 'Url' })).toHaveFocus()
+  })
 })

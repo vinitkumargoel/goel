@@ -4,7 +4,16 @@ import { shareTasks } from '../lib/shareTasks'
 import { speedStore, type SpeedStore } from '../lib/speedStore'
 import type { TaskRow } from '../lib/types'
 
-const RECONNECT_MS = 2000
+const RECONNECT_BASE_MS = 1000
+const RECONNECT_CAP_MS = 30_000
+/** The server pings every 15 s; two missed pings and the stream is treated as frozen. */
+export const WATCHDOG_MS = 35_000
+
+/** Exponential backoff with full-ish jitter: 1 s, 2 s, 4 s … capped at 30 s. `rand` is in [0, 1). */
+export function reconnectDelay(attempt: number, rand: number = Math.random()): number {
+  const ceiling = Math.min(RECONNECT_CAP_MS, RECONNECT_BASE_MS * 2 ** Math.max(0, attempt))
+  return Math.round(ceiling / 2 + (ceiling / 2) * rand)
+}
 const POLL_MS = 2500
 /**
  * The chart's clock. The stream only sends a frame when something changed, so sampling per frame
@@ -81,9 +90,13 @@ export function useTasks(speeds: SpeedStore = speedStore): TasksState & TasksApi
   useEffect(() => {
     let source: EventSource | null = null
     let retry: ReturnType<typeof setTimeout> | undefined
+    let watchdog: ReturnType<typeof setTimeout> | undefined
+    let attempt = 0
     let stopped = false
 
     const close = () => {
+      if (watchdog) clearTimeout(watchdog)
+      watchdog = undefined
       try {
         source?.close()
       } catch {
@@ -92,12 +105,35 @@ export function useTasks(speeds: SpeedStore = speedStore): TasksState & TasksApi
       source = null
     }
 
-    const connect = () => {
+    const scheduleRetry = () => {
       if (stopped) return
+      setLive(false)
+      close()
+      if (retry) clearTimeout(retry)
+      retry = setTimeout(connect, reconnectDelay(attempt++))
+    }
+
+    /** Any frame or ping proves the stream is alive; silence past the watchdog means it froze. */
+    const heard = () => {
+      attempt = 0
+      if (watchdog) clearTimeout(watchdog)
+      watchdog = setTimeout(scheduleRetry, WATCHDOG_MS)
+    }
+
+    function connect() {
+      if (stopped) return
+      retry = undefined
       try {
-        source = new EventSource('/api/events')
-        source.onmessage = (e) => {
+        const es = new EventSource('/api/events')
+        source = es
+        heard()
+        es.addEventListener('ping', () => {
           setLive(true)
+          heard()
+        })
+        es.onmessage = (e) => {
+          setLive(true)
+          heard()
           try {
             const next = JSON.parse(e.data) as TaskRow[]
             epoch.current++
@@ -106,14 +142,9 @@ export function useTasks(speeds: SpeedStore = speedStore): TasksState & TasksApi
             // A malformed frame is dropped: the next snapshot is a full replacement.
           }
         }
-        source.onerror = () => {
-          setLive(false)
-          close()
-          retry = setTimeout(connect, RECONNECT_MS)
-        }
+        es.onerror = scheduleRetry
       } catch {
-        setLive(false)
-        retry = setTimeout(connect, RECONNECT_MS)
+        scheduleRetry()
       }
     }
 
@@ -121,10 +152,19 @@ export function useTasks(speeds: SpeedStore = speedStore): TasksState & TasksApi
       if (stopped) return
       if (retry) clearTimeout(retry)
       retry = undefined
+      attempt = 0
       close()
       connect()
       void refresh()
     }
+
+    /** A tab coming back or the network returning: the socket may be dead without having said so. */
+    const wake = () => {
+      if (document.visibilityState === 'hidden') return
+      reconnectRef.current()
+    }
+    document.addEventListener('visibilitychange', wake)
+    window.addEventListener('online', wake)
 
     connect()
     void refresh()
@@ -148,6 +188,8 @@ export function useTasks(speeds: SpeedStore = speedStore): TasksState & TasksApi
       stopped = true
       clearInterval(poll)
       clearInterval(sampler)
+      document.removeEventListener('visibilitychange', wake)
+      window.removeEventListener('online', wake)
       if (retry) clearTimeout(retry)
       close()
     }

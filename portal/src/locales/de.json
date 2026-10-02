@@ -134,7 +134,8 @@
     "colAdded": "Hinzugefügt",
     "actionNamed": "{{action}}: {{name}}",
     "rowLabelFailed": "{{name}}, {{kind}}, fehlgeschlagen: {{error}}",
-    "left": "noch {{eta}}"
+    "left": "noch {{eta}}",
+    "showMore": "{{count}} weitere von {{remaining}} anzeigen"
   },
   "menu": {
     "copySourceLink": "Quell-Link kopieren",
@@ -222,7 +223,16 @@
     "saveNamed": "{{name}} auf diesem Gerät sichern",
     "saveHint": "Auf diesem Gerät sichern",
     "summary_one": "{{count}} Eintrag · {{size}}",
-    "summary_other": "{{count}} Einträge · {{size}}"
+    "summary_other": "{{count}} Einträge · {{size}}",
+    "showMore": "{{count}} weitere von {{remaining}} anzeigen",
+    "csv": {
+      "name": "Name",
+      "protocol": "Protokoll",
+      "size": "Größe (Bytes)",
+      "completed": "Abgeschlossen",
+      "savedTo": "Gespeichert in",
+      "source": "Quelle"
+    }
   },
   "detail": {
     "closePanel": "Bereich schließen",
@@ -434,6 +444,50 @@
     "panel": {
       "name": "Detailbereich ausblenden, wenn nichts ausgewählt ist",
       "desc": "Aus zeigt er die Übersicht der Warteschlange – Gesamttempo, was noch fehlt und wann es fertig ist. Wird in diesem Browser gemerkt."
+    },
+    "general": {
+      "title": "Allgemein",
+      "folder": "Standard-Downloadordner",
+      "folderDesc": "Wohin neue Downloads auf dem Server gespeichert werden.",
+      "choose": "Wählen …",
+      "folderInvalid": "Gib einen absoluten Pfad auf dem Server an, der mit / beginnt.",
+      "rule": "Ordnerregel",
+      "ruleDesc": "Ordner automatisch, nach Typ oder Quelle wählen, oder immer den festen verwenden.",
+      "rules": {
+        "automatic": "Automatisch",
+        "byType": "Nach Typ",
+        "bySource": "Nach Quelle",
+        "fixed": "Fest"
+      },
+      "exists": "Wenn eine Datei existiert",
+      "existsDesc": "Beide behalten (umbenennen) oder die alte Datei ersetzen.",
+      "reactions": {
+        "rename": "Umbenennen",
+        "overwrite": "Überschreiben"
+      },
+      "simultaneous": "Gleichzeitige Downloads",
+      "simultaneousDesc": "Wie viele gleichzeitig laufen, im aktiven Geschwindigkeitsprofil „{{profile}}“. Die übrigen warten in der Warteschlange.",
+      "simultaneousInvalid": "Gib eine ganze Zahl von {{min}} bis {{max}} ein."
+    },
+    "bt": {
+      "title": "BitTorrent",
+      "encryption": "Verschlüsselungsmodus",
+      "encryptionDesc": "Protokollverschlüsselung für Peer-Verbindungen.",
+      "modes": {
+        "prefer": "Bevorzugen",
+        "require": "Erzwingen",
+        "disable": "Aus"
+      },
+      "dht": "DHT aktivieren",
+      "dhtDesc": "Peers ohne Tracker finden.",
+      "pex": "PeX aktivieren",
+      "pexDesc": "Peers mit anderen Clients austauschen.",
+      "lpd": "Lokale Peer-Suche aktivieren",
+      "lpdDesc": "Peers im lokalen Netzwerk finden.",
+      "utp": "µTP aktivieren",
+      "utpDesc": "BitTorrent über UDP für bessere Überlastkontrolle.",
+      "autoDelete": ".torrent nach Abschluss löschen",
+      "autoDeleteDesc": "Die Quelldatei nach dem Abschluss entfernen."
     }
   },
   "api": {
@@ -452,7 +506,13 @@
     "hoursAgo_one": "vor {{count}} Std.",
     "hoursAgo_other": "vor {{count}} Std.",
     "daysAgo_one": "vor {{count}} Tag",
-    "daysAgo_other": "vor {{count}} Tagen"
+    "daysAgo_other": "vor {{count}} Tagen",
+    "eta": {
+      "seconds": "{{n}} s",
+      "minutes": "{{n}} Min.",
+      "hours": "{{h}} Std. {{m}} Min.",
+      "days": "{{n}} T"
+    }
   },
   "reconnect": {
     "lost": "Verbindung verloren – Daten von vor {{age}}",
@@ -661,7 +721,8 @@
     "noMatch": "Keine Dateien passen.",
     "folderToggle": "Alles in {{name}} herunterladen",
     "expand": "{{name}} öffnen",
-    "collapse": "{{name}} schließen"
+    "collapse": "{{name}} schließen",
+    "showMore": "{{count}} weitere von {{remaining}} anzeigen"
   },
   "queue": {
     "edit": "Ändern",

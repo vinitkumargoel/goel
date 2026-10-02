@@ -32,7 +32,9 @@ final class RemoteEventFrameCache: @unchecked Sendable {
 /// enough that proxies keep the stream open and a vanished client is noticed by a failed write.
 struct RemoteEventPacer {
     static let keepAliveInterval: TimeInterval = 15
-    static let keepAliveFrame = Data(": keep-alive\n\n".utf8)
+    /// The comment keeps proxies open, but an `EventSource` never surfaces comments: the named `ping`
+    /// event is what lets the portal's watchdog tell an idle stream from a frozen one.
+    static let keepAliveFrame = Data(": keep-alive\n\nevent: ping\ndata: {}\n\n".utf8)
 
     private(set) var lastHash: Int?
     private(set) var lastSend: Date?

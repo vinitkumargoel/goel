@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent, type CSSProperties } from 'react'
+import { memo, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { fileURL, zipURL } from '../../lib/api'
 import {
@@ -17,7 +17,8 @@ import {
   type SelectionPlan,
   type TreeNode,
 } from '../../lib/fileTree'
-import { fmtSize, pct } from '../../lib/format'
+import { useStableCallback } from '../../hooks/useStableCallback'
+import { fmtPercent, fmtSize } from '../../lib/format'
 import { splitTail } from '../../lib/names'
 import { fileType } from '../../lib/taskKind'
 import type { FilePriority, FileRow, TaskDetail } from '../../lib/types'
@@ -26,6 +27,8 @@ import { Icon, type IconName } from '../ui/Icon'
 
 /** Past this many files a fully open tree is a wall: start with only the top level open. */
 const OPEN_ALL_LIMIT = 200
+/** Rows drawn at first, and added per "Show more": a 5,000-file torrent is not 5,000 DOM rows. */
+const PAGE_ROWS = 200
 /** A filter box is noise for a handful of files. */
 const FILTER_FROM = 8
 /** Subtitles are drawn as a document with a captions glyph, as in the app. */
@@ -91,7 +94,14 @@ export function FilesTree({ detail, canWrite, onSetFiles, onCyclePriority }: Pro
 
   const visible = useMemo(() => filterTree(tree.root, query), [tree, query])
   const filtering = query.trim() !== ''
-  const lines = visible ? flatten(visible, collapsed, filtering) : []
+  const lines = useMemo(
+    () => (visible ? flatten(visible, collapsed, filtering) : []),
+    [visible, collapsed, filtering],
+  )
+  const [shown, setShown] = useState(PAGE_ROWS)
+  // A new filter starts from the top again.
+  useEffect(() => setShown(PAGE_ROWS), [query])
+  const drawn = lines.length > shown ? lines.slice(0, shown) : lines
   const all = totals(detail.files)
   const exts = useMemo(() => extensions(detail.files), [detail.files])
   const finished = detail.files.filter((f) => f.priority !== 'skip' && f.progress >= 1).length
@@ -124,13 +134,19 @@ export function FilesTree({ detail, canWrite, onSetFiles, onCyclePriority }: Pro
     }
   }
 
-  const toggleOpen = (path: string) =>
+  const toggleOpen = useStableCallback((path: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev)
       if (next.has(path)) next.delete(path)
       else next.add(path)
       return next
-    })
+    }),
+  )
+  const checkFolder = useStableCallback((files: readonly FileRow[]) => void apply(toggleFolder(files)))
+  const checkFile = useStableCallback((file: FileRow) =>
+    void onSetFiles([file.id], file.priority === 'skip' ? ENABLE_PRIORITY : 'skip'),
+  )
+  const writable = canWrite && !busy
 
   return (
     <>
@@ -196,16 +212,16 @@ export function FilesTree({ detail, canWrite, onSetFiles, onCyclePriority }: Pro
 
       <div className="ft-list" role="tree" aria-label={t('detail.tabs.files')} aria-busy={busy}>
         {lines.length === 0 && <p className="small muted ft-none">{t('files.noMatch')}</p>}
-        {lines.map(({ node, depth }) =>
+        {drawn.map(({ node, depth }) =>
           node.kind === 'folder' ? (
             <FolderLine
               key={`d:${node.path}`}
               node={node}
               depth={depth}
               open={filtering || !collapsed.has(node.path)}
-              canWrite={canWrite && !busy}
-              onOpen={() => toggleOpen(node.path)}
-              onCheck={() => void apply(toggleFolder(node.files))}
+              canWrite={writable}
+              onOpen={toggleOpen}
+              onCheck={checkFolder}
             />
           ) : (
             <FileLine
@@ -215,13 +231,16 @@ export function FilesTree({ detail, canWrite, onSetFiles, onCyclePriority }: Pro
               name={node.name}
               label={node.label}
               depth={depth}
-              canWrite={canWrite && !busy}
-              onCheck={() =>
-                void onSetFiles([node.file.id], node.file.priority === 'skip' ? ENABLE_PRIORITY : 'skip')
-              }
+              canWrite={writable}
+              onCheck={checkFile}
               onCyclePriority={onCyclePriority}
             />
           ),
+        )}
+        {drawn.length < lines.length && (
+          <button type="button" className="btn sm soft ft-more" onClick={() => setShown((n) => n + PAGE_ROWS)}>
+            {t('files.showMore', { count: Math.min(PAGE_ROWS, lines.length - drawn.length), remaining: lines.length - drawn.length })}
+          </button>
         )}
       </div>
 
@@ -263,10 +282,10 @@ function TriBox({
 }
 
 function doneText(fraction: number): string {
-  return `${pct(fraction).toFixed(0)}%`
+  return fmtPercent(fraction)
 }
 
-function FolderLine({
+const FolderLine = memo(function FolderLine({
   node,
   depth,
   open,
@@ -278,8 +297,8 @@ function FolderLine({
   depth: number
   open: boolean
   canWrite: boolean
-  onOpen: () => void
-  onCheck: () => void
+  onOpen: (path: string) => void
+  onCheck: (files: readonly FileRow[]) => void
 }) {
   const { t } = useTranslation()
   const sum = totals(node.files)
@@ -296,12 +315,12 @@ function FolderLine({
         state={state}
         label={t('files.folderToggle', { name: node.name })}
         disabled={!canWrite}
-        onClick={onCheck}
+        onClick={() => onCheck(node.files)}
       />
       <button
         type="button"
         className="ft-toggle"
-        onClick={onOpen}
+        onClick={() => onOpen(node.path)}
         aria-label={t(open ? 'files.collapse' : 'files.expand', { name: node.name })}
       >
         <Icon name={open ? 'chevronDown' : 'chevronRight'} size="s" className="faint" />
@@ -319,9 +338,9 @@ function FolderLine({
       <span className="ft-save-gap" aria-hidden="true" />
     </div>
   )
-}
+})
 
-function FileLine({
+const FileLine = memo(function FileLine({
   taskId,
   file,
   name,
@@ -337,7 +356,7 @@ function FileLine({
   label: string
   depth: number
   canWrite: boolean
-  onCheck: () => void
+  onCheck: (file: FileRow) => void
   onCyclePriority: (fileId: number, current: FilePriority) => void
 }) {
   const { t } = useTranslation()
@@ -351,7 +370,7 @@ function FileLine({
         state={skipped ? 'off' : 'on'}
         label={t('detail.files.download', { name: file.name })}
         disabled={!canWrite}
-        onClick={onCheck}
+        onClick={() => onCheck(file)}
       />
       <span className="ft-ico" aria-hidden="true">
         <span className="ft-lead" />
@@ -401,4 +420,4 @@ function FileLine({
       )}
     </div>
   )
-}
+})

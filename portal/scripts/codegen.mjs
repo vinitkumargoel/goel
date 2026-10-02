@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto'
+import { gzipSync } from 'node:zlib'
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -70,7 +71,13 @@ const icon = (name) => {
   const b64 = readFileSync(join(pwaDir, name)).toString('base64')
   return b64.match(/.{1,76}/g).join('\n')
 }
-const icons = ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map((name) => [name, icon(name)])
+const icons = ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'].map((name) => [name, icon(name)])
+
+// Text assets are also shipped pre-gzipped (level 9, deterministic: no mtime in the zlib header), so
+// the server never compresses per request and a Linux build needs no zlib. Served when the client
+// accepts gzip; the plain body stays for those that do not.
+const gz = (content) =>
+  gzipSync(Buffer.from(content, 'utf8'), { level: 9 }).toString('base64').match(/.{1,76}/g).join('\n')
 
 const jsHash = hash(js)
 const cssHash = hash(css)
@@ -100,6 +107,14 @@ public enum PortalBundle {
         cssName: ("text/css; charset=utf-8", css),
         loginJSName: ("application/javascript; charset=utf-8", loginJS),
         loginCSSName: ("text/css; charset=utf-8", loginCSS),
+    ]
+
+    /// The text assets, gzip level 9, base64 with line breaks; keyed like \`assets\`.
+    public static let gzipped: [String: String] = [
+        jsName: ${rawLiteral(gz(js))},
+        cssName: ${rawLiteral(gz(css))},
+        loginJSName: ${rawLiteral(gz(loginJs))},
+        loginCSSName: ${rawLiteral(gz(loginCss))},
     ]
 
     public static let js = ${rawLiteral(js)}

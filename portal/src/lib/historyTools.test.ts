@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { csvCell, dateGroup, filterHistory, groupHistory, historyCSV } from './historyTools'
+import { afterEach, describe, expect, it } from 'vitest'
+import i18n from '../i18n'
+import { csvCell, dateGroup, filterHistory, groupHistory, historyCSV, limitGroups } from './historyTools'
 import type { HistoryRow } from './types'
 
 const NOW = new Date(2026, 8, 30, 15, 0, 0).getTime()
@@ -77,5 +78,27 @@ describe('CSV export', () => {
     expect(lines[1]).toContain('ubuntu.iso,http,100,')
     expect(lines[1]).toContain('https://example.com/ubuntu.iso')
     expect(lines[2]).toBe('')
+  })
+})
+
+describe('limitGroups', () => {
+  it('cuts after the limit across groups and keeps whole groups that fit', () => {
+    const groups = groupHistory(ROWS, NOW)
+    const total = groups.reduce((n, g) => n + g.rows.length, 0)
+    expect(limitGroups(groups, total + 5)).toEqual(groups)
+    const cut = limitGroups(groups, 1)
+    expect(cut).toHaveLength(1)
+    expect(cut[0]!.rows).toHaveLength(1)
+    expect(limitGroups(groups, 0)).toEqual([])
+  })
+})
+
+describe('historyCSV header', () => {
+  afterEach(() => i18n.changeLanguage('en'))
+
+  it('is in the chosen language while the values stay machine-readable', async () => {
+    expect(historyCSV([]).split('\r\n')[0]).toBe('Name,Protocol,Size (bytes),Completed,Saved to,Source')
+    await i18n.changeLanguage('de')
+    expect(historyCSV([ROWS[0]!]).split('\r\n')[0]).toBe('Name,Protokoll,Größe (Bytes),Abgeschlossen,Gespeichert in,Quelle')
   })
 })

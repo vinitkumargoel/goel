@@ -137,7 +137,7 @@
 }
 
 .ft-sub {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   color: var(--ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -255,13 +255,13 @@
 }
 
 .qov-size {
-  font-size: 30px;
+  font-size: var(--fs-h2);
   font-weight: 700;
   line-height: 1.1;
 }
 
 .qov-hero .rw > b {
-  font: 700 14px/1 var(--f-display);
+  font: 700 var(--fs-base)/1 var(--f-display);
 }
 
 .qov-unknown {
@@ -489,7 +489,7 @@
     width: 44px;
   }
   .dtbl {
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
   }
   .pl-ctrl {
     left: 8px;
@@ -503,4 +503,8 @@
   .pl-buf .bar {
     width: 56px;
   }
+}
+
+.ft-more {
+  margin: 8px 6px;
 }

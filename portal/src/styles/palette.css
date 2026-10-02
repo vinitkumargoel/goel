@@ -40,7 +40,7 @@
   height: 100%;
   border: 0;
   background: transparent;
-  font-size: 16px;
+  font-size: var(--fs-lg);
   font-weight: 500;
   color: var(--ink);
   outline: none;

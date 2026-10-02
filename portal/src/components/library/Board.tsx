@@ -19,6 +19,8 @@ interface BoardProps {
   selectedIds: ReadonlySet<string>
   tabStop: string | null
   item: SharedItemProps
+  /** Long lists draw only these ids (see lib/renderWindow); null draws every card. */
+  allowed?: ReadonlySet<string> | null
 }
 
 /** The board's width, tracked so its lanes can reflow into as many columns as fit. */
@@ -44,7 +46,7 @@ function useWidth() {
  * Lanes of cards, as the app draws them: as many 236px columns as fit, consecutive lanes stacked
  * where there are fewer columns than lanes, balanced so no column runs far longer than the rest.
  */
-export function Board({ lanes, density, selectedIds, tabStop, item }: BoardProps) {
+export function Board({ lanes, density, selectedIds, tabStop, item, allowed = null }: BoardProps) {
   const [ref, width] = useWidth()
   const columns = useMemo(() => {
     const count = columnCount(width, lanes.length, COLUMN_GAP)
@@ -71,7 +73,7 @@ export function Board({ lanes, density, selectedIds, tabStop, item }: BoardProps
         <div className="bd-col" key={indices.map((i) => lanes[i]!.id).join()}>
           {indices.map((i) => (
             <Lane key={lanes[i]!.id} lane={lanes[i]!}>
-              {lanes[i]!.tasks.map(card)}
+              {(allowed ? lanes[i]!.tasks.filter((task) => allowed.has(task.id)) : lanes[i]!.tasks).map(card)}
             </Lane>
           ))}
         </div>

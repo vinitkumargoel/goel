@@ -4,6 +4,23 @@ public struct RemoteRouter: Sendable {
     /// How much history `/api/history` lists, and so how far `/stream?history=` looks.
     static let historyLimit = 500
 
+    /// The slice of a history list a request asks for. nil when `limit` or `offset` is not a
+    /// non-negative integer (a limit must also be at least 1). Absent values mean the whole list.
+    static func historyPage<T>(_ rows: [T], limit: String?, offset: String?) -> [T]? {
+        var start = 0
+        if let offset {
+            guard let n = Int(offset), n >= 0 else { return nil }
+            start = n
+        }
+        var count = rows.count
+        if let limit {
+            guard let n = Int(limit), n >= 1 else { return nil }
+            count = min(n, historyLimit)
+        }
+        guard start < rows.count else { return [] }
+        return Array(rows[start..<min(rows.count, start + count)])
+    }
+
     public struct Config: Sendable {
         public var token: String
         /// When false the portal is open (no login) — only sane on a loopback bind.
@@ -67,7 +84,7 @@ public struct RemoteRouter: Sendable {
 
         // Assets are also served ahead of the auth gate — see `staticAsset`.
         case ("GET", let path) where path.hasPrefix(Self.assetPrefix):
-            return Self.staticAsset(path: path) ?? Self.notFound()
+            return Self.staticAsset(path: path, acceptEncoding: request.headers["accept-encoding"]) ?? Self.notFound()
 
         case ("GET", "/api/config"):
             return Self.json(ConfigRow(username: config.username, readOnly: config.readOnly,
@@ -83,8 +100,11 @@ public struct RemoteRouter: Sendable {
             return Self.json(TaskDetail(task))
 
         case ("GET", "/api/history"):
-            let rows = await backend.history(limit: Self.historyLimit).map(HistoryRow.init)
-            return Self.json(rows)
+            // Optional paging: `?limit=` (1...historyLimit) and `?offset=`. Neither = the whole list, as before.
+            let all = await backend.history(limit: Self.historyLimit)
+            guard let page = Self.historyPage(all, limit: request.query["limit"], offset: request.query["offset"])
+            else { return Self.badRequest() }
+            return Self.json(page.map(HistoryRow.init))
 
         case ("POST", "/api/pause-all"):
             await backend.pauseAll(); return Self.ok()
@@ -232,12 +252,39 @@ public struct RemoteRouter: Sendable {
 
     static let assetPrefix = "/assets/"
 
+    /// True when an `Accept-Encoding` value lists gzip (or `*`) with a non-zero quality.
+    static func acceptsGzip(_ header: String?) -> Bool {
+        guard let header else { return false }
+        for part in header.lowercased().split(separator: ",") {
+            let pieces = part.split(separator: ";")
+            let coding = pieces.first?.trimmingCharacters(in: .whitespaces) ?? ""
+            guard coding == "gzip" || coding == "*" else { continue }
+            let q = pieces.dropFirst().compactMap { piece -> Double? in
+                let kv = piece.split(separator: "=").map { $0.trimmingCharacters(in: .whitespaces) }
+                return kv.count == 2 && kv[0] == "q" ? Double(kv[1]) : nil
+            }.first
+            return (q ?? 1) > 0
+        }
+        return false
+    }
+
+    /// The pre-gzipped bodies, decoded once: a request must not pay for base64 each time.
+    private static let gzipBodies: [String: Data] = PortalBundle.gzipped.compactMapValues {
+        Data(base64Encoded: $0, options: .ignoreUnknownCharacters)
+    }
+
     /// Deliberately ahead of the auth gate (the login page needs styles); dict lookup, so no traversal.
-    static func staticAsset(path: String) -> Data? {
+    /// With `acceptEncoding` listing gzip, the text bundle goes out pre-compressed.
+    static func staticAsset(path: String, acceptEncoding: String? = nil) -> Data? {
         guard path.hasPrefix(assetPrefix) else { return pwaAsset(path: path) }
         let name = String(path.dropFirst(assetPrefix.count))
-        let immutable = ["Cache-Control": "public, max-age=31536000, immutable"]
+        var immutable = ["Cache-Control": "public, max-age=31536000, immutable"]
         if let asset = PortalBundle.assets[name] {
+            immutable["Vary"] = "Accept-Encoding"
+            if acceptsGzip(acceptEncoding), let zipped = gzipBodies[name] {
+                immutable["Content-Encoding"] = "gzip"
+                return response(status: "200 OK", type: asset.mime, body: zipped, extraHeaders: immutable)
+            }
             return response(status: "200 OK", type: asset.mime, body: Data(asset.body.utf8),
                             extraHeaders: immutable)
         }

@@ -19,6 +19,8 @@ export interface TaskRow {
   name: string
   status: string
   statusToken: StatusToken
+  /** Client-only: a pause, resume or retry for this row is in flight (see lib/optimistic). */
+  busy?: boolean
   kind: TaskKind
   progress: number
   downSpeed: number
@@ -258,4 +260,29 @@ export interface TrackerEditResult {
   added: number
   removed: number
   edited: boolean
+}
+
+/** `GET /api/settings`: the server settings the portal edits (the desktop's General and BitTorrent panes). */
+export interface ServerSettings {
+  general: {
+    defaultSaveDirectory: string
+    defaultFolderRule: 'automatic' | 'byType' | 'bySource' | 'fixed'
+    existingFileReaction: 'rename' | 'overwrite'
+    /** Of the active traffic profile (`profile`). */
+    maxSimultaneousDownloads: number
+    profile: string
+  }
+  bittorrent: {
+    encryptionMode: 'prefer' | 'require' | 'disable'
+    dht: boolean
+    pex: boolean
+    lpd: boolean
+    utp: boolean
+    autoDeleteTorrent: boolean
+  }
+}
+
+export type ServerSettingsUpdate = {
+  general?: Partial<Omit<ServerSettings['general'], 'profile'>>
+  bittorrent?: Partial<ServerSettings['bittorrent']>
 }

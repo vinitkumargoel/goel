@@ -193,6 +193,9 @@ export function installMockServer(mode: FixtureMode): void {
       setTimeout(send, 30)
       this.timer = setInterval(send, 1000)
     }
+    addEventListener() {
+      // The mock sends a frame every second, so it never needs the server ping.
+    }
     close() {
       clearInterval(this.timer)
     }

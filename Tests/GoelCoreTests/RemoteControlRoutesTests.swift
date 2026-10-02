@@ -36,7 +36,6 @@ private final class ControlBackend: RemoteBackend, @unchecked Sendable {
     func history(limit: Int) async -> [HistoryEntry] { entries }
     func removeHistoryEntry(_ id: UUID) async { removedHistory.append(id) }
     func clearHistory() async { clearedHistory = true }
-    func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { true }
 
     func setTaskSpeedLimit(_ bytesPerSec: Int64?, task id: UUID) async { limits.append((bytesPerSec, id)) }
     func setTags(_ tags: [String], task id: UUID) async { self.tags.append((tags, id)) }
@@ -52,6 +51,14 @@ private final class ControlBackend: RemoteBackend, @unchecked Sendable {
         trackerURLs.insert(new)
         return true
     }
+    var appSettings = AppSettings()
+    var allowedFolders: Set<String> = ["/srv/downloads"]
+    func settingsState() async -> RemoteSettingsState? { RemoteSettingsState(appSettings) }
+    func updateSettings(_ update: RemoteSettingsUpdate) async -> RemoteSettingsState? {
+        update.apply(to: &appSettings)
+        return RemoteSettingsState(appSettings)
+    }
+    func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { allowedFolders.contains(folder) }
     func scheduleState() async -> RemoteScheduleState? { schedule }
     func updateSchedule(_ update: RemoteScheduleUpdate) async -> RemoteScheduleState? {
         guard var state = schedule else { return nil }
@@ -101,6 +108,7 @@ final class RemoteControlRoutesTests: XCTestCase {
             raw("POST", "/api/history-remove-many", json: #"{"ids":["\#(q)"]}"#, auth: auth),
             raw("POST", "/api/history-clear", json: "{}", auth: auth),
             raw("POST", "/api/schedule", json: #"{"enabled":true}"#, auth: auth),
+            raw("POST", "/api/settings", json: #"{"bittorrent":{"dht":false}}"#, auth: auth),
             raw("POST", "/api/trackers", json: #"{"id":"\#(q)","add":["udp://t.example:80/announce"]}"#, auth: auth),
         ]
     }
@@ -241,6 +249,72 @@ final class RemoteControlRoutesTests: XCTestCase {
         XCTAssertTrue(gone.hasPrefix("HTTP/1.1 404"))
     }
 
+    func testSettingsRoundTripAndAreValidatedAtTheBoundary() async throws {
+        let backend = ControlBackend()
+        let before = await send(raw("GET", "/api/settings"), backend)
+        XCTAssertTrue(before.hasPrefix("HTTP/1.1 200"))
+        XCTAssertTrue(before.contains(#""encryptionMode":"prefer""#), before)
+
+        let ok = await send(raw("POST", "/api/settings", json: """
+            {"general":{"defaultSaveDirectory":"/srv/downloads","existingFileReaction":"overwrite","maxSimultaneousDownloads":5},
+             "bittorrent":{"encryptionMode":"require","dht":false,"utp":false}}
+            """), backend)
+        XCTAssertTrue(ok.hasPrefix("HTTP/1.1 200"), ok)
+        XCTAssertEqual(backend.appSettings.defaultSaveDirectory, "/srv/downloads")
+        XCTAssertEqual(backend.appSettings.existingFileReaction, "overwrite")
+        XCTAssertEqual(backend.appSettings.selectedProfile.maxSimultaneousDownloads, 5)
+        XCTAssertEqual(backend.appSettings.btEncryptionMode, "require")
+        XCTAssertFalse(backend.appSettings.btEnableDHT)
+        XCTAssertFalse(backend.appSettings.btEnableUTP)
+        XCTAssertTrue(backend.appSettings.btEnablePeX, "an omitted field keeps its value")
+
+        for bad in [#"{"general":{"maxSimultaneousDownloads":0}}"#,
+                    #"{"general":{"maxSimultaneousDownloads":99}}"#,
+                    #"{"general":{"defaultSaveDirectory":"relative/path"}}"#,
+                    #"{"general":{"defaultSaveDirectory":""}}"#,
+                    #"{"general":{"defaultFolderRule":"nope"}}"#,
+                    #"{"general":{"existingFileReaction":"delete"}}"#,
+                    #"{"bittorrent":{"encryptionMode":"maybe"}}"#,
+                    #"{"bittorrent":{"dht":"yes"}}"#,
+                    "not json"] {
+            let out = await send(raw("POST", "/api/settings", json: bad), backend)
+            XCTAssertTrue(out.hasPrefix("HTTP/1.1 400"), "\(bad) -> \(out.prefix(30))")
+        }
+        let forbidden = await send(raw("POST", "/api/settings",
+                                       json: #"{"general":{"defaultSaveDirectory":"/etc"}}"#), backend)
+        XCTAssertTrue(forbidden.hasPrefix("HTTP/1.1 403"), forbidden)
+        XCTAssertEqual(backend.appSettings.defaultSaveDirectory, "/srv/downloads")
+
+        let unauth = await send(raw("GET", "/api/settings", auth: false), backend)
+        XCTAssertTrue(unauth.hasPrefix("HTTP/1.1 401"))
+        let readOnly = await send(raw("POST", "/api/settings", json: "{}"), backend, readOnly: true)
+        XCTAssertTrue(readOnly.hasPrefix("HTTP/1.1 403"))
+    }
+
+    func testHistoryPagingIsOptionalAndValidated() async {
+        let backend = ControlBackend()
+        backend.entries = (0..<5).map {
+            HistoryEntry(id: UUID(), name: "f\($0)", locator: "https://x/\($0)", kind: .http,
+                         totalBytes: 1, savePath: "/tmp/f\($0)", completedAt: Date())
+        }
+        func page(_ query: String) async -> [String] {
+            let out = await send(raw("GET", "/api/history\(query)"), backend)
+            return (0..<5).map { "f\($0)" }.filter { out.contains("\"name\":\"\($0)\"") }
+        }
+        let everything = await page("")
+        let firstTwo = await page("?limit=2")
+        let tail = await page("?limit=2&offset=3")
+        let past = await page("?offset=9")
+        XCTAssertEqual(everything, ["f0", "f1", "f2", "f3", "f4"])
+        XCTAssertEqual(firstTwo, ["f0", "f1"])
+        XCTAssertEqual(tail, ["f3", "f4"])
+        XCTAssertEqual(past, [])
+        for bad in ["limit=0", "limit=x", "offset=-1", "offset=1.5"] {
+            let out = await send(raw("GET", "/api/history?\(bad)"), backend)
+            XCTAssertTrue(out.hasPrefix("HTTP/1.1 400"), bad)
+        }
+    }
+
     func testHistoryBulkRemoveAndClearOlderThan() async {
         let backend = ControlBackend()
         let old = HistoryEntry(id: UUID(), name: "old", locator: "https://x/old", kind: .http,
@@ -343,6 +417,41 @@ final class RemoteControlRoutesTests: XCTestCase {
             let out = RemoteRouter.staticAsset(path: path).map(str) ?? ""
             XCTAssertTrue(out.hasPrefix("HTTP/1.1 404"), path)
         }
+    }
+
+    func testManifestIsInstallableShareableAndKnowsItsDarkCanvas() throws {
+        let out = str(try XCTUnwrap(RemoteRouter.staticAsset(path: "/manifest.webmanifest")))
+        let body = try XCTUnwrap(out.components(separatedBy: "\r\n\r\n").last)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
+        XCTAssertEqual(json["id"] as? String, "/")
+        XCTAssertFalse((json["description"] as? String ?? "").isEmpty)
+        let dark = try XCTUnwrap(json["color_scheme_dark"] as? [String: String])
+        XCTAssertEqual(dark["background_color"], RemoteRouter.darkCanvas)
+        XCTAssertEqual(json["background_color"] as? String, RemoteRouter.lightCanvas)
+
+        let share = try XCTUnwrap(json["share_target"] as? [String: Any])
+        XCTAssertEqual(share["method"] as? String, "GET")
+        XCTAssertEqual(share["action"] as? String, "/")
+        XCTAssertEqual((share["params"] as? [String: String])?["url"], "url")
+
+        let shortcuts = try XCTUnwrap(json["shortcuts"] as? [[String: Any]])
+        XCTAssertEqual(shortcuts.first?["url"] as? String, "/?add=1")
+
+        // Every icon the manifest names is servable; the maskable one is its own full-bleed file.
+        let icons = try XCTUnwrap(json["icons"] as? [[String: String]])
+        XCTAssertTrue(icons.contains { $0["purpose"] == "maskable" && $0["src"] == "/icons/icon-maskable-512.png" })
+        for icon in icons {
+            let src = try XCTUnwrap(icon["src"])
+            XCTAssertTrue(str(try XCTUnwrap(RemoteRouter.staticAsset(path: src))).hasPrefix("HTTP/1.1 200"), src)
+        }
+    }
+
+    func testOfflinePageUsesTheAppCanvasAndSpeaksGerman() {
+        let worker = PortalBundle.serviceWorker
+        XCTAssertTrue(worker.contains(RemoteRouter.lightCanvas))
+        XCTAssertTrue(worker.contains(RemoteRouter.darkCanvas))
+        XCTAssertTrue(worker.contains("navigator.language"))
+        XCTAssertTrue(worker.contains("Goel°-Server nicht erreichbar"))
     }
 
     func testPageShellLinksTheManifestAndCarriesTheLanguage() {

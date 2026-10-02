@@ -32,11 +32,24 @@ extension RemoteRouter {
         }
     }
 
+    /// `id` pins the app's identity to `/` whatever `start_url` later carries; `share_target` makes
+    /// the installed app a destination in the OS share sheet (a GET to `/` the app reads and strips,
+    /// see `lib/launchParams`); the shortcut is the launcher's long-press "Add download". The 512
+    /// icon is offered as `any`, and a separate full-bleed one as `maskable` (the `any` icon has
+    /// transparent corners, which a mask would show as a hole). `color_scheme_dark` gives engines
+    /// that honour it the dark canvas; the others use the light pair.
     static let manifestJSON = #"""
-    {"name":"Goel° downloads","short_name":"Goel°","start_url":"/","scope":"/","display":"standalone",\#
-    "background_color":"#f1f7f2","theme_color":"#f1f7f2",\#
-    "icons":[{"src":"/icons/icon-192.png","sizes":"192x192","type":"image/png"},\#
-    {"src":"/icons/icon-512.png","sizes":"512x512","type":"image/png"}]}
+    {"id":"/","name":"Goel° downloads","short_name":"Goel°",\#
+    "description":"Add, watch, pause and resume the downloads on your Goel° server from any browser.",\#
+    "start_url":"/","scope":"/","display":"standalone",\#
+    "background_color":"\#(lightCanvas)","theme_color":"\#(lightCanvas)",\#
+    "color_scheme_dark":{"background_color":"\#(darkCanvas)","theme_color":"\#(darkCanvas)"},\#
+    "icons":[{"src":"/icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},\#
+    {"src":"/icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},\#
+    {"src":"/icons/icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}],\#
+    "share_target":{"action":"/","method":"GET","params":{"title":"title","text":"text","url":"url"}},\#
+    "shortcuts":[{"name":"Add download","short_name":"Add","description":"Open the Add sheet","url":"/?add=1",\#
+    "icons":[{"src":"/icons/icon-192.png","sizes":"192x192","type":"image/png"}]}]}
     """#
 
     /// Studio's canvas in each palette, so an installed app's title bar blends with the page.

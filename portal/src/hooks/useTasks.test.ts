@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '../lib/api'
 import { SpeedStore } from '../lib/speedStore'
 import type { TaskRow } from '../lib/types'
-import { useTasks } from './useTasks'
+import { reconnectDelay, useTasks, WATCHDOG_MS } from './useTasks'
 
 class FakeEventSource {
   static last: FakeEventSource | null = null
@@ -11,6 +11,13 @@ class FakeEventSource {
   closed = false
   onmessage: ((e: MessageEvent) => void) | null = null
   onerror: (() => void) | null = null
+  listeners = new Map<string, () => void>()
+  addEventListener(type: string, fn: () => void) {
+    this.listeners.set(type, fn)
+  }
+  ping() {
+    this.listeners.get('ping')?.()
+  }
   constructor() {
     FakeEventSource.last = this
     FakeEventSource.opened++
@@ -168,8 +175,58 @@ describe('useTasks', () => {
       expect(FakeEventSource.opened).toBe(before + 1)
       expect(tasks.mock.calls.length).toBe(fetches + 1)
       // The pending backoff was cancelled: no second socket when it would have fired.
-      act(() => vi.advanceTimersByTime(2100))
+      act(() => vi.advanceTimersByTime(31_000))
       expect(FakeEventSource.opened).toBe(before + 1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('backs off exponentially with jitter, capped at 30 s', () => {
+    expect(reconnectDelay(0, 0)).toBe(500)
+    expect(reconnectDelay(0, 1)).toBe(1000)
+    expect(reconnectDelay(3, 0)).toBe(4000)
+    expect(reconnectDelay(20, 0.999)).toBeLessThanOrEqual(30_000)
+    expect(reconnectDelay(20, 0)).toBe(15_000)
+  })
+
+  it('reopens a stream that goes silent past the watchdog, and keeps one that pings', () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(api, 'tasks').mockReturnValue(new Promise(() => {}))
+      const { result } = renderHook(() => useTasks())
+      const first = FakeEventSource.last!
+      act(() => vi.advanceTimersByTime(WATCHDOG_MS - 1000))
+      act(() => first.ping())
+      expect(result.current.live).toBe(true)
+      act(() => vi.advanceTimersByTime(WATCHDOG_MS - 1000))
+      expect(first.closed).toBe(false)
+      act(() => vi.advanceTimersByTime(2000))
+      expect(first.closed).toBe(true)
+      expect(result.current.live).toBe(false)
+      act(() => vi.advanceTimersByTime(2000))
+      expect(FakeEventSource.last).not.toBe(first)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reconnects and refreshes when the tab becomes visible or the network returns', () => {
+    vi.useFakeTimers()
+    try {
+      const tasks = vi.spyOn(api, 'tasks').mockReturnValue(new Promise(() => {}))
+      renderHook(() => useTasks())
+      const before = FakeEventSource.opened
+      const fetches = tasks.mock.calls.length
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      expect(FakeEventSource.opened).toBe(before + 1)
+      act(() => {
+        window.dispatchEvent(new Event('online'))
+      })
+      expect(FakeEventSource.opened).toBe(before + 2)
+      expect(tasks.mock.calls.length).toBe(fetches + 2)
     } finally {
       vi.useRealTimers()
     }

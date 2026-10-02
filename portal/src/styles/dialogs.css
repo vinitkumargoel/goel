@@ -155,7 +155,7 @@
   border-radius: 10px;
   background: var(--card);
   border: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: var(--fs-sm-plus);
 }
 
 .add-tchip > .ell {
@@ -196,7 +196,7 @@
 }
 
 .add-server {
-  font-size: 10.5px;
+  font-size: var(--fs-2xs);
   padding: 2px 7px;
 }
 
@@ -582,4 +582,9 @@
   .add-recog-host {
     display: none;
   }
+}
+
+/* The sheet takes focus only as a landing spot for a screen reader; the ring belongs to controls. */
+.sheet:focus-visible {
+  outline: none;
 }

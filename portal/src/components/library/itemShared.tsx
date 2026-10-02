@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next'
 import type { MouseEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { fmtEta, pct } from '../../lib/format'
+import { fmtEta, fmtNumber, pct } from '../../lib/format'
 import type { TaskGroup } from '../../lib/grouping'
 import { kindLabel, type RowAction } from '../../lib/taskKind'
 import type { TaskRow } from '../../lib/types'
@@ -44,6 +44,11 @@ export const ACTION_ICON: Readonly<Record<RowAction, IconName>> = {
   retry: 'retry',
 }
 
+/** The status in the portal's language; the server's English copy is only the fallback. */
+export function statusLabel(task: Pick<TaskRow, 'status' | 'statusToken'>, t: TFunction): string {
+  return t(`workflow.group.status.${task.statusToken}`, { defaultValue: task.status })
+}
+
 /** The reason a failed download gives, or null. */
 export function failureOf(task: TaskRow): string | null {
   return task.statusToken === 'failed' && task.error ? task.error : null
@@ -57,7 +62,7 @@ export function itemLabel(task: TaskRow, t: TFunction): string {
     : t('library.rowLabel', {
         name: task.name,
         kind: kindLabel(task.kind),
-        status: task.status,
+        status: statusLabel(task, t),
         percent: Math.round(pct(task.progress)),
       })
 }
@@ -67,20 +72,21 @@ export function itemLabel(task: TaskRow, t: TFunction): string {
  * not how far (the bar already shows that), and a few states add the one figure they are about.
  */
 export function statusText(task: TaskRow, t: TFunction): string {
+  const label = statusLabel(task, t)
   const whole = Math.round(pct(task.progress))
   switch (task.statusToken) {
     case 'downloading': {
       const eta = fmtEta(task.etaSeconds)
-      return `${task.status} · ${eta ? t('library.left', { eta }) : `${whole}%`}`
+      return `${label} · ${eta ? t('library.left', { eta }) : `${whole}%`}`
     }
     case 'paused':
-      return `${task.status} · ${whole}%`
+      return `${label} · ${whole}%`
     case 'queued':
-      return task.queuePosition != null ? `${task.status} · #${task.queuePosition + 1}` : task.status
+      return task.queuePosition != null ? `${label} · #${task.queuePosition + 1}` : label
     case 'seeding':
-      return t('board.card.seeding', { ratio: task.ratio.toFixed(2) })
+      return t('board.card.seeding', { ratio: fmtNumber(task.ratio, 2) })
     default:
-      return task.status
+      return label
   }
 }
 
@@ -115,6 +121,8 @@ interface ItemButtonProps {
   label: string
   name: string
   phone: boolean
+  /** A call for this row is in flight: the button waits instead of firing twice. */
+  busy?: boolean
   className: string
   onPress: (e: MouseEvent<HTMLButtonElement>) => void
   children: ReactNode
@@ -125,13 +133,15 @@ interface ItemButtonProps {
  * pointer shortcut hidden from assistive tech (the same action is in the row menu, Shift+F10, and
  * the selection bar). On a phone it is announced, but stays out of the tab order: the item is it.
  */
-export function ItemButton({ label, name, phone, className, onPress, children }: ItemButtonProps) {
+export function ItemButton({ label, name, phone, busy, className, onPress, children }: ItemButtonProps) {
   const { t } = useTranslation()
   return (
     <button
       type="button"
       className={className}
       tabIndex={-1}
+      disabled={busy}
+      aria-busy={busy || undefined}
       aria-hidden={phone ? undefined : true}
       aria-label={phone ? t('library.actionNamed', { action: label, name }) : label}
       title={label}

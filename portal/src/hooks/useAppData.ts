@@ -4,6 +4,7 @@ import { isStale } from '../components/shell/Banners'
 import type { ConfirmRequest } from '../components/dialogs/ConfirmDialog'
 import { setRefusalHandler } from '../lib/api'
 import { copyText } from '../lib/clipboard'
+import { withOptimisticStatus } from '../lib/optimistic'
 import { useBandwidth } from './useBandwidth'
 import { useNow } from './useNow'
 import { useTaskActions } from './useTaskActions'
@@ -32,13 +33,15 @@ export function useAppData(confirm: (request: ConfirmRequest | null) => void) {
   const lookup = useCallback((id: string) => tasksRef.current.find((task) => task.id === id), [])
 
   const actions = useTaskActions({ refresh, toast, confirm, currentIds, lookup })
-  const { hidden } = actions
+  const { hidden, inflight } = actions
 
   // A removal with its Undo still on screen is gone from every view, though the server has it yet.
-  const tasks = useMemo(
+  const visible = useMemo(
     () => (hidden.size === 0 ? snapshot : snapshot.filter((task) => !hidden.has(task.id))),
     [snapshot, hidden],
   )
+  // A pause, resume or retry in flight shows its expected status at once; a failure drops it again.
+  const tasks = useMemo(() => withOptimisticStatus(visible, inflight), [visible, inflight])
 
   useEffect(() => {
     setRefusalHandler(warn)

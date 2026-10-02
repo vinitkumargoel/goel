@@ -156,6 +156,18 @@ describe.each(['table', 'board'] as const)('LibraryView — %s, the listbox', (l
     expect(screen.queryAllByRole('button', { name: /More actions/ })).toEqual([])
   })
 
+  it('draws a long list in pages, yet End and the arrows still reach every item', async () => {
+    const many = Array.from({ length: 400 }, (_, i) => dl(`t${String(i).padStart(3, '0')}`))
+    const { handlers: h } = renderLibrary({ layout, tasks: many, lead: 't000', selectedIds: new Set(['t000']) })
+    expect(screen.getAllByRole('option')).toHaveLength(300)
+    expect(screen.getByRole('button', { name: /Show 100 more of 100 remaining/ })).toBeInTheDocument()
+    screen.getAllByRole('option')[0]!.focus()
+    await userEvent.keyboard('{End}')
+    expect(h.onSelection).toHaveBeenLastCalledWith({ type: 'single', id: 't399' })
+    await vi.waitFor(() => expect(document.activeElement).toHaveAttribute('data-id', 't399'))
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(300)
+  }, 20_000)
+
   it('opens on click, toggles on ⌘-click and ranges on Shift-click', async () => {
     const { handlers: h } = renderLibrary({ layout, tasks: TWO })
     const [a, b] = screen.getAllByRole('option')

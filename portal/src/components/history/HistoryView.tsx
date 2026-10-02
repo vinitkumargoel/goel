@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { api, failureMessage, historyFileURL } from '../../lib/api'
 import { copyText } from '../../lib/clipboard'
 import { fmtSize } from '../../lib/format'
-import { filterHistory, groupHistory, historyCSV, type KindFilter } from '../../lib/historyTools'
+import { filterHistory, groupHistory, historyCSV, limitGroups, type KindFilter } from '../../lib/historyTools'
 import { saveToDevice } from '../../lib/saveFile'
 import { KIND_LABEL } from '../../lib/taskKind'
+import { useStableCallback } from '../../hooks/useStableCallback'
 import type { HistoryRow, TaskKind } from '../../lib/types'
 import { FolderPicker } from '../add/FolderPicker'
 import { ConfirmDialog, type ConfirmRequest } from '../dialogs/ConfirmDialog'
@@ -26,6 +27,9 @@ interface HistoryViewProps {
   /** Changes whenever a download finishes or leaves the list: the history reloads quietly. */
   refreshKey?: string
 }
+
+/** Rows drawn at first, and added per "Show more": a years-long history is not thousands of DOM rows. */
+const PAGE_ROWS = 300
 
 const KINDS = Object.keys(KIND_LABEL) as TaskKind[]
 
@@ -91,6 +95,11 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast, ref
 
   const shown = useMemo(() => filterHistory(rows, query, kind), [rows, query, kind])
   const groups = useMemo(() => groupHistory(shown), [shown])
+  const [limit, setLimit] = useState(PAGE_ROWS)
+  // A new search or protocol starts from the top again.
+  useEffect(() => setLimit(PAGE_ROWS), [query, kind])
+  const drawnGroups = useMemo(() => limitGroups(groups, limit), [groups, limit])
+  const drawnCount = drawnGroups.reduce((n, g) => n + g.rows.length, 0)
   const shownBytes = useMemo(() => shown.reduce((n, e) => n + (e.totalBytes ?? 0), 0), [shown])
   const allShownSelected = shown.length > 0 && shown.every((r) => selected.has(r.id))
   const report = (e: unknown) => {
@@ -197,6 +206,12 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast, ref
     }
     setMenu({ ...at, owner: entry.id, entries, label: entry.name })
   }
+
+  // Stable identities, so a memoised HistoryItem skips a render it has no reason for.
+  const handleReadd = useStableCallback((source: string) => void onReadd(source))
+  const handleRemove = useStableCallback((entryId: string) => void remove(entryId))
+  const handleCopy = useStableCallback((source: string) => void copyLink(source))
+  const handleMore = useStableCallback(openRowMenu)
 
   const leaveSelect = () => {
     setSelecting(false)
@@ -329,7 +344,7 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast, ref
             </p>
           )}
           {ready &&
-            groups.map((g) => (
+            drawnGroups.map((g) => (
               <section key={g.group} className="hist-group" aria-labelledby={`${id}-${g.group}`}>
                 <h2 className="eyebrow hist-gh" id={`${id}-${g.group}`}>
                   {t(`history.groups.${g.group}`)}
@@ -345,10 +360,10 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast, ref
                       entry={e}
                       group={g.group}
                       canWrite={canWrite}
-                      onReadd={(source) => void onReadd(source)}
-                      onRemove={(entryId) => void remove(entryId)}
-                      onCopy={(source) => void copyLink(source)}
-                      onMore={openRowMenu}
+                      onReadd={handleReadd}
+                      onRemove={handleRemove}
+                      onCopy={handleCopy}
+                      onMore={handleMore}
                       selected={selecting ? selected.has(e.id) : undefined}
                       onSelect={selecting ? toggle : undefined}
                     />
@@ -356,6 +371,11 @@ export function HistoryView({ canWrite, onReadd, onRemoved, onWarn, onToast, ref
                 </ul>
               </section>
             ))}
+          {ready && drawnCount < shown.length && (
+            <button type="button" className="btn sm soft hist-more" onClick={() => setLimit((n) => n + PAGE_ROWS)}>
+              {t('history.showMore', { count: Math.min(PAGE_ROWS, shown.length - drawnCount), remaining: shown.length - drawnCount })}
+            </button>
+          )}
         </div>
         {tools && <HistorySummary rows={rows} titleId={`${id}-month`} />}
       </div>

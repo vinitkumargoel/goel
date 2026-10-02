@@ -171,6 +171,7 @@
 .lib-list [role='option']:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--canvas);
 }
 
 .lib-list.selecting [role='option'] {
@@ -215,7 +216,7 @@
 }
 
 .lane-h b {
-  font: 650 15px var(--f-display);
+  font: 650 var(--fs-body) var(--f-display);
   letter-spacing: -0.01em;
   color: var(--ink);
   overflow: hidden;
@@ -224,7 +225,7 @@
 }
 
 .lane-h .n {
-  font: 600 11px var(--f-mono);
+  font: 600 var(--fs-2xs) var(--f-mono);
   background: var(--seg-bg);
   color: var(--ink-2);
   border-radius: 99px;
@@ -234,7 +235,7 @@
 
 .lane-h .sub {
   margin-left: auto;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
   white-space: nowrap;
 }
@@ -293,7 +294,7 @@
 
 .lib-board .dcard .nm {
   font-weight: 650;
-  font-size: 13.5px;
+  font-size: var(--fs-md-plus);
   line-height: 1.3;
   padding-top: 10px;
   display: -webkit-box;
@@ -306,7 +307,7 @@
 
 .lib-board .dcard .mt {
   grid-column: 1;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -320,7 +321,7 @@
   align-items: center;
   margin-top: 8px;
   min-height: 28px;
-  font: 500 11.5px var(--f-mono);
+  font: 500 var(--fs-xs) var(--f-mono);
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -364,7 +365,7 @@
 
 .lib-board .mcard .nm {
   font-weight: 650;
-  font-size: 13px;
+  font-size: var(--fs-md);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -372,7 +373,7 @@
 }
 
 .lib-board .mcard .mt {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -384,11 +385,11 @@
 }
 
 .lib-board .mcard .mt.mono {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
 }
 
 .lib-board .mcard .why {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--bad);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -442,7 +443,7 @@
   top: -12px;
   left: auto;
   right: 10px;
-  z-index: 1;
+  z-index: var(--z-raised);
 }
 
 .lib-board .bcard:hover .bc-tools {
@@ -465,4 +466,9 @@
   position: absolute;
   top: 10px;
   left: 10px;
+}
+
+.lib-more {
+  align-self: center;
+  margin: 12px 0 20px;
 }

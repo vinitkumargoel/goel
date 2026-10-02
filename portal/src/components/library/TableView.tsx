@@ -49,10 +49,13 @@ interface TableBodyProps {
   selectedIds: ReadonlySet<string>
   tabStop: string | null
   item: SharedItemProps
+  /** Long lists draw only these ids (see lib/renderWindow); null draws every row. */
+  allowed?: ReadonlySet<string> | null
 }
 
 /** The rows, flat or in Group by sections. */
-export function TableBody({ tasks, groups, selectedIds, tabStop, item }: TableBodyProps) {
+export function TableBody({ tasks, groups, selectedIds, tabStop, item, allowed = null }: TableBodyProps) {
+  const drawn = (list: readonly TaskRow[]) => (allowed ? list.filter((task) => allowed.has(task.id)) : list)
   const row = (task: TaskRow) => (
     <TableRow
       key={task.id}
@@ -67,13 +70,13 @@ export function TableBody({ tasks, groups, selectedIds, tabStop, item }: TableBo
       <>
         {groups.map((group) => (
           <GroupSection key={`${group.by}:${group.key}`} group={group}>
-            {group.tasks.map(row)}
+            {drawn(group.tasks).map(row)}
           </GroupSection>
         ))}
       </>
     )
   }
-  return <>{tasks.map(row)}</>
+  return <>{drawn(tasks).map(row)}</>
 }
 
 /** One section: a header row, then its rows, as a labelled group of options. */

@@ -10,11 +10,13 @@ interface DialogFocusOptions {
   trap?: boolean
   /** Escape anywhere on the page while this is the top dialog. */
   onEscape?: () => void
+  /** Move focus into the dialog on mount (default true); off for a panel that is not modal. */
+  initialFocus?: boolean
 }
 
 /**
  * Modal focus handling: remembers what had focus when the dialog mounted and hands it back on
- * unmount, and keeps Tab inside the dialog.
+ * unmount, moves focus in on mount (first control, else the sheet), and keeps Tab inside the dialog.
  *
  * Tab and Escape are handled at the document, in the capture phase, not on the dialog element:
  * when focus has fallen to <body> (a click on the scrim, a removed button) the dialog's own
@@ -22,12 +24,25 @@ interface DialogFocusOptions {
  * `inert` while a modal is up (see App), so this is the second of two locks, not the only one.
  */
 export function useDialogFocus(ref: RefObject<HTMLElement | null>, options: DialogFocusOptions = {}) {
-  const { trap = true } = options
+  const { trap = true, initialFocus = true } = options
   // Read during the first render, before the commit that makes the page behind inert: a browser
   // may blur a focused element once it turns inert, and an effect would then see <body>.
   const [opener] = useState(() => document.activeElement)
   const onEscape = useStableCallback(() => options.onEscape?.())
   const hasEscape = options.onEscape != null
+
+  useEffect(() => {
+    const root = ref.current
+    if (!initialFocus || !root || root.contains(document.activeElement)) return
+    // First control, else the sheet itself so a screen reader starts at the dialog and Tab has a start.
+    const first = root.querySelector<HTMLElement>(FOCUSABLE)
+    if (first) first.focus()
+    else {
+      if (!root.hasAttribute('tabindex')) root.tabIndex = -1
+      root.focus()
+    }
+    // Mount only.
+  }, [])
 
   useEffect(() => {
     return () => {

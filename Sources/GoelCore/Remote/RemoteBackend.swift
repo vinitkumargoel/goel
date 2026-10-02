@@ -69,6 +69,10 @@ public protocol RemoteBackend: AnyObject, Sendable {
     func scheduleState() async -> RemoteScheduleState?
     /// Called only after the router validated `update` against ``scheduleState()``.
     func updateSchedule(_ update: RemoteScheduleUpdate) async -> RemoteScheduleState?
+    /// nil = no editable settings to expose; the routes answer 404.
+    func settingsState() async -> RemoteSettingsState?
+    /// Called only after the router validated `update` and vetted its folder.
+    func updateSettings(_ update: RemoteSettingsUpdate) async -> RemoteSettingsState?
     // Tracker editing; URLs arrive already checked with `TrackerList.isValidAnnounceURL`.
     /// How many were new to the torrent.
     func addTrackers(_ urls: [String], task id: UUID) async -> Int
@@ -84,6 +88,8 @@ public extension RemoteBackend {
     func remoteMove(_ ids: [UUID], to placement: QueueOrder.Placement) async {}
     func scheduleState() async -> RemoteScheduleState? { nil }
     func updateSchedule(_ update: RemoteScheduleUpdate) async -> RemoteScheduleState? { nil }
+    func settingsState() async -> RemoteSettingsState? { nil }
+    func updateSettings(_ update: RemoteSettingsUpdate) async -> RemoteSettingsState? { nil }
     func addTrackers(_ urls: [String], task id: UUID) async -> Int { 0 }
     func removeTrackers(_ urls: Set<String>, task id: UUID) async {}
     func editTracker(_ old: String, to new: String, task id: UUID) async -> Bool { false }
@@ -230,6 +236,16 @@ extension DownloadManager: RemoteBackend {
     public func updateSchedule(_ update: RemoteScheduleUpdate) async -> RemoteScheduleState? {
         let updated = await apply { update.apply(to: &$0) }
         return RemoteScheduleState(updated)
+    }
+
+    public func settingsState() async -> RemoteSettingsState? {
+        RemoteSettingsState(settings)
+    }
+
+    /// Through `apply`, like the schedule: only these fields change, and MDM-forced values aren't stored.
+    public func updateSettings(_ update: RemoteSettingsUpdate) async -> RemoteSettingsState? {
+        let updated = await apply { update.apply(to: &$0) }
+        return RemoteSettingsState(updated)
     }
 
     public func remoteDownloadRoots() async -> [String] {

@@ -16,6 +16,8 @@ import type {
   TrackerEdit,
   TrackerEditResult,
   ScheduleState,
+  ServerSettings,
+  ServerSettingsUpdate,
   ScheduleUpdate,
   TaskDetail,
   TaskRow,
@@ -195,6 +197,9 @@ export const api = {
   /** Seconds; omitted clears everything. */
   clearHistory: (olderThan?: number) => postOK('/api/history-clear', { olderThan }),
   /** A 404 means a server without a scheduler (the Linux daemon): callers hide the card. */
+  /** A 404 means a server with no editable settings: callers hide the cards. */
+  serverSettings: () => getJSON<ServerSettings>('/api/settings'),
+  updateServerSettings: (body: ServerSettingsUpdate) => postJSON<ServerSettings>('/api/settings', body),
   schedule: () => getJSON<ScheduleState>('/api/schedule'),
   updateSchedule: (body: ScheduleUpdate) => postJSON<ScheduleState>('/api/schedule', body),
 

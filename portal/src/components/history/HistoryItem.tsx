@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { historyFileURL } from '../../lib/api'
 import { fmtAbsolute, fmtSize } from '../../lib/format'
@@ -27,7 +28,7 @@ interface HistoryItemProps {
  * One finished download on the timeline: artwork, name, "PROTOCOL · host · size", the time it
  * landed, and its actions in place. Save works read-only too: it reads, it changes nothing.
  */
-export function HistoryItem({
+export const HistoryItem = memo(function HistoryItem({
   entry: e,
   group,
   canWrite,
@@ -125,4 +126,4 @@ export function HistoryItem({
       </div>
     </li>
   )
-}
+})

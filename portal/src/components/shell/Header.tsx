@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BOOT } from '../../lib/boot'
 import { fmtSpeed, IDLE_RATE } from '../../lib/format'
@@ -26,7 +27,7 @@ interface HeaderProps {
  * The portal's title bar, after the mockup's browser frame: logo, wordmark and WEB badge; the
  * connection pill; the queue's live rates with a one-minute trend; the account chip.
  */
-export function Header({
+export const Header = memo(function Header({
   connection,
   downSpeed,
   upSpeed,
@@ -111,4 +112,4 @@ export function Header({
       </button>
     </header>
   )
-}
+})

@@ -134,7 +134,8 @@
     "colAdded": "Added",
     "actionNamed": "{{action}} {{name}}",
     "rowLabelFailed": "{{name}}, {{kind}}, failed: {{error}}",
-    "left": "{{eta}} left"
+    "left": "{{eta}} left",
+    "showMore": "Show {{count}} more of {{remaining}} remaining"
   },
   "menu": {
     "copySourceLink": "Copy source link",
@@ -222,7 +223,16 @@
     "saveNamed": "Save {{name}} to this device",
     "saveHint": "Save to this device",
     "summary_one": "{{count}} item · {{size}}",
-    "summary_other": "{{count}} items · {{size}}"
+    "summary_other": "{{count}} items · {{size}}",
+    "showMore": "Show {{count}} more of {{remaining}} remaining",
+    "csv": {
+      "name": "Name",
+      "protocol": "Protocol",
+      "size": "Size (bytes)",
+      "completed": "Completed",
+      "savedTo": "Saved to",
+      "source": "Source"
+    }
   },
   "detail": {
     "closePanel": "Close panel",
@@ -434,6 +444,50 @@
     "panel": {
       "name": "Hide the detail panel when nothing is selected",
       "desc": "Off, it shows the queue overview — combined speed, what’s left and when it will be done. Remembered in this browser."
+    },
+    "general": {
+      "title": "General",
+      "folder": "Default download folder",
+      "folderDesc": "Where new downloads are saved on the server.",
+      "choose": "Choose…",
+      "folderInvalid": "Enter an absolute path on the server, starting with /.",
+      "rule": "Folder rule",
+      "ruleDesc": "Choose the folder automatically, by type, by source, or always use the fixed one.",
+      "rules": {
+        "automatic": "Automatic",
+        "byType": "By type",
+        "bySource": "By source",
+        "fixed": "Fixed"
+      },
+      "exists": "When a file exists",
+      "existsDesc": "Keep both by renaming, or replace the old file.",
+      "reactions": {
+        "rename": "Rename",
+        "overwrite": "Overwrite"
+      },
+      "simultaneous": "Simultaneous downloads",
+      "simultaneousDesc": "How many run at once, in the active speed profile “{{profile}}”. The rest wait in the queue.",
+      "simultaneousInvalid": "Enter a whole number from {{min}} to {{max}}."
+    },
+    "bt": {
+      "title": "BitTorrent",
+      "encryption": "Encryption mode",
+      "encryptionDesc": "Protocol encryption for peer connections.",
+      "modes": {
+        "prefer": "Prefer",
+        "require": "Require",
+        "disable": "Disable"
+      },
+      "dht": "Enable DHT",
+      "dhtDesc": "Find peers without a tracker.",
+      "pex": "Enable PeX",
+      "pexDesc": "Exchange peers with other clients.",
+      "lpd": "Enable Local Peer Discovery",
+      "lpdDesc": "Find peers on the local network.",
+      "utp": "Enable µTP",
+      "utpDesc": "BitTorrent over UDP for better congestion control.",
+      "autoDelete": "Auto-delete .torrent when done",
+      "autoDeleteDesc": "Remove the source file after completion."
     }
   },
   "api": {
@@ -452,7 +506,13 @@
     "hoursAgo_one": "{{count}}h ago",
     "hoursAgo_other": "{{count}}h ago",
     "daysAgo_one": "{{count}}d ago",
-    "daysAgo_other": "{{count}}d ago"
+    "daysAgo_other": "{{count}}d ago",
+    "eta": {
+      "seconds": "{{n}}s",
+      "minutes": "{{n}}m",
+      "hours": "{{h}}h {{m}}m",
+      "days": "{{n}}d"
+    }
   },
   "reconnect": {
     "lost": "Connection lost — showing data from {{age}} ago",
@@ -661,7 +721,8 @@
     "noMatch": "No files match.",
     "folderToggle": "Download everything in {{name}}",
     "expand": "Open {{name}}",
-    "collapse": "Close {{name}}"
+    "collapse": "Close {{name}}",
+    "showMore": "Show {{count}} more of {{remaining}} remaining"
   },
   "queue": {
     "edit": "Edit",

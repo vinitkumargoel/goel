@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { QueueControls } from '../../hooks/useQueueControls'
-import { fmtSpeed, pct } from '../../lib/format'
+import { fmtPercent, fmtSpeed } from '../../lib/format'
 import { pieceState, piecesHave } from '../../lib/pieces'
 import type { ConnRow, TaskDetail } from '../../lib/types'
 import { Switch } from '../ui/Controls'
@@ -156,7 +156,7 @@ function Segments({ segments }: { segments: readonly ConnRow[] }) {
             <div key={c.id} className="dseg mono tiny">
               <span className="lnum">{i + 1}</span>
               <Bar value={c.progress} tone={done ? 'good' : ''} label={c.label} />
-              <span className={done ? 'goodc' : undefined}>{pct(c.progress).toFixed(0)}%</span>
+              <span className={done ? 'goodc' : undefined}>{fmtPercent(c.progress)}</span>
             </div>
           )
         })}
@@ -248,7 +248,7 @@ export function PeersPane({ detail }: { detail: TaskDetail }) {
                 </td>
                 <td className="r mono">
                   <span className="sr-only">{t('queue.peerProgress', { peer: c.label })}: </span>
-                  {pct(c.progress).toFixed(0)}%
+                  {fmtPercent(c.progress)}
                 </td>
                 <td className={`r mono${c.down > 0 ? ' acc' : ' faint'}`}>{fmtSpeed(c.down)}</td>
                 <td className={`r mono${c.up > 0 ? ' upc' : ' faint'}`}>{fmtSpeed(c.up)}</td>

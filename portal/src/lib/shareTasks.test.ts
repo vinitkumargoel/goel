@@ -68,4 +68,10 @@ describe('shareTasks', () => {
     expect(next).toHaveLength(1)
     expect(next[0]).toBe(prev[0])
   })
+
+  it('treats a freshly parsed tags array with the same strings as unchanged', () => {
+    const prev = [task('a', { tags: ['x', 'y'] })]
+    expect(shareTasks(prev, [task('a', { tags: ['x', 'y'] })])).toBe(prev)
+    expect(sameTask(prev[0]!, task('a', { tags: ['x', 'z'] }))).toBe(false)
+  })
 })

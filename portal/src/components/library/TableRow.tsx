@@ -6,7 +6,7 @@ import { isFaded, meterClass, meterFraction, pillClass, stateTone } from '../../
 import { Art } from '../ui/Art'
 import { Icon } from '../ui/Icon'
 import { Bar } from '../ui/Meter'
-import { ACTION_ICON, ItemButton, MoreButton, SelectTick, failureOf, optionProps, statusText, type ItemProps } from './itemShared'
+import { ACTION_ICON, ItemButton, MoreButton, SelectTick, failureOf, optionProps, statusLabel, statusText, type ItemProps } from './itemShared'
 
 type BarTone = '' | 'paused' | 'up' | 'good' | 'bad' | 'warn'
 
@@ -32,6 +32,7 @@ export const TableRow = memo(function TableRow(props: ItemProps) {
         label={actionLabel}
         name={task.name}
         phone={phone}
+        busy={task.busy}
         className={className}
         onPress={() => onAction(task.id, action)}
       >
@@ -63,7 +64,7 @@ export const TableRow = memo(function TableRow(props: ItemProps) {
           {nameLine}
           {bar}
           <span className={`lt-pmeta${failure ? ' badc' : ''}`}>
-            {failure ? `${task.status} — ${failure}` : meta.filter(Boolean).join(' · ')}
+            {failure ? `${statusLabel(task, t)} — ${failure}` : meta.filter(Boolean).join(' · ')}
           </span>
         </span>
         {actionButton('ibtn b lt-pbtn')}

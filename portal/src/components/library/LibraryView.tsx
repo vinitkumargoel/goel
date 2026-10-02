@@ -18,6 +18,7 @@ import { emptyState } from '../../lib/emptyState'
 import type { GroupBy, TaskGroup } from '../../lib/grouping'
 import { boardLanes, flattenLanes, laneNeighbor } from '../../lib/lanes'
 import type { Density, LibraryLayout } from '../../lib/libraryPrefs'
+import { limitToInclude, WINDOW_PAGE, windowIds } from '../../lib/renderWindow'
 import type { SelectionAction } from '../../lib/selection'
 import type { SortKey, SortState } from '../../lib/sort'
 import type { RowAction } from '../../lib/taskKind'
@@ -139,10 +140,26 @@ export function LibraryView({
     else itemEls.current.delete(id)
   })
 
+  // A long list draws a window of `order`; the keyboard still walks all of it (see lib/renderWindow).
+  const [limit, setLimit] = useState(WINDOW_PAGE)
+  const allowed = useMemo(() => windowIds(order, limit), [order, limit])
+  const pendingFocus = useRef<string | null>(null)
+
   const focusItem = (id: string) => {
     setFocusId(id)
-    itemEls.current.get(id)?.focus()
+    const el = itemEls.current.get(id)
+    if (el) return el.focus()
+    // Not drawn yet: widen the window, and focus it once it is.
+    pendingFocus.current = id
+    setLimit((n) => limitToInclude(order, n, id))
   }
+  useLayoutEffect(() => {
+    const id = pendingFocus.current
+    const el = id ? itemEls.current.get(id) : undefined
+    if (!el) return
+    pendingFocus.current = null
+    el.focus()
+  }, [limit])
 
   // Stable across snapshots: `order` changes every tick and would otherwise re-render every memoised item.
   const onItemClick = useStableCallback((id: string, mods: ItemClick) => {
@@ -165,7 +182,12 @@ export function LibraryView({
   useLayoutEffect(() => {
     if (!reveal || revealed.current === reveal.seq) return
     const els = reveal.ids.flatMap((id) => itemEls.current.get(id) ?? [])
-    if (els.length === 0) return
+    if (els.length === 0) {
+      // A revealed row beyond the drawn window: widen it, and the effect runs again.
+      const first = reveal.ids[0]
+      if (first != null) setLimit((n) => limitToInclude(order, n, first))
+      return
+    }
     revealed.current = reveal.seq
     els[0]!.scrollIntoView?.({ block: 'nearest' })
     setFocusId(reveal.ids[0] ?? null)
@@ -321,11 +343,16 @@ export function LibraryView({
             {...longPress}
           >
             {board ? (
-              <Board lanes={lanes} density={density} selectedIds={selectedIds} tabStop={tabStop} item={item} />
+              <Board lanes={lanes} density={density} selectedIds={selectedIds} tabStop={tabStop} item={item} allowed={allowed} />
             ) : (
-              <TableBody tasks={tasks} groups={groups} selectedIds={selectedIds} tabStop={tabStop} item={item} />
+              <TableBody tasks={tasks} groups={groups} selectedIds={selectedIds} tabStop={tabStop} item={item} allowed={allowed} />
             )}
           </div>
+          {allowed && (
+            <button type="button" className="btn sm soft lib-more" onClick={() => setLimit((n) => n + WINDOW_PAGE)}>
+              {t('library.showMore', { count: Math.min(WINDOW_PAGE, order.length - allowed.size), remaining: order.length - allowed.size })}
+            </button>
+          )}
         </div>
       )}
       <span id={hintId} hidden>
