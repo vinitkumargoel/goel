@@ -224,7 +224,15 @@
     "saveHint": "Save to this device",
     "summary_one": "{{count}} item · {{size}}",
     "summary_other": "{{count}} items · {{size}}",
-    "showMore": "Show {{count}} more of {{remaining}} remaining"
+    "showMore": "Show {{count}} more of {{remaining}} remaining",
+    "csv": {
+      "name": "Name",
+      "protocol": "Protocol",
+      "size": "Size (bytes)",
+      "completed": "Completed",
+      "savedTo": "Saved to",
+      "source": "Source"
+    }
   },
   "detail": {
     "closePanel": "Close panel",
@@ -454,7 +462,13 @@
     "hoursAgo_one": "{{count}}h ago",
     "hoursAgo_other": "{{count}}h ago",
     "daysAgo_one": "{{count}}d ago",
-    "daysAgo_other": "{{count}}d ago"
+    "daysAgo_other": "{{count}}d ago",
+    "eta": {
+      "seconds": "{{n}}s",
+      "minutes": "{{n}}m",
+      "hours": "{{h}}h {{m}}m",
+      "days": "{{n}}d"
+    }
   },
   "reconnect": {
     "lost": "Connection lost — showing data from {{age}} ago",

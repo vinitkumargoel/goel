@@ -1,4 +1,4 @@
-import { fmtShortWhen } from '../../lib/format'
+import { fmtClockTime, fmtShortWhen, fmtWeekday } from '../../lib/format'
 import type { DateGroup } from '../../lib/historyTools'
 import { fileType, type FileType } from '../../lib/taskKind'
 import type { HistoryRow } from '../../lib/types'
@@ -49,9 +49,9 @@ export function entryType(e: Pick<HistoryRow, 'name' | 'kind'>): FileType {
  */
 export function entryTime(completedAt: number, group: DateGroup, nowMs: number = Date.now()): string {
   const d = new Date(completedAt * 1000)
-  const clock = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const clock = fmtClockTime(d)
   if (group === 'today' || group === 'yesterday') return clock
-  if (group === 'week') return `${d.toLocaleDateString([], { weekday: 'short' })} ${clock}`
+  if (group === 'week') return `${fmtWeekday(d)} ${clock}`
   return fmtShortWhen(completedAt, nowMs)
 }
 

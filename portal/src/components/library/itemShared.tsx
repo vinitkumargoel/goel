@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next'
 import type { MouseEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { fmtEta, pct } from '../../lib/format'
+import { fmtEta, fmtNumber, pct } from '../../lib/format'
 import type { TaskGroup } from '../../lib/grouping'
 import { kindLabel, type RowAction } from '../../lib/taskKind'
 import type { TaskRow } from '../../lib/types'
@@ -84,7 +84,7 @@ export function statusText(task: TaskRow, t: TFunction): string {
     case 'queued':
       return task.queuePosition != null ? `${label} · #${task.queuePosition + 1}` : label
     case 'seeding':
-      return t('board.card.seeding', { ratio: task.ratio.toFixed(2) })
+      return t('board.card.seeding', { ratio: fmtNumber(task.ratio, 2) })
     default:
       return label
   }

@@ -1,6 +1,6 @@
 import { memo, useCallback, type ComponentProps, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { fmtEta, fmtShortWhen, fmtSize, fmtSpeed, pct } from '../../lib/format'
+import { fmtEta, fmtNumber, fmtShortWhen, fmtSize, fmtSpeed, pct } from '../../lib/format'
 import type { CardStyle } from '../../lib/lanes'
 import { canSave, saveToDevice, saveURL } from '../../lib/saveFile'
 import { sourceHost } from '../../lib/search'
@@ -182,7 +182,7 @@ function CompactBody(props: BoardCardProps) {
       trailing = <ActionButton {...props} className="ibtn sm b bc-act" />
       break
     case 'seeding': {
-      const parts = [t('board.card.seeding', { ratio: task.ratio.toFixed(2) })]
+      const parts = [t('board.card.seeding', { ratio: fmtNumber(task.ratio, 2) })]
       if (task.upSpeed > 0) parts.push(`↑ ${fmtSpeed(task.upSpeed)}`)
       line = <span className="mt upc">{parts.join(' · ')}</span>
       meter = <Bar value={meterFraction(task)} thin tone="up" label={t('library.progress')} />

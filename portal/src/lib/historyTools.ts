@@ -1,3 +1,4 @@
+import i18n from '../i18n'
 import type { HistoryRow, TaskKind } from './types'
 
 export type KindFilter = TaskKind | 'all'
@@ -76,11 +77,21 @@ export function csvCell(value: string | number | null | undefined): string {
   return s
 }
 
-export const CSV_HEADER = ['Name', 'Protocol', 'Size (bytes)', 'Completed', 'Saved to', 'Source']
+/** The column titles in the chosen language; the values (ISO dates, raw bytes) stay machine-readable. */
+export function csvHeader(): string[] {
+  return [
+    i18n.t('history.csv.name'),
+    i18n.t('history.csv.protocol'),
+    i18n.t('history.csv.size'),
+    i18n.t('history.csv.completed'),
+    i18n.t('history.csv.savedTo'),
+    i18n.t('history.csv.source'),
+  ]
+}
 
 /** RFC 4180 CSV (CRLF line ends) of the given rows; completion times are ISO 8601 in UTC. */
 export function historyCSV(rows: readonly HistoryRow[]): string {
-  const lines = [CSV_HEADER.map(csvCell).join(',')]
+  const lines = [csvHeader().map(csvCell).join(',')]
   for (const r of rows) {
     lines.push(
       [

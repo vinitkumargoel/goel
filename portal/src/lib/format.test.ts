@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import i18n from '../i18n'
 import en from '../locales/en.json'
 import {
   fmtAgo,
   fmtClock,
   fmtEta,
+  fmtNumber,
+  fmtPercent,
+  fmtShortWhen,
   fmtProgressSize,
   fmtSize,
   fmtSpeed,
@@ -93,5 +97,36 @@ describe('relative and clock times', () => {
     expect(fmtProgressSize(2.9 * GB, 4.7 * GB)).toBe('2.9/4.7 GB')
     expect(fmtProgressSize(900 * 1024 ** 2, 4.7 * GB)).toBe('900 MB/4.7 GB')
     expect(fmtProgressSize(1024, null)).toBe('1.0 KB')
+  })
+})
+
+describe('formatting follows the chosen language', () => {
+  afterEach(() => i18n.changeLanguage('en'))
+
+  it('uses the language\'s decimal separator for sizes, percents and ratios', async () => {
+    await i18n.changeLanguage('de')
+    expect(fmtSize(1536)).toBe('1,5 KB')
+    expect(fmtNumber(1.25, 2)).toBe('1,25')
+    expect(fmtPercent(0.42).replace(/\s/g, '')).toBe('42%')
+    expect(fmtProgressSize(2.9 * 1024 ** 3, 4.7 * 1024 ** 3)).toBe('2,9/4,7 GB')
+    await i18n.changeLanguage('en')
+    expect(fmtSize(1536)).toBe('1.5 KB')
+  })
+
+  it('writes ETA units from the catalogue', async () => {
+    await i18n.changeLanguage('de')
+    expect(fmtEta(45)).toBe('45 s')
+    expect(fmtEta(600)).toBe('10 Min.')
+    expect(fmtEta(3725)).toBe('1 Std. 2 Min.')
+    expect(fmtEta(2 * 86400)).toBe('2 T')
+  })
+
+  it('formats dates in the chosen language, not the browser\'s', async () => {
+    const now = Date.UTC(2026, 8, 30, 12, 0, 0)
+    const older = now / 1000 - 3 * 86400
+    await i18n.changeLanguage('de')
+    expect(fmtShortWhen(older, now)).toMatch(/Sept?\./)
+    await i18n.changeLanguage('en')
+    expect(fmtShortWhen(older, now)).toMatch(/Sep/)
   })
 })

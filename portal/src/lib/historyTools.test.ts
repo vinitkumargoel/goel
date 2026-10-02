@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import i18n from '../i18n'
 import { csvCell, dateGroup, filterHistory, groupHistory, historyCSV, limitGroups } from './historyTools'
 import type { HistoryRow } from './types'
 
@@ -89,5 +90,15 @@ describe('limitGroups', () => {
     expect(cut).toHaveLength(1)
     expect(cut[0]!.rows).toHaveLength(1)
     expect(limitGroups(groups, 0)).toEqual([])
+  })
+})
+
+describe('historyCSV header', () => {
+  afterEach(() => i18n.changeLanguage('en'))
+
+  it('is in the chosen language while the values stay machine-readable', async () => {
+    expect(historyCSV([]).split('\r\n')[0]).toBe('Name,Protocol,Size (bytes),Completed,Saved to,Source')
+    await i18n.changeLanguage('de')
+    expect(historyCSV([ROWS[0]!]).split('\r\n')[0]).toBe('Name,Protokoll,Größe (Bytes),Abgeschlossen,Gespeichert in,Quelle')
   })
 })

@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { statusLabel } from '../library/itemShared'
 import type { QueueControls } from '../../hooks/useQueueControls'
-import { fmtAbsolute, fmtEta, fmtSize, fmtSpeed, IDLE_RATE, pct } from '../../lib/format'
+import { fmtAbsolute, fmtEta, fmtSize, fmtSpeed, fmtNumber, IDLE_RATE, pct } from '../../lib/format'
 import { canSave } from '../../lib/saveFile'
 import { useSpeedSeries } from '../../lib/speedStore'
 import { kindLabel } from '../../lib/taskKind'
@@ -54,7 +54,7 @@ export function OverviewPane({ detail, canWrite, onCopy, onRetry, onMore, onStre
             <dt>{t('detail.general.uploaded')}</dt>
             <dd className="mono">{fmtSize(row.upBytes)}</dd>
             <dt>{t('detail.general.shareRatio')}</dt>
-            <dd className="mono">{row.ratio.toFixed(2)}</dd>
+            <dd className="mono">{fmtNumber(row.ratio, 2)}</dd>
           </>
         ) : (
           live && (

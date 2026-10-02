@@ -1,3 +1,4 @@
+import i18n from '../i18n'
 import type { StatusToken, TaskRow } from './types'
 
 export type SortKey = 'name' | 'size' | 'status' | 'speed' | 'eta' | 'added'
@@ -23,12 +24,23 @@ const STATUS_RANK: Record<StatusToken, number> = {
   completed: 7,
 }
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+let collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+let collatorLocale = ''
+
+/** Names sort by the chosen language's rules, not the browser's. */
+function nameCollator(): Intl.Collator {
+  const lang = i18n.language || 'en'
+  if (lang !== collatorLocale) {
+    collatorLocale = lang
+    collator = new Intl.Collator(lang, { numeric: true, sensitivity: 'base' })
+  }
+  return collator
+}
 
 function compare(a: TaskRow, b: TaskRow, key: SortKey): number {
   switch (key) {
     case 'name':
-      return collator.compare(a.name, b.name)
+      return nameCollator().compare(a.name, b.name)
     case 'size':
       // Unknown sizes sort as smallest, so they gather at one end rather than scatter.
       return (a.totalBytes ?? -1) - (b.totalBytes ?? -1)

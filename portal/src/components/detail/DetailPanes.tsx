@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import type { QueueControls } from '../../hooks/useQueueControls'
 import { streamURL } from '../../lib/api'
-import { fmtSize, pct } from '../../lib/format'
+import { fmtPercent, fmtSize } from '../../lib/format'
 import { canSave } from '../../lib/saveFile'
 import { fileType } from '../../lib/taskKind'
 import type { FilePriority, TaskDetail, TaskKind, TaskRow } from '../../lib/types'
@@ -99,7 +99,7 @@ export function FilesPane({ detail, canWrite, onSetFiles, onCyclePriority }: Pan
           <span className="ft-name" title={row.name}>
             <span className="ell">{row.name}</span>
             <span className="ft-sub mono">
-              {fmtSize(row.totalBytes)} · {pct(row.progress).toFixed(0)}%
+              {fmtSize(row.totalBytes)} · {fmtPercent(row.progress)}
             </span>
           </span>
           {done ? (

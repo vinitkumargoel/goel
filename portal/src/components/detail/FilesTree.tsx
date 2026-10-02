@@ -18,7 +18,7 @@ import {
   type TreeNode,
 } from '../../lib/fileTree'
 import { useStableCallback } from '../../hooks/useStableCallback'
-import { fmtSize, pct } from '../../lib/format'
+import { fmtPercent, fmtSize } from '../../lib/format'
 import { splitTail } from '../../lib/names'
 import { fileType } from '../../lib/taskKind'
 import type { FilePriority, FileRow, TaskDetail } from '../../lib/types'
@@ -282,7 +282,7 @@ function TriBox({
 }
 
 function doneText(fraction: number): string {
-  return `${pct(fraction).toFixed(0)}%`
+  return fmtPercent(fraction)
 }
 
 const FolderLine = memo(function FolderLine({

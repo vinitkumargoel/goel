@@ -1,3 +1,4 @@
+import { fmtClockTime, fmtWeekday } from './format'
 import type { StatusToken, TaskRow } from './types'
 
 /** Work still owed bytes: running now, or waiting its turn. Paused and failed rows are the user's call. */
@@ -39,7 +40,7 @@ export function queueEstimate(tasks: readonly TaskRow[]): QueueEstimate {
 /** "14:32", or with the weekday when it lands on a later day: "Tue 09:10". */
 export function fmtFinishAt(seconds: number, nowMs: number = Date.now()): string {
   const at = new Date(nowMs + seconds * 1000)
-  const time = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const time = fmtClockTime(at)
   if (at.toDateString() === new Date(nowMs).toDateString()) return time
-  return `${at.toLocaleDateString([], { weekday: 'short' })} ${time}`
+  return `${fmtWeekday(at)} ${time}`
 }

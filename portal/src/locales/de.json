@@ -224,7 +224,15 @@
     "saveHint": "Auf diesem Gerät sichern",
     "summary_one": "{{count}} Eintrag · {{size}}",
     "summary_other": "{{count}} Einträge · {{size}}",
-    "showMore": "{{count}} weitere von {{remaining}} anzeigen"
+    "showMore": "{{count}} weitere von {{remaining}} anzeigen",
+    "csv": {
+      "name": "Name",
+      "protocol": "Protokoll",
+      "size": "Größe (Bytes)",
+      "completed": "Abgeschlossen",
+      "savedTo": "Gespeichert in",
+      "source": "Quelle"
+    }
   },
   "detail": {
     "closePanel": "Bereich schließen",
@@ -454,7 +462,13 @@
     "hoursAgo_one": "vor {{count}} Std.",
     "hoursAgo_other": "vor {{count}} Std.",
     "daysAgo_one": "vor {{count}} Tag",
-    "daysAgo_other": "vor {{count}} Tagen"
+    "daysAgo_other": "vor {{count}} Tagen",
+    "eta": {
+      "seconds": "{{n}} s",
+      "minutes": "{{n}} Min.",
+      "hours": "{{h}} Std. {{m}} Min.",
+      "days": "{{n}} T"
+    }
   },
   "reconnect": {
     "lost": "Verbindung verloren – Daten von vor {{age}}",

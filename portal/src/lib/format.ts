@@ -1,11 +1,44 @@
 import i18n from '../i18n'
 
+/** The language the user chose (not the browser's): every number and date follows it. */
+export function locale(): string {
+  return i18n.language || 'en'
+}
+
+const numberFormats = new Map<string, Intl.NumberFormat>()
+
+/** A number with `digits` decimals in the chosen language's separators ("1.5" / "1,5"). */
+export function fmtNumber(n: number, digits = 0): string {
+  const key = `${locale()}:${digits}`
+  let f = numberFormats.get(key)
+  if (!f) {
+    f = new Intl.NumberFormat(locale(), { minimumFractionDigits: digits, maximumFractionDigits: digits })
+    numberFormats.set(key, f)
+  }
+  return f.format(n)
+}
+
+/** A 0..1 fraction as a whole percent: "42%" / "42 %" as the language writes it. */
+export function fmtPercent(fraction: number): string {
+  return new Intl.NumberFormat(locale(), { style: 'percent', maximumFractionDigits: 0 }).format(fraction)
+}
+
+/** The clock time, 24 or 12 hour as the language does it. */
+export function fmtClockTime(d: Date): string {
+  return d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })
+}
+
+/** A short weekday name in the chosen language. */
+export function fmtWeekday(d: Date): string {
+  return d.toLocaleDateString(locale(), { weekday: 'short' })
+}
+
 // Byte units and the ↓/↑ glyphs stay literal: they are symbols, not prose, and are
 // written the same way in every locale this app targets.
 export function fmtSize(bytes: number | null | undefined): string {
   if (bytes == null) return '—'
   if (bytes < 1) return '0 B'
-  if (bytes < 1024) return `${Math.round(bytes)} B`
+  if (bytes < 1024) return `${fmtNumber(Math.round(bytes))} B`
   const units = ['KB', 'MB', 'GB', 'TB']
   let n = bytes
   let i = -1
@@ -13,7 +46,7 @@ export function fmtSize(bytes: number | null | undefined): string {
     n /= 1024
     i++
   } while (n >= 1024 && i < units.length - 1)
-  return `${n.toFixed(n < 10 ? 1 : 0)} ${units[i]}`
+  return `${fmtNumber(n, n < 10 ? 1 : 0)} ${units[i]}`
 }
 
 /**
@@ -29,18 +62,18 @@ export const IDLE_RATE = '0 B/s'
 export function fmtEta(seconds: number | null | undefined): string | null {
   if (seconds == null || seconds <= 0 || !isFinite(seconds)) return null
   const s = Math.round(seconds)
-  if (s < 60) return `${s}s`
-  if (s < 3600) return `${Math.floor(s / 60)}m`
-  if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
-  return `${Math.floor(s / 86400)}d`
+  if (s < 60) return i18n.t('format.eta.seconds', { n: s })
+  if (s < 3600) return i18n.t('format.eta.minutes', { n: Math.floor(s / 60) })
+  if (s < 86400) return i18n.t('format.eta.hours', { h: Math.floor(s / 3600), m: Math.floor((s % 3600) / 60) })
+  return i18n.t('format.eta.days', { n: Math.floor(s / 86400) })
 }
 
 export function fmtWhen(unixSeconds: number): string {
   const d = new Date(unixSeconds * 1000)
   const now = new Date()
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const time = fmtClockTime(d)
   if (d.toDateString() === now.toDateString()) return i18n.t('format.today', { time })
-  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`
+  return `${d.toLocaleDateString(locale(), { month: 'short', day: 'numeric' })} ${time}`
 }
 
 /** For narrow rows: a time today, "Sep 29" this year, then with the year. `fmtAbsolute` goes in the tooltip. */
@@ -48,12 +81,12 @@ export function fmtShortWhen(unixSeconds: number, nowMs: number = Date.now()): s
   const d = new Date(unixSeconds * 1000)
   const now = new Date(nowMs)
   if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return fmtClockTime(d)
   }
   if (d.getFullYear() === now.getFullYear()) {
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    return d.toLocaleDateString(locale(), { month: 'short', day: 'numeric' })
   }
-  return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })
+  return d.toLocaleDateString(locale(), { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 export function pct(fraction: number): number {
@@ -67,12 +100,12 @@ export function fmtAgo(unixSeconds: number, nowMs: number = Date.now()): string 
   if (diff < 3600) return i18n.t('format.minutesAgo', { count: Math.floor(diff / 60) })
   if (diff < 86400) return i18n.t('format.hoursAgo', { count: Math.floor(diff / 3600) })
   if (diff < 86400 * 30) return i18n.t('format.daysAgo', { count: Math.floor(diff / 86400) })
-  return new Date(unixSeconds * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return new Date(unixSeconds * 1000).toLocaleDateString(locale(), { month: 'short', day: 'numeric' })
 }
 
 /** The full local date and time, for a tooltip behind a relative time. */
 export function fmtAbsolute(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleString([], {
+  return new Date(unixSeconds * 1000).toLocaleString(locale(), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
