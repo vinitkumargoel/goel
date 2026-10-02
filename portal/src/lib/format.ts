@@ -12,7 +12,7 @@ export function fmtNumber(n: number, digits = 0): string {
   const key = `${locale()}:${digits}`
   let f = numberFormats.get(key)
   if (!f) {
-    f = new Intl.NumberFormat(locale(), { minimumFractionDigits: digits, maximumFractionDigits: digits })
+    f = new Intl.NumberFormat(locale(), { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false })
     numberFormats.set(key, f)
   }
   return f.format(n)

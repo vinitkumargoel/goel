@@ -34,7 +34,7 @@ describe('historyParts', () => {
 
   it('shows a clock today and yesterday, a weekday this week, a date before that', () => {
     const t = at(2026, 9, 15, 9, 5)
-    const clock = new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const clock = new Date(t * 1000).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })
     expect(entryTime(t, 'today', NOW)).toBe(clock)
     expect(entryTime(t, 'yesterday', NOW)).toBe(clock)
     expect(entryTime(t, 'week', NOW)).toContain(clock)
