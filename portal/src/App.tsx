@@ -1,752 +1,286 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DetailPanel } from './components/detail/DetailPanel'
-import type { DetailTab } from './components/detail/DetailPanes'
 import { PlayerDialog } from './components/detail/PlayerDialog'
-import { QueueOverview } from './components/detail/QueueOverview'
 import { PaletteHost } from './components/dialogs/CommandPalette'
-import { ConfirmDialog, type ConfirmRequest } from './components/dialogs/ConfirmDialog'
+import { ConfirmDialog } from './components/dialogs/ConfirmDialog'
 import { ShortcutsDialog } from './components/dialogs/ShortcutsDialog'
 import { HistoryView } from './components/history/HistoryView'
-import { BulkBar } from './components/library/BulkBar'
-import { FilterChips } from './components/library/FilterChips'
-import { LibraryTools } from './components/library/LibraryTools'
-import { LibraryView } from './components/library/LibraryView'
 import { SettingsView } from './components/settings/SettingsView'
-import { isStale, ReadOnlyBanner, ReconnectBanner } from './components/shell/Banners'
-import { BandwidthPill } from './components/shell/BandwidthPill'
+import { ReadOnlyBanner, ReconnectBanner } from './components/shell/Banners'
+import { DrawerFooter } from './components/shell/DrawerFooter'
 import { connectionOf, Header } from './components/shell/Header'
-import { Omnibox } from './components/shell/Omnibox'
-import { Rail, type Filter, type View } from './components/shell/Rail'
+import { LibraryPane } from './components/shell/LibraryPane'
+import { LibrarySheet } from './components/shell/LibrarySheet'
+import { Rail } from './components/shell/Rail'
 import { StatusBar } from './components/shell/StatusBar'
 import { TabBar } from './components/shell/TabBar'
 import { Toasts } from './components/shell/Toasts'
-import { Icon } from './components/ui/Icon'
-import { Menu, type MenuState } from './components/ui/Menu'
-import { useActivitySignals } from './hooks/useActivitySignals'
-import { useAddFlow } from './hooks/useAddFlow'
-import { useAppKeys } from './hooks/useAppKeys'
-import { useBackToClose } from './hooks/useBackToClose'
-import { useBandwidth } from './hooks/useBandwidth'
-import { useBandwidthMenu } from './hooks/useBandwidthMenu'
-import { useDetail } from './hooks/useDetail'
-import { useLibraryWorkflow } from './hooks/useLibraryWorkflow'
-import { useMediaQuery } from './hooks/useMediaQuery'
-import { useMenus } from './hooks/useMenus'
-import { useNow } from './hooks/useNow'
-import { usePasteToAdd } from './hooks/usePasteToAdd'
-import { useQueueControls } from './hooks/useQueueControls'
-import { useSearchFocus } from './hooks/useSearchFocus'
-import { useStableCallback } from './hooks/useStableCallback'
-import { useTaskActions } from './hooks/useTaskActions'
-import { useTasks } from './hooks/useTasks'
-import { useThemeChoice } from './hooks/useThemeChoice'
-import { useToasts } from './hooks/useToasts'
-import { setRefusalHandler } from './lib/api'
+import { Menu } from './components/ui/Menu'
+import { useAppController, type AppController } from './hooks/useAppController'
 import { BOOT } from './lib/boot'
-import { NARROW_MAX, NARROW_QUERY, PHONE_QUERY } from './lib/breakpoints'
-import { copyText } from './lib/clipboard'
-import { countFilters, filterTasks, type Filter as LibraryFilter } from './lib/filters'
-import { groupTasks } from './lib/grouping'
-import { loadPanelAutoHide, loadRailExpanded, panelVisible, savePanelAutoHide, saveRailExpanded } from './lib/prefs'
-import { queueEstimate } from './lib/queue'
-import { allTags, byQueuePosition, hasTag } from './lib/queueControls'
-import { formatRoute, loadSort, parseRoute, saveSort } from './lib/route'
-import { EMPTY_SELECTION, selectionReducer } from './lib/selection'
-import { nextSort, sortTasks, type SortKey, type SortState } from './lib/sort'
-import type { RowAction } from './lib/taskKind'
-import type { TaskRow } from './lib/types'
 
-/** Wider than this, the detail sheet sits beside the board and starts open. */
-const PANEL_BREAKPOINT = NARROW_MAX
-
-type AppMenu = MenuState & { owner: 'row' | 'user' | 'bandwidth' }
-
-/** The card or row for a task id: the detail sheet hands focus back to it when it closes. */
-function rowElement(id: string): HTMLElement | undefined {
-  return [...document.querySelectorAll<HTMLElement>('[role="option"][data-id]')].find(
-    (el) => el.dataset.id === id,
+/**
+ * The portal's one window. State, data and behaviour live in useAppController and the hooks it
+ * wires together; the components here only lay the shell out.
+ */
+export function App() {
+  const app = useAppController()
+  return (
+    <>
+      <div className={`app${app.data.stale ? ' stale' : ''}`} inert={app.modalOpen}>
+        <AppHeader app={app} />
+        <div className="app-body">
+          <AppRail app={app} />
+          <main className="main" id="main">
+            <MainView app={app} />
+          </main>
+          {app.state.view === 'library' && <AppSheet app={app} />}
+        </div>
+        <AppFooter app={app} />
+      </div>
+      <AppOverlays app={app} />
+    </>
   )
 }
 
-export function App() {
-  const { t } = useTranslation()
-  // The address bar is the source of truth at load: a bookmark or a reload lands where it left.
-  const [initial] = useState(() => parseRoute(location.hash))
-  const [view, setView] = useState<View>(initial.view)
-  const [filter, setFilter] = useState<Filter>(initial.filter)
-  const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<SortState>(loadSort)
-  const [selection, select] = useReducer(selectionReducer, EMPTY_SELECTION, (empty) =>
-    initial.task ? selectionReducer(empty, { type: 'single', id: initial.task }) : empty,
-  )
-  const [tab, setTab] = useState<DetailTab>('overview')
-  const [panelOpen, setPanelOpen] = useState(
-    () => window.innerWidth > PANEL_BREAKPOINT || initial.task != null,
-  )
-  const [panelAutoHide, setPanelAutoHideState] = useState(loadPanelAutoHide)
-  const setPanelAutoHide = useCallback((on: boolean) => {
-    setPanelAutoHideState(on)
-    savePanelAutoHide(on)
-  }, [])
-  /** The phone's filter drawer. */
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [railExpanded, setRailExpanded] = useState(loadRailExpanded)
-  const toggleRail = useCallback(() => {
-    setRailExpanded((on) => {
-      saveRailExpanded(!on)
-      return !on
-    })
-  }, [])
-  const [menu, setMenu] = useState<AppMenu | null>(null)
-  const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null)
-  const [helpOpen, setHelpOpen] = useState(false)
-  const [theme, setTheme] = useThemeChoice()
-  const drawerButtonRef = useRef<HTMLButtonElement>(null)
-  const { searchRef, focusSearch } = useSearchFocus()
-  const phone = useMediaQuery(PHONE_QUERY)
+interface Props {
+  app: AppController
+}
 
-  const { tasks: snapshot, live, loaded, error, lastUpdate, refresh, reconnect } = useTasks()
-  const { toasts, toast, dismiss, pause, resume, act } = useToasts()
-  const warn = useCallback((message: string) => toast(message, 'warn'), [toast])
-  const bandwidth = useBandwidth()
-
-  const canWrite = !BOOT.readOnly
-
-  // Ticks only while the stream is down, for the banner's "0:14 ago".
-  const now = useNow(1000, !live)
-  const stale = isStale(live, lastUpdate, now)
-
-  const tasksRef = useRef(snapshot)
-  tasksRef.current = snapshot
-  const currentIds = useCallback(() => new Set(tasksRef.current.map((task) => task.id)), [])
-  const lookup = useCallback((id: string) => tasksRef.current.find((task) => task.id === id), [])
-
-  const { runAction, runBulk, removeTask, removeMany, pauseAll, resumeAll, hidden } = useTaskActions({
-    refresh,
-    toast,
-    confirm: setConfirmReq,
-    currentIds,
-    lookup,
-  })
-
-  // A removal with its Undo still on screen is gone from every view, though the server has it yet.
-  const tasks = useMemo(
-    () => (hidden.size === 0 ? snapshot : snapshot.filter((task) => !hidden.has(task.id))),
-    [snapshot, hidden],
-  )
-  const wf = useLibraryWorkflow(selection.ids.size)
-
-  useEffect(() => {
-    setRefusalHandler(warn)
-  }, [warn])
-
-  // Crossing the breakpoint resets the panel to that layout's default; a toggle within one layout sticks.
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return
-    const wide = window.matchMedia(`(min-width: ${PANEL_BREAKPOINT + 1}px)`)
-    const onChange = (e: MediaQueryListEvent) => setPanelOpen(e.matches)
-    wide.addEventListener('change', onChange)
-    return () => wide.removeEventListener('change', onChange)
-  }, [])
-
-  useEffect(() => saveSort(sort), [sort])
-
-  const counts = useMemo(() => countFilters(tasks), [tasks])
-
-  // A sidebar tag narrows the list on its own; picking any status or type filter clears it.
-  const [tag, setTag] = useState<string | null>(null)
-  const tagCounts = useMemo(() => allTags(tasks), [tasks])
-  // History reloads when this changes: a download finished, or a finished one left the list.
-  const finishedKey = useMemo(
-    () =>
-      tasks
-        .filter((task) => task.statusToken === 'completed' || task.statusToken === 'seeding')
-        .map((task) => task.id)
-        .join(),
-    [tasks],
-  )
-  const visible = useMemo(() => {
-    const shown = filterTasks(tasks, filter, search).filter((task) => tag == null || hasTag(task, tag))
-    // Queued, unsorted: the order the queue will run them in, so Move to top/bottom is visible.
-    if (filter === 'queued' && sort.key === null) return byQueuePosition(shown)
-    return sortTasks(shown, sort)
-  }, [tasks, filter, search, sort, tag])
-
-  // Grouped, the list reads section by section: keyboard order has to follow the same order.
-  const groups = useMemo(
-    () => (wf.group === 'none' ? null : groupTasks(visible, wf.group)),
-    [visible, wf.group],
-  )
-  const ordered = useMemo(() => (groups ? groups.flatMap((g) => g.tasks) : visible), [groups, visible])
-
-  // Bulk actions apply to what the user can see: a row hidden by a filter is never acted on unseen.
-  const selectedVisible = useMemo(
-    () => visible.filter((task) => selection.ids.has(task.id)),
-    [visible, selection.ids],
-  )
-
-  // The detail panel follows the lead row, only while it is still selected and not filtered out.
-  const lead = selection.lead
-  const detailId =
-    lead != null && selection.ids.has(lead) && visible.some((task) => task.id === lead) ? lead : null
-
-  // Auto-hide only takes the panel away while nothing is selected; the toggle still closes it.
-  const panelShown = panelVisible(panelOpen, panelAutoHide, detailId != null)
-
-  const { detail, reload, setFilePriorities, cyclePriority } = useDetail(
-    detailId,
-    tasks,
-    view === 'library' && panelShown,
-    warn,
-  )
-
-  // A snapshot without a selected row means it was removed elsewhere; drop it from the selection.
-  useEffect(() => {
-    if (loaded) select({ type: 'prune', existing: tasks.map((t) => t.id) })
-  }, [tasks, loaded])
-
-  const estimate = useMemo(() => queueEstimate(tasks), [tasks])
-
-  const totals = useMemo(
-    () =>
-      tasks.reduce(
-        (acc, t) => ({ down: acc.down + (t.downSpeed || 0), up: acc.up + (t.upSpeed || 0) }),
-        { down: 0, up: 0 },
-      ),
-    [tasks],
-  )
-
-  const copy = useCallback(
-    (text: string) => {
-      void copyText(text).then((ok) =>
-        ok ? toast(t('toast.copied'), 'copy') : toast(t('toast.copyFailed'), 'warn'),
-      )
-    },
-    [toast, t],
-  )
-
-  const openMenu = useCallback((m: MenuState) => setMenu({ ...m, owner: 'row' }), [])
-
-  const queue = useQueueControls({ tasks, toast, refresh, reload })
-  const [playing, setPlaying] = useState<string | null>(null)
-  const openPlayer = useCallback((task: TaskRow) => setPlaying(task.id), [])
-  const playingTask = playing == null ? undefined : tasks.find((task) => task.id === playing)
-
-  const { openRowMenu, removeEntries, userMenu } = useMenus({
-    tasks,
-    selectedIds: selection.ids,
-    selectedVisible,
-    canWrite,
-    select,
-    openMenu,
-    copy,
-    toast,
-    runAction,
-    runBulk,
-    removeTask,
-    removeMany,
-    queue: queue.controls,
-    onStream: openPlayer,
-  })
-
-  const openUserMenu = useCallback(
-    (anchor: DOMRect) =>
-      setMenu({
-        ...userMenu(
-          anchor,
-          () => setView('settings'),
-          () => setHelpOpen(true),
-        ),
-        owner: 'user',
-      }),
-    [userMenu],
-  )
-
-  const openBandwidthMenu = useBandwidthMenu(
-    bandwidth,
-    useCallback((m: MenuState) => setMenu({ ...m, owner: 'bandwidth' }), []),
-    toast,
-    canWrite ? queue.controls.edit : undefined,
-  )
-
-  // Settings reports unsaved server edits; leaving would drop them, so ask first.
-  const [settingsDirty, setSettingsDirty] = useState(false)
-  const settingsDirtyRef = useRef(false)
-  settingsDirtyRef.current = settingsDirty
-  const selectView = useCallback(
-    (next: View) => {
-      const go = () => {
-        setView(next)
-        setSidebarOpen(false)
-      }
-      if (next === 'settings' || !settingsDirtyRef.current) return go()
-      setConfirmReq({
-        title: t('settings.leave.title'),
-        body: t('settings.leave.body'),
-        confirmLabel: t('settings.leave.confirm'),
-        onConfirm: go,
-      })
-    },
-    [t],
-  )
-
-  useEffect(() => {
-    if (!settingsDirty) return
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [settingsDirty])
-
-  // Stable, like every handler handed to LibraryView: a fresh identity would re-render each memoised row.
-  const openDetail = useStableCallback((id: string) => {
-    select({ type: 'single', id })
-    if (!panelOpen) setPanelOpen(true)
-  })
-
-  useActivitySignals({
-    tasks,
-    loaded,
-    toast,
-    onShow: useCallback(
-      (id: string) => {
-        selectView('library')
-        openDetail(id)
-      },
-      [selectView, openDetail],
-    ),
-  })
-
-  /** Just added (or "Show" on the added toast): unfiltered, those rows selected, scrolled to, pulsed. */
-  const revealAdded = useStableCallback((ids: string[]) => {
-    goToFilter('all')
-    setSearch('')
-    select({ type: 'set', ids })
-    wf.revealRows(ids)
-  })
-
-  const { addOpen, openAdd, openAddWith, quickAdd, closeAdd, readd, dialog } = useAddFlow({
-    canWrite,
-    toast,
-    refresh,
-    onReveal: revealAdded,
-    onQueued: useCallback(
-      (resetFilter: boolean) => {
-        if (resetFilter) setFilter('all')
-        selectView('library')
-      },
-      [selectView],
-    ),
-  })
-
-  // While a dialog is up, everything behind it is inert: Tab, a screen reader's virtual cursor and
-  // a stray click can't reach it, even when focus has fallen back to <body>.
-  const modalOpen = addOpen || confirmReq != null || helpOpen || wf.paletteOpen || queue.editing || playing != null
-
-  useAppKeys({
-    // An open menu owns the keyboard like a modal does: N or Delete must not act behind it.
-    enabled: !modalOpen && menu == null,
-    onEscape: () => {
-      setMenu(null)
-      wf.setSelecting(false)
-      closeAdd()
-      setSidebarOpen(false)
-      setHelpOpen(false)
-    },
-    view,
-    visible: ordered,
-    lead: selection.lead,
-    selectedVisible,
-    canWrite,
-    select,
-    openDetail,
-    runBulk,
-    removeMany,
-    openAdd,
-    focusSearch: () => {
-      if (view === 'settings' && settingsDirtyRef.current) return selectView('library')
-      setView('library')
-      focusSearch()
-    },
-    openHelp: () => setHelpOpen(true),
-    rowElement,
-    goToFilter: (f) => goToFilter(f),
-    goToView: (v) => selectView(v),
-    copy,
-    openPalette: wf.openPalette,
-  })
-
-  // A link pasted with nothing focused opens Add with it.
-  usePasteToAdd(canWrite && !modalOpen && menu == null, (text) => openAddWith(text, true))
-
-  /** The palette's download results: shown even when the current filter or search hides them. */
-  const showTask = useStableCallback((id: string) => {
-    if (!visible.some((task) => task.id === id)) {
-      goToFilter('all')
-      setSearch('')
-    } else selectView('library')
-    openDetail(id)
-    wf.revealRows([id])
-  })
-
-  const onRowAction = useCallback((id: string, a: RowAction) => void runAction(id, a), [runAction])
-
-  const onSort = useCallback((key: SortKey) => setSort((s) => nextSort(s, key)), [])
-
-  /** The status bar's and the overview's figures jump to that sidebar filter. */
-  const goToFilter = useCallback(
-    (f: LibraryFilter) => {
-      setFilter(f)
-      setTag(null)
-      selectView('library')
-    },
-    [selectView],
-  )
-
-  const goToTag = useCallback(
-    (next: string) => {
-      setFilter('all')
-      setTag(next)
-      selectView('library')
-    },
-    [selectView],
-  )
-
-  // With auto-hide hiding it, the toggle means "show me the overview": that takes auto-hide off.
-  const togglePanel = useCallback(() => {
-    if (!panelShown && panelOpen && panelAutoHide) return setPanelAutoHide(false)
-    setPanelOpen((p) => !p)
-  }, [panelShown, panelOpen, panelAutoHide, setPanelAutoHide])
-
-  const clearSearch = useCallback(() => {
-    setSearch('')
-    setFilter('all')
-  }, [])
-
-  /** Closing from inside the panel would strand focus in an inert region: hand it back to the row. */
-  const closePanel = useCallback(() => {
-    setPanelOpen(false)
-    if (detailId != null) rowElement(detailId)?.focus()
-  }, [detailId])
-
-  // Mirrored with replaceState: switching views is not a step Back should retrace.
-  const selectedLead = lead != null && selection.ids.has(lead) ? lead : null
-  useEffect(() => {
-    const hash = formatRoute({ view, filter, task: view === 'library' ? selectedLead : null })
-    if (location.hash !== hash) history.replaceState(history.state, '', hash)
-  }, [view, filter, selectedLead])
-
-  // A hand-edited address (or a pasted link) re-routes without a reload.
-  useEffect(() => {
-    const onHash = () => {
-      const r = parseRoute(location.hash)
-      setView(r.view)
-      setFilter(r.filter)
-      if (r.task) {
-        select({ type: 'single', id: r.task })
-        setPanelOpen(true)
-      }
-    }
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
-  }, [])
-
-  // Back closes whatever layer is on top rather than leaving the portal.
-  const narrow = useMediaQuery(NARROW_QUERY)
-  useBackToClose(view === 'library' && panelShown && narrow, closePanel)
-  useBackToClose(sidebarOpen, () => setSidebarOpen(false))
-  useBackToClose(addOpen, closeAdd)
-  useBackToClose(helpOpen, () => setHelpOpen(false))
-  useBackToClose(wf.paletteOpen, wf.closePalette)
-  useBackToClose(confirmReq != null, () => setConfirmReq(null))
-
-  const typeMenu = useCallback((m: MenuState) => setMenu({ ...m, owner: 'row' }), [])
-
-  // On a phone the status bar's controls move into the filter drawer.
-  const drawerFooter =
-    phone && (!BOOT.readOnly || bandwidth.state) ? (
-      <>
-        {!BOOT.readOnly && (
-          <>
-            <button type="button" className="btn sm" onClick={pauseAll}>
-              <Icon name="pause" />
-              {t('statusbar.pauseAll')}
-            </button>
-            <button type="button" className="btn sm" onClick={resumeAll}>
-              <Icon name="play" />
-              {t('statusbar.resumeAll')}
-            </button>
-          </>
-        )}
-        {bandwidth.status !== 'unsupported' && bandwidth.state && (
-          <BandwidthPill
-            state={bandwidth.state}
-            canWrite={canWrite}
-            menuOpen={menu?.owner === 'bandwidth'}
-            onOpen={openBandwidthMenu}
-          />
-        )}
-      </>
-    ) : null
-
+function AppHeader({ app }: Props) {
+  const { data, model, nav, menus, state } = app
   return (
     <>
-      <div className={`app${stale ? ' stale' : ''}`} inert={modalOpen}>
-        <Header
-          connection={connectionOf(live, loaded)}
-          downSpeed={totals.down}
-          upSpeed={totals.up}
-          showPanelToggle={view === 'library' && !phone}
-          panelOpen={panelShown}
-          onTogglePanel={togglePanel}
-          onUserMenu={openUserMenu}
-          userMenuOpen={menu?.owner === 'user'}
-        />
+      <Header
+        connection={connectionOf(data.live, data.loaded)}
+        downSpeed={model.totals.down}
+        upSpeed={model.totals.up}
+        showPanelToggle={state.view === 'library' && !app.phone}
+        panelOpen={model.panelShown}
+        onTogglePanel={nav.togglePanel}
+        onUserMenu={menus.openUserMenu}
+        userMenuOpen={state.menu?.owner === 'user'}
+      />
 
-        <div className="banners">
-          <ReconnectBanner stale={stale} lastUpdate={lastUpdate} now={now} onRetry={reconnect} />
-          {BOOT.readOnly && <ReadOnlyBanner />}
-        </div>
-
-        <div className="app-body">
-          <Rail
-            variant={phone ? 'drawer' : 'rail'}
-            view={view}
-            filter={filter}
-            counts={counts}
-            tags={tagCounts}
-            activeTag={tag}
-            canWrite={canWrite}
-            onSelectFilter={goToFilter}
-            onSelectView={selectView}
-            onSelectTag={goToTag}
-            onAdd={openAdd}
-            // Labels need room: at tablet width the rail stays slim whatever was pinned.
-            expanded={railExpanded && !narrow}
-            onToggleExpanded={toggleRail}
-            open={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-            returnFocusTo={drawerButtonRef}
-            footer={drawerFooter}
-          />
-
-          <main className="main" id="main">
-            {view === 'library' && (
-              <>
-                <Omnibox
-                  value={search}
-                  onChange={setSearch}
-                  inputRef={searchRef}
-                  canWrite={canWrite}
-                  onAdd={openAdd}
-                  onAddLinks={(text, pasted) => openAddWith(text, pasted)}
-                  onQuickAdd={(text) => void quickAdd(text)}
-                  onPalette={wf.openPalette}
-                />
-                <LibraryView
-                  tasks={ordered}
-                  groups={groups}
-                  group={wf.group}
-                  density={wf.density}
-                  layout={wf.layout}
-                  selecting={wf.selecting}
-                  onSelecting={wf.setSelecting}
-                  reveal={wf.reveal}
-                  chips={
-                    <FilterChips
-                      filter={filter}
-                      counts={counts}
-                      onFilter={goToFilter}
-                      tags={tagCounts}
-                      activeTag={tag}
-                      onTag={goToTag}
-                      openMenu={typeMenu}
-                    />
-                  }
-                  tools={
-                    <LibraryTools
-                      count={ordered.length}
-                      group={wf.group}
-                      onGroup={wf.setGroup}
-                      density={wf.density}
-                      onDensity={wf.setDensity}
-                      layout={wf.layout}
-                      onLayout={wf.setLayout}
-                      sort={sort}
-                      onSort={onSort}
-                    />
-                  }
-                  selectBar={
-                    <BulkBar
-                      className="pbulk"
-                      selected={selectedVisible}
-                      canWrite={canWrite}
-                      onAction={(action, ids) => void runBulk(action, ids)}
-                      onCopyLinks={(sources) => copy(sources.join('\n'))}
-                      onRemove={removeMany}
-                      onClear={() => select({ type: 'clear' })}
-                      onDone={() => {
-                        wf.setSelecting(false)
-                        select({ type: 'clear' })
-                      }}
-                    />
-                  }
-                  total={tasks.length}
-                  loaded={loaded}
-                  error={error}
-                  search={search}
-                  filtered={filter !== 'all' || tag != null}
-                  selectedIds={selection.ids}
-                  lead={selection.lead}
-                  sort={sort}
-                  canWrite={canWrite}
-                  readOnly={BOOT.readOnly}
-                  onSelection={select}
-                  onOpen={openDetail}
-                  onSort={onSort}
-                  onAction={onRowAction}
-                  onMenu={openRowMenu}
-                  onClearSearch={clearSearch}
-                  onAdd={openAdd}
-                  onRetry={refresh}
-                  onStream={openPlayer}
-                  bulk={
-                    selectedVisible.length >= 2 ? (
-                      <BulkBar
-                        selected={selectedVisible}
-                        canWrite={canWrite}
-                        onAction={(action, ids) => void runBulk(action, ids)}
-                        onCopyLinks={(sources) => copy(sources.join('\n'))}
-                        onRemove={removeMany}
-                        onClear={() => select({ type: 'clear' })}
-                      />
-                    ) : undefined
-                  }
-                />
-              </>
-            )}
-            {view === 'history' && (
-              <HistoryView
-                canWrite={canWrite}
-                onReadd={readd}
-                onRemoved={() => toast(t('toast.entryRemoved'), 'trash')}
-                onWarn={warn}
-                onToast={toast}
-                refreshKey={finishedKey}
-              />
-            )}
-            {view === 'settings' && (
-              <SettingsView
-                theme={theme}
-                onTheme={setTheme}
-                canWrite={canWrite}
-                onToast={toast}
-                bandwidth={bandwidth}
-                onDirtyChange={setSettingsDirty}
-                panelAutoHide={panelAutoHide}
-                onPanelAutoHide={setPanelAutoHide}
-              />
-            )}
-          </main>
-
-          {view === 'library' && (
-            <DetailPanel
-              detail={detail}
-              open={panelShown}
-              tab={tab}
-              canWrite={canWrite}
-              onTab={setTab}
-              onClose={closePanel}
-              onAction={onRowAction}
-              onRemove={(id, at) => openMenu({ x: at.x, y: at.y, above: true, entries: removeEntries(id) })}
-              onMore={(id, at) => openRowMenu(id, at.x, at.y, true)}
-              onCopy={copy}
-              onSetFiles={setFilePriorities}
-              onCyclePriority={cyclePriority}
-              queue={canWrite ? queue.controls : undefined}
-              onStream={openPlayer}
-              trapFocus={!modalOpen}
-              overview={
-                // Until the first snapshot the sheet shows its loading state, not a queue of zeros.
-                detailId == null && (loaded || error) ? (
-                  <QueueOverview
-                    tasks={tasks}
-                    counts={counts}
-                    down={totals.down}
-                    up={totals.up}
-                    bandwidth={bandwidth.status === 'unsupported' ? null : bandwidth.state}
-                    autoHide={panelAutoHide}
-                    onAutoHide={setPanelAutoHide}
-                    onFilter={goToFilter}
-                  />
-                ) : undefined
-              }
-            />
-          )}
-        </div>
-
-        {!phone && (
-          <StatusBar
-            queue={counts}
-            downSpeed={totals.down}
-            upSpeed={totals.up}
-            estimate={estimate}
-            readOnly={BOOT.readOnly}
-            onFilter={goToFilter}
-            onPauseAll={pauseAll}
-            onResumeAll={resumeAll}
-            bandwidth={bandwidth.status === 'unsupported' ? null : bandwidth.state}
-            bandwidthMenuOpen={menu?.owner === 'bandwidth'}
-            onBandwidthMenu={openBandwidthMenu}
-          />
-        )}
-        {phone && (
-          <TabBar
-            view={view}
-            canWrite={canWrite}
-            drawerOpen={sidebarOpen}
-            onView={selectView}
-            onAdd={openAdd}
-            onDrawer={() => setSidebarOpen((open) => !open)}
-            drawerButtonRef={drawerButtonRef}
-          />
-        )}
+      <div className="banners">
+        <ReconnectBanner stale={data.stale} lastUpdate={data.lastUpdate} now={data.now} onRetry={data.reconnect} />
+        {BOOT.readOnly && <ReadOnlyBanner />}
       </div>
+    </>
+  )
+}
 
-      {dialog}
+function AppRail({ app }: Props) {
+  const { state, model, nav, data, menus, canWrite } = app
+  const { bandwidth, actions } = data
+  // On a phone the status bar's controls move into the filter drawer.
+  const drawerFooter =
+    app.phone && (!BOOT.readOnly || bandwidth.state) ? (
+      <DrawerFooter
+        readOnly={BOOT.readOnly}
+        canWrite={canWrite}
+        bandwidth={bandwidth}
+        bandwidthMenuOpen={state.menu?.owner === 'bandwidth'}
+        onBandwidthMenu={menus.openBandwidthMenu}
+        onPauseAll={actions.pauseAll}
+        onResumeAll={actions.resumeAll}
+      />
+    ) : null
+  return (
+    <Rail
+      variant={app.phone ? 'drawer' : 'rail'}
+      view={state.view}
+      filter={state.filter}
+      counts={model.counts}
+      tags={model.tagCounts}
+      activeTag={state.tag}
+      canWrite={canWrite}
+      onSelectFilter={nav.goToFilter}
+      onSelectView={nav.selectView}
+      onSelectTag={nav.goToTag}
+      onAdd={app.add.openAdd}
+      // Labels need room: at tablet width the rail stays slim whatever was pinned.
+      expanded={state.railExpanded && !app.narrow}
+      onToggleExpanded={state.toggleRail}
+      open={state.sidebarOpen}
+      onClose={() => state.setSidebarOpen(false)}
+      returnFocusTo={app.drawerButtonRef}
+      footer={drawerFooter}
+    />
+  )
+}
 
-      {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
+function MainView({ app }: Props) {
+  const { t } = useTranslation()
+  const { state, data, model, nav, menus, add, canWrite } = app
+  const { toast, actions } = data
+  if (state.view === 'history') {
+    return (
+      <HistoryView
+        canWrite={canWrite}
+        onReadd={add.readd}
+        onRemoved={() => toast(t('toast.entryRemoved'), 'trash')}
+        onWarn={data.warn}
+        onToast={toast}
+        refreshKey={model.finishedKey}
+      />
+    )
+  }
+  if (state.view === 'settings') {
+    return (
+      <SettingsView
+        theme={app.theme}
+        onTheme={app.setTheme}
+        canWrite={canWrite}
+        onToast={toast}
+        bandwidth={data.bandwidth}
+        onDirtyChange={app.settings.setSettingsDirty}
+        panelAutoHide={state.panelAutoHide}
+        onPanelAutoHide={state.setPanelAutoHide}
+      />
+    )
+  }
+  return (
+    <LibraryPane
+      state={state}
+      model={model}
+      wf={app.wf}
+      tasks={data.tasks}
+      loaded={data.loaded}
+      error={data.error}
+      canWrite={canWrite}
+      readOnly={BOOT.readOnly}
+      searchRef={app.searchRef}
+      openAdd={add.openAdd}
+      openAddWith={add.openAddWith}
+      quickAdd={add.quickAdd}
+      goToFilter={nav.goToFilter}
+      goToTag={nav.goToTag}
+      openMenu={menus.openMenu}
+      openDetail={nav.openDetail}
+      onSort={nav.onSort}
+      onRowAction={app.onRowAction}
+      openRowMenu={menus.openRowMenu}
+      clearSearch={nav.clearSearch}
+      refresh={data.refresh}
+      openPlayer={app.openPlayer}
+      runBulk={actions.runBulk}
+      removeMany={actions.removeMany}
+      copy={data.copy}
+    />
+  )
+}
+
+function AppSheet({ app }: Props) {
+  const { state, data, model, nav, menus, detail, canWrite } = app
+  return (
+    <LibrarySheet
+      model={model}
+      tasks={data.tasks}
+      loaded={data.loaded}
+      error={data.error}
+      bandwidth={data.bandwidth}
+      autoHide={state.panelAutoHide}
+      onAutoHide={state.setPanelAutoHide}
+      onFilter={nav.goToFilter}
+      detail={detail.detail}
+      tab={state.tab}
+      canWrite={canWrite}
+      onTab={state.setTab}
+      onClose={nav.closePanel}
+      onAction={app.onRowAction}
+      onRemove={(id, at) => menus.openMenu({ x: at.x, y: at.y, above: true, entries: menus.removeEntries(id) })}
+      onMore={(id, at) => menus.openRowMenu(id, at.x, at.y, true)}
+      onCopy={data.copy}
+      onSetFiles={detail.setFilePriorities}
+      onCyclePriority={detail.cyclePriority}
+      queue={canWrite ? app.queue.controls : undefined}
+      onStream={app.openPlayer}
+      trapFocus={!app.modalOpen}
+    />
+  )
+}
+
+function AppFooter({ app }: Props) {
+  const { state, data, model, nav, menus, canWrite } = app
+  const { bandwidth, actions } = data
+  if (app.phone) {
+    return (
+      <TabBar
+        view={state.view}
+        canWrite={canWrite}
+        drawerOpen={state.sidebarOpen}
+        onView={nav.selectView}
+        onAdd={app.add.openAdd}
+        onDrawer={() => state.setSidebarOpen((open) => !open)}
+        drawerButtonRef={app.drawerButtonRef}
+      />
+    )
+  }
+  return (
+    <StatusBar
+      queue={model.counts}
+      downSpeed={model.totals.down}
+      upSpeed={model.totals.up}
+      estimate={model.estimate}
+      readOnly={BOOT.readOnly}
+      onFilter={nav.goToFilter}
+      onPauseAll={actions.pauseAll}
+      onResumeAll={actions.resumeAll}
+      bandwidth={bandwidth.status === 'unsupported' ? null : bandwidth.state}
+      bandwidthMenuOpen={state.menu?.owner === 'bandwidth'}
+      onBandwidthMenu={menus.openBandwidthMenu}
+    />
+  )
+}
+
+/** Dialogs, the menu and toasts: outside the inert window so they stay reachable. */
+function AppOverlays({ app }: Props) {
+  const { state, data, wf, nav, add, canWrite } = app
+  const { tasks, actions, toasts } = data
+  return (
+    <>
+      {add.dialog}
+
+      {state.helpOpen && <ShortcutsDialog onClose={() => state.setHelpOpen(false)} />}
       {wf.paletteOpen && (
         <PaletteHost
           onClose={wf.closePalette}
           tasks={tasks}
           canWrite={canWrite}
-          openAdd={openAdd}
-          showTask={showTask}
-          goToFilter={goToFilter}
-          goToView={selectView}
-          togglePanel={togglePanel}
-          openHelp={() => setHelpOpen(true)}
-          pauseAll={pauseAll}
-          resumeAll={resumeAll}
+          openAdd={add.openAdd}
+          showTask={nav.showTask}
+          goToFilter={nav.goToFilter}
+          goToView={nav.selectView}
+          togglePanel={nav.togglePanel}
+          openHelp={() => state.setHelpOpen(true)}
+          pauseAll={actions.pauseAll}
+          resumeAll={actions.resumeAll}
           retryFailed={() =>
-            void runBulk(
+            void actions.runBulk(
               'retry',
               tasks.filter((task) => task.statusToken === 'failed').map((task) => task.id),
             )
           }
-          setTheme={setTheme}
+          setTheme={app.setTheme}
           setGroup={wf.setGroup}
           setDensity={wf.setDensity}
           setLayout={wf.setLayout}
         />
       )}
-      {queue.dialog}
-      {playingTask && <PlayerDialog task={playingTask} onClose={() => setPlaying(null)} onCopy={copy} />}
+      {app.queue.dialog}
+      {app.playingTask && (
+        <PlayerDialog task={app.playingTask} onClose={() => state.setPlaying(null)} onCopy={data.copy} />
+      )}
 
-      <ConfirmDialog request={confirmReq} onClose={() => setConfirmReq(null)} />
-      <Menu menu={menu} onClose={() => setMenu(null)} />
-      <Toasts toasts={toasts} onDismiss={dismiss} onPause={pause} onResume={resume} onAction={act} />
+      <ConfirmDialog request={state.confirmReq} onClose={() => state.setConfirmReq(null)} />
+      <Menu menu={state.menu} onClose={() => state.setMenu(null)} />
+      <Toasts
+        toasts={toasts.toasts}
+        onDismiss={toasts.dismiss}
+        onPause={toasts.pause}
+        onResume={toasts.resume}
+        onAction={toasts.act}
+      />
     </>
   )
 }
