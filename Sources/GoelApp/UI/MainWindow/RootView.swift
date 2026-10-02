@@ -145,6 +145,16 @@ struct RootView: View {
                 flyout = nil
                 isCommandPalettePresented.toggle()
             }
+            .onReceive(NotificationCenter.default.publisher(for: OnboardingState.showAgainNotification)) { _ in
+                guard preview == nil else { return }
+                // After the palette (which may have run this command) has finished dismissing.
+                let wasPalette = isCommandPalettePresented
+                isCommandPalettePresented = false
+                Task { @MainActor in
+                    if wasPalette { try? await Task.sleep(for: .milliseconds(350)) }
+                    isOnboardingPresented = true
+                }
+            }
             // A crash or force-quit mid-preview leaves SFTP Quick Look copies in $TMPDIR.
             .task(priority: .background) {
                 guard preview == nil else { return }

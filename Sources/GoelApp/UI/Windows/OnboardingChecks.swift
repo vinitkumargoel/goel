@@ -111,6 +111,8 @@ struct OnboardingBrowserPane: View {
 struct OnboardingReadyPane: View {
     @EnvironmentObject private var vm: AppViewModel
     @State private var notifications: NotificationService.Permission?
+    /// Bumped by Re-check so the tool rows look again after an install in Terminal.
+    @State private var recheck = 0
     private let probesNotifications: Bool
 
     /// `knownPermission` skips asking the system (previews and snapshots).
@@ -119,9 +121,10 @@ struct OnboardingReadyPane: View {
         probesNotifications = knownPermission == nil
     }
 
-    private var ytDlpFound: Bool { YtDlpResolver.isAvailable }
+    private var ytDlpFound: Bool { _ = recheck; return YtDlpResolver.isAvailable }
 
     private var ffmpegFound: Bool {
+        _ = recheck
         if case .found = FFmpegService.resolve(override: vm.settings.ffmpegPath) { return true }
         return false
     }
@@ -133,10 +136,12 @@ struct OnboardingReadyPane: View {
             check(ok: ytDlpFound, symbol: "film", title: L10n.t("yt-dlp"),
                   detail: ytDlpFound ? L10n.t("Found — video pages can be downloaded.")
                                      : L10n.t("Not found — install it (brew install "
-                                         + "yt-dlp) to save videos from web pages."))
+                                         + "yt-dlp) to save videos from web pages."),
+                  installCommand: "brew install yt-dlp")
             check(ok: ffmpegFound, symbol: "arrow.left.arrow.right", title: L10n.t("ffmpeg"),
                   detail: ffmpegFound ? L10n.t("Ready — used to merge and convert media.")
-                                      : L10n.t("Missing — merging video and audio won’t work."))
+                                      : L10n.t("Missing — merging video and audio won’t work."),
+                  installCommand: "brew install ffmpeg")
             OnboardingItem(title: L10n.t("Menu-bar icon"),
                            detail: L10n.t("Speeds and quick controls from the menu bar."),
                            leading: { WindowsGlyphTile(symbol: "menubar.rectangle") }) {
@@ -150,12 +155,34 @@ struct OnboardingReadyPane: View {
             guard probesNotifications else { return }
             notifications = await NotificationService.permission()
         }
+        // The macOS prompt (or System Settings) takes the app out of focus; whatever was answered
+        // there is read again when the user comes back, however long that took.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard probesNotifications else { return }
+            recheck += 1
+            Task { notifications = await NotificationService.permission() }
+        }
     }
 
-    private func check(ok: Bool, symbol: String, title: String, detail: String) -> some View {
+    /// `installCommand` is the Homebrew line: it matches where `YtDlpResolver` and `FFmpegService`
+    /// look (`/opt/homebrew/bin`, `/usr/local/bin`), so a fresh install is found by Re-check.
+    private func check(ok: Bool, symbol: String, title: String, detail: String,
+                       installCommand: String) -> some View {
         OnboardingItem(title: title, detail: detail, detailTone: ok ? .neutral : .warn,
                        leading: { WindowsGlyphTile(symbol: symbol, tone: ok ? .accent : .warn) }) {
-            StudioPill(ok ? L10n.t("Ready") : L10n.t("Missing"), tone: ok ? .good : .warn)
+            if ok {
+                StudioPill(L10n.t("Ready"), tone: .good)
+            } else {
+                HStack(spacing: Studio.Space.xs) {
+                    Button(L10n.t("Copy Install Command")) {
+                        vm.copyToPasteboard(installCommand)
+                    }
+                    .buttonStyle(.studio(.secondary, size: .small))
+                    .accessibilityLabel(L10n.t("Copy the install command for %@", title))
+                    Button(L10n.t("Re-check")) { recheck += 1 }
+                        .buttonStyle(.studio(.ghost, size: .small))
+                }
+            }
         }
     }
 
@@ -173,13 +200,7 @@ struct OnboardingReadyPane: View {
             case .allowed:
                 StudioPill(L10n.t("On"), tone: .good)
             case .notAsked:
-                Button(L10n.t("Allow")) {
-                    NotificationService.requestAuthorization()
-                    Task {
-                        try? await Task.sleep(for: .seconds(1))
-                        notifications = await NotificationService.permission()
-                    }
-                }
+                Button(L10n.t("Allow")) { NotificationService.requestAuthorization() }
                 .buttonStyle(.studio(.primary, size: .small))
             case .denied:
                 Button(L10n.t("Open Settings")) { NotificationService.openSystemSettings() }

@@ -239,6 +239,10 @@ struct GoelCommands: Commands {
             Button(L10n.t("About Goel°")) { showAboutPanel() }
             Button(L10n.t("Check for Updates…")) { viewModel.checkForUpdates() }
         }
+        // Help only: "Show Setup Again…" reopens the first-run flow in the main window.
+        CommandGroup(after: .help) {
+            Button(L10n.t("Show Setup Again…")) { OnboardingState.requestShowAgain() }
+        }
         CommandGroup(replacing: .newItem) {
             Button(L10n.t("Add Download…")) { viewModel.isAddSheetPresented = true }
                 .keyboardShortcut("n", modifiers: .command)
@@ -248,17 +252,17 @@ struct GoelCommands: Commands {
             Divider()
             Button(L10n.t("Paste URLs from Clipboard")) {
                 guard !TextEditingFocus.forward(#selector(NSTextView.pasteAsPlainText(_:))) else { return }
-                pasteFromClipboard()
+                MenuActions.pasteFromClipboard(viewModel)
             }
                 .keyboardShortcut("v", modifiers: [.command, .shift])
-            Button(L10n.t("Paste URLs from File…")) { pasteFromFile() }
+            Button(L10n.t("Paste URLs from File…")) { MenuActions.pasteFromFile(viewModel) }
             Divider()
-            Button(L10n.t("Export Download List…")) { exportList() }
-            Button(L10n.t("Import Download List…")) { importList() }
-            Button(L10n.t("Import from Other App…")) { importForeign() }
+            Button(L10n.t("Export Download List…")) { MenuActions.exportList(viewModel) }
+            Button(L10n.t("Import Download List…")) { MenuActions.importList(viewModel) }
+            Button(L10n.t("Import from Other App…")) { MenuActions.importForeign(viewModel) }
             Divider()
-            Button(L10n.t("Export Backup (JSON)…")) { exportBackup() }
-            Button(L10n.t("Import Backup (JSON)…")) { importBackup() }
+            Button(L10n.t("Export Backup (JSON)…")) { MenuActions.exportBackup(viewModel) }
+            Button(L10n.t("Import Backup (JSON)…")) { MenuActions.importBackup(viewModel) }
         }
         // Sits with the standard Select All (⌘A), which the app delegate answers for the queue.
         CommandGroup(after: .pasteboard) {
@@ -390,74 +394,8 @@ struct GoelCommands: Commands {
         )
     }
 
-    private func exportBackup() {
-        guard let url = FilePicker.save(name: "GoelDownloader-backup.json", type: .json) else { return }
-        viewModel.exportBackup(to: url)
-    }
-
-    private func importBackup() {
-        guard let url = FilePicker.openFile(types: [.json]) else { return }
-        viewModel.importBackup(from: url)
-    }
-
-    /// Through the Add sheet: several links get the review step, one gets its preview.
-    private func pasteFromClipboard() {
-        guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else { return }
-        viewModel.addFromClipboard()
-    }
-
-    private func pasteFromFile() {
-        guard let contents = readTextFile() else { return }
-        viewModel.add(rawLines: contents, saveDirectory: nil, priority: .normal)
-    }
-
-    private func exportList() {
-        guard let url = FilePicker.save(name: "GoelDownloader-list.txt", type: .plainText) else { return }
-        let body = viewModel.tasks.map(\.source.locator).joined(separator: "\n")
-        do {
-            try body.write(to: url, atomically: true, encoding: .utf8)
-            viewModel.toastSuccess(L10n.t("Download list exported"))
-        } catch {
-            viewModel.toastError(L10n.t("Export failed"))
-        }
-    }
-
-    private func importList() {
-        guard let contents = readTextFile() else { return }
-        viewModel.add(rawLines: contents, saveDirectory: nil, priority: .normal)
-    }
-
-    private func importForeign() {
-        guard let url = FilePicker.openFile(
-            message: L10n.t("Choose a file exported by aria2, JDownloader, IDM, a browser, etc.")
-        ) else { return }
-        guard let data = try? Data(contentsOf: url) else {
-            viewModel.toastError(L10n.t("Couldn’t read that file"))
-            return
-        }
-        let text = String(decoding: data, as: UTF8.self)
-        let locators = ForeignImportParser.extractLocators(from: text)
-        guard !locators.isEmpty else {
-            viewModel.toastWarning(L10n.t("No downloadable links found in that file"))
-            return
-        }
-        // `add` reports what it queued and what it skipped; a second "Imported N" toast here
-        // used to overwrite "All N are already in your list" before anyone could read it.
-        viewModel.add(rawLines: locators.joined(separator: "\n"), saveDirectory: nil, priority: .normal)
-    }
-
-
     /// Studio has only System / Light / Dark: ⇧⌘T flips between light and dark.
     private func cycleTheme() {
         viewModel.toggleAppearanceMode()
-    }
-
-    private func readTextFile() -> String? {
-        guard let url = FilePicker.openFile(types: [.plainText, .text]) else { return nil }
-        guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
-            viewModel.toastError(L10n.t("Couldn’t read that file"))
-            return nil
-        }
-        return contents
     }
 }

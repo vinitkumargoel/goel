@@ -64,6 +64,20 @@ struct CommandPaletteCatalog {
                                    keywords: ["queue", "first", "priority", "top"]) {
             vm.moveInQueue(selected.map(\.id), to: .top)
         })
+        list.append(PaletteCommand(id: "sel.remove", title: L10n.t("Remove from List"),
+                                   subtitle: L10n.t("Take them off the list — files stay on disk"),
+                                   symbol: "minus.circle", group: .selection,
+                                   keywords: ["remove", "delete", "clear"]) {
+            vm.removeSelected(deleteData: false)
+        })
+        if selected.contains(where: { $0.status.hasData }) {
+            list.append(PaletteCommand(id: "sel.trash", title: L10n.t("Move to Trash…"),
+                                       subtitle: L10n.t("Remove them and trash their files, after asking"),
+                                       symbol: "trash", group: .selection,
+                                       keywords: ["trash", "delete", "files", "remove"]) {
+                vm.confirmMoveSelectionToTrash()
+            })
+        }
         return list
     }
 
@@ -105,6 +119,30 @@ struct CommandPaletteCatalog {
                            keywords: ["scrape", "extract", "page", "links"]) {
                 vm.isLinkGrabberPresented = true
             },
+            PaletteCommand(id: "add.file", title: L10n.t("Paste URLs from File…"),
+                           subtitle: L10n.t("Add every link in a text file"),
+                           symbol: "doc.text", group: .add,
+                           keywords: ["import", "text", "batch", "bulk", "file"]) {
+                MenuActions.pasteFromFile(vm)
+            },
+            PaletteCommand(id: "add.importList", title: L10n.t("Import Download List…"),
+                           subtitle: L10n.t("Add the links from a list you exported"),
+                           symbol: "square.and.arrow.down", group: .add,
+                           keywords: ["import", "list", "txt"]) { MenuActions.importList(vm) },
+            PaletteCommand(id: "add.exportList", title: L10n.t("Export Download List…"),
+                           subtitle: L10n.t("Save every link in the list to a text file"),
+                           symbol: "square.and.arrow.up", group: .add,
+                           keywords: ["export", "list", "txt", "save"]) { MenuActions.exportList(vm) },
+            PaletteCommand(id: "add.foreign", title: L10n.t("Import from Other App…"),
+                           subtitle: L10n.t("Bring links from aria2, JDownloader, IDM or a browser export"),
+                           symbol: "tray.and.arrow.down", group: .add,
+                           keywords: ["import", "aria2", "jdownloader", "idm", "migrate", "other"]) {
+                MenuActions.importForeign(vm)
+            },
+            PaletteCommand(id: "add.sftp", title: L10n.t("Add SFTP Server"),
+                           subtitle: L10n.t("Save a server to browse and transfer files"),
+                           symbol: "server.rack", group: .add,
+                           keywords: ["sftp", "ssh", "server", "remote", "connect"]) { vm.presentNewServer() },
         ]
     }
 
@@ -127,7 +165,7 @@ struct CommandPaletteCatalog {
                 vm.closeServerBrowser()
                 RSSReaderModel.shared.open()
             },
-            PaletteCommand(id: "add.basket", title: L10n.t("Show Drop Basket"),
+            PaletteCommand(id: "add.basket", title: L10n.t("Toggle Drop Basket"),
                            subtitle: L10n.t("A small always-on-top target for dragging links onto"),
                            symbol: "basket", group: .windows, shortcut: "⇧⌘B",
                            keywords: ["drag", "drop", "float", "basket"]) {
@@ -154,10 +192,14 @@ struct CommandPaletteCatalog {
 
     private var queueCommands: [PaletteCommand] {
         var list: [PaletteCommand] = [
-            PaletteCommand(id: "dl.startAll", title: L10n.t("Start All Downloads"),
+            PaletteCommand(id: "dl.startAll", title: L10n.t("Resume All"),
                            subtitle: L10n.t("Resume everything paused or queued"),
                            symbol: "play.fill", group: .queue,
                            keywords: ["resume", "unpause"]) { vm.resumeAll() },
+            PaletteCommand(id: "dl.selectCompleted", title: L10n.t("Select Completed"),
+                           subtitle: L10n.t("Select every finished download in the list"),
+                           symbol: "checkmark.circle.fill", group: .queue,
+                           keywords: ["select", "completed", "finished", "done"]) { vm.selectCompleted() },
             PaletteCommand(id: "dl.pauseAll", title: L10n.t("Pause All Downloads"),
                            subtitle: L10n.t("Hold every active transfer"),
                            symbol: "pause.fill", group: .queue,
@@ -171,14 +213,14 @@ struct CommandPaletteCatalog {
                            symbol: "checkmark.circle", group: .queue,
                            keywords: ["clear", "completed", "finished", "tidy", "clean"]) { vm.clearCompleted() },
             PaletteCommand(id: "dl.snail", title: L10n.t("Toggle Speed Limit"),
-                           subtitle: L10n.t("Switch between Unlimited and the active traffic profile"),
+                           subtitle: L10n.t("Switch between Unlimited and the active speed profile"),
                            symbol: "tortoise", group: .queue,
                            keywords: ["throttle", "snail", "slow", "bandwidth"]) { vm.toggleSnail() },
         ]
         for profile in vm.settings.profiles {
             list.append(PaletteCommand(
                 id: "dl.profile.\(profile.name)",
-                title: L10n.t("Traffic Profile: %@", profile.name),
+                title: L10n.t("Speed Profile: %@", profile.name),
                 subtitle: profile.name == vm.settings.selectedProfileName
                     ? L10n.t("Currently active")
                     : L10n.t("Switch the global speed and connection limits"),
@@ -237,6 +279,20 @@ struct CommandPaletteCatalog {
                            symbol: pane.symbol, group: .settings,
                            keywords: CommandPaletteText.paneKeywords(pane)) { show(pane) }
         } + [
+            PaletteCommand(id: "settings.exportBackup", title: L10n.t("Export Backup (JSON)…"),
+                           subtitle: L10n.t("Save the list and settings to a file"),
+                           symbol: "externaldrive.badge.plus", group: .settings,
+                           keywords: ["backup", "export", "save", "json"]) { MenuActions.exportBackup(vm) },
+            PaletteCommand(id: "settings.importBackup", title: L10n.t("Import Backup (JSON)…"),
+                           subtitle: L10n.t("Restore the list and settings from a backup"),
+                           symbol: "externaldrive.badge.checkmark", group: .settings,
+                           keywords: ["backup", "import", "restore", "json"]) { MenuActions.importBackup(vm) },
+            PaletteCommand(id: "help.setup", title: L10n.t("Show Setup Again…"),
+                           subtitle: L10n.t("Reopen the first-run checks and browser setup"),
+                           symbol: "wand.and.stars", group: .settings,
+                           keywords: ["onboarding", "welcome", "first run", "setup", "browser", "extension"]) {
+                OnboardingState.requestShowAgain()
+            },
             PaletteCommand(id: "dl.updates", title: L10n.t("Check for Updates…"),
                            subtitle: L10n.t("Asks the release feed once, when you press it"),
                            symbol: "arrow.down.app", group: .settings,
