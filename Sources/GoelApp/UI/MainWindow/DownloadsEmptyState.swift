@@ -67,11 +67,13 @@ struct DownloadsEmptyState: View {
                 Text(L10n.t("Link on your clipboard"))
                     .studioFont(.eyebrow)
                     .foregroundStyle(Studio.Palette.accent)
-                Text(Self.shorten(link))
+                // The row is wide: let middle truncation fit the link instead of a fixed cut.
+                Text(link)
                     .studioFont(.monoBody)
                     .foregroundStyle(Studio.Palette.ink2)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .help(link)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button(L10n.t("Add"), systemImage: "arrow.right") {

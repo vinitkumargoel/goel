@@ -40,7 +40,7 @@ enum ListColumn: String, CaseIterable, Identifiable, Sendable {
         case .host: return 120
         case .tags: return 110
         case .savePath: return 160
-        case .protocol: return 70
+        case .protocol: return 90
         case .size: return 84
         case .status: return 150
         case .speed: return 92

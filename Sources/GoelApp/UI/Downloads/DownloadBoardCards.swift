@@ -146,7 +146,7 @@ struct DownloadBoardCard: DownloadHoverable {
             .studioFont(.caption)
             .foregroundStyle(color(meta.tone))
             .lineLimit(task.status.isFailed ? 2 : 1)
-            .truncationMode(.middle)
+            .truncationMode(.tail)
             .help(task.studioStatusTooltip)
     }
 
@@ -199,6 +199,7 @@ struct DownloadBoardCard: DownloadHoverable {
         case .plain: return Studio.Palette.ink3
         case .accent: return Studio.Palette.accent
         case .upload: return Studio.Palette.upload
+        case .info: return Studio.Palette.info
         case .warn: return Studio.Palette.warn
         case .bad: return Studio.Palette.bad
         }

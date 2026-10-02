@@ -5,7 +5,7 @@ import GoelCore
 enum DownloadCardText {
 
     /// Which colour a card's meta line takes.
-    enum Tone: Equatable { case plain, accent, upload, warn, bad }
+    enum Tone: Equatable { case plain, accent, upload, info, warn, bad }
 
     /// The large card's line under the name: where it comes from and how big it is —
     /// "releases.ubuntu.com · 4.7 GB", "38 peers · 17 GB".
@@ -44,7 +44,7 @@ enum DownloadCardText {
         case .queued:
             return (join(task.kind.badgeLabel, size, task.statusCompactText(queueRank: queueRank)), .plain)
         case .requestingMetadata:
-            return (task.statusDetailText, .warn)
+            return (task.statusDetailText, .info)
         case .paused:
             return (join(task.statusDetailText, size), .plain)
         case .failed(let error):

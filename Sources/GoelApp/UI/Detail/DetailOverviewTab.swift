@@ -102,6 +102,8 @@ struct DetailProgressHero: View {
 /// when, where and from where.
 struct DetailOverviewFacts: View {
     let task: DownloadTask
+    /// The rail's tag colours, so a tag reads the same here as in the sidebar.
+    @AppStorage(TagColors.storageKey) private var tagColorsRaw = ""
 
     var body: some View {
         DetailFacts {
@@ -124,7 +126,7 @@ struct DetailOverviewFacts: View {
                 DetailFactRow(key: L10n.t("Tags"), spokenValue: task.allTags.joined(separator: ", ")) {
                     HStack(spacing: Studio.Space.sm) {
                         ForEach(task.allTags, id: \.self) { tag in
-                            StudioTagLabel(name: tag, color: Studio.Palette.upload)
+                            StudioTagLabel(name: tag, color: RailTagPalette.color(for: tag, raw: tagColorsRaw))
                         }
                     }
                 }

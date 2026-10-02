@@ -92,7 +92,7 @@ struct Dropdown<Value: Hashable>: View {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     switch item {
                     case .separator:
-                        StudioDivider()
+                        StudioDivider(strong: true)
                             .padding(.vertical, Studio.Space.xxs)
                     case let .option(value, title):
                         StudioMenuRow(title: title, isChecked: value == selection) {

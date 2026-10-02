@@ -125,7 +125,7 @@ struct HeaderCustomizePopover: View {
                         set: { _ in raw = ToolbarSlot.toggling(slot, in: raw) }))
                         .toggleStyle(.studioCheckbox)
                 }
-                StudioDivider()
+                StudioDivider(strong: true)
                 Button(L10n.t("Reset Toolbar")) { raw = "" }
                     .buttonStyle(.studio(.ghost, size: .small))
             }

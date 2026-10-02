@@ -70,7 +70,7 @@ struct DownloadMenuBuilder {
             return [
                 .button(L10n.t("Locate…"), symbol: "magnifyingglass") { vm.locateMissingFile(task) },
                 .button(L10n.t("Download Again"), symbol: "arrow.down.circle") { vm.downloadAgain(task) },
-                .button(L10n.t("Remove from list"), role: .destructive) { vm.remove(task.id, deleteData: false) },
+                .button(L10n.t("Remove from List"), role: .destructive) { vm.remove(task.id, deleteData: false) },
             ]
         }
         return fullNodes()
@@ -244,7 +244,7 @@ struct DownloadMenuBuilder {
     private func removalNodes() -> [DownloadMenuNode] {
         let task = self.task, vm = self.vm
         return [
-            .button(L10n.t("Remove from list"), role: .destructive) { vm.remove(task.id, deleteData: false) },
+            .button(L10n.t("Remove from List"), role: .destructive) { vm.remove(task.id, deleteData: false) },
             .button(L10n.t("Remove and Move File to Trash"), symbol: "trash", role: .destructive) {
                 vm.requestConfirm(
                     title: L10n.t("Move “%@” to the Trash?", task.compactDisplayName),

@@ -113,6 +113,7 @@ private struct DownloadMenuItem: View {
 /// close the popover.
 struct DownloadStudioMenu: View {
     let nodes: [DownloadMenuNode]
+    /// The narrowest the menu draws; it grows to fit its longest item.
     var width: CGFloat? = 240
     var onPick: () -> Void = {}
 
@@ -121,7 +122,10 @@ struct DownloadStudioMenu: View {
             DownloadStudioMenuRows(nodes: nodes, onPick: onPick)
         }
         .padding(Studio.Space.xs)
-        .frame(width: width, alignment: .leading)
+        // A minimum, not a cap: a long item ("Remove 3 and Move Files to Trash") widens the menu
+        // instead of truncating.
+        .frame(minWidth: width, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -162,7 +166,8 @@ private struct DownloadStudioMenuRows: View {
                 .accessibilityAddTraits(.isHeader)
             AnyView(DownloadStudioMenuRows(nodes: children, onPick: onPick))
         case .divider:
-            StudioDivider()
+            // Strong: menus sit on `cardRaised`, where the plain hairline vanishes in dark.
+            StudioDivider(strong: true)
                 .padding(.vertical, 5)
                 .padding(.horizontal, Studio.Space.xs)
         case .media(let task, let vm):

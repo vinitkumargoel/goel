@@ -78,7 +78,7 @@ struct DownloadItemBehaviour: ViewModifier {
             .accessibilityAction(named: Text(L10n.t(task.accessibilityStateActionName)), primaryStateAction)
             .accessibilityAction(named: Text(L10n.t("Show in Finder"))) { vm.revealInFinder(task) }
             .accessibilityAction(named: Text(L10n.t("Copy source link"))) { vm.copyToPasteboard(task.sourceLocator) }
-            .accessibilityAction(named: Text(L10n.t("Remove from list"))) { vm.remove(task.id, deleteData: false) }
+            .accessibilityAction(named: Text(L10n.t("Remove from List"))) { vm.remove(task.id, deleteData: false) }
             // The keyboard and VoiceOver path to reordering; dragging is pointer-only.
             .accessibilityAction(named: Text(L10n.t("Move to Top of Queue"))) {
                 vm.moveInQueue(vm.queueTargets(for: task.id), to: .top)
