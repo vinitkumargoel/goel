@@ -25,7 +25,7 @@ final class FailureAdviceTests: XCTestCase {
     }
 
     func testUnmappedStatusHasNoHint() {
-        XCTAssertNil(FailureAdvice.hint(for: .httpStatus(418)))
+        XCTAssertNil(FailureAdvice.hint(for: .httpStatus(302)))
     }
 
     func testDiskFullSuggestsAnotherFolder() {
