@@ -54,8 +54,16 @@ enum StudioSnapshotCommand {
             FileHandle.standardError.write(Data("error: duplicate snapshot names\n".utf8))
             return 1
         }
+        // Sample models write view preferences (list grouping, sidebar) through to UserDefaults.
+        // Put the domain back before every entry, so one entry's choices don't leak into the
+        // next, and once more at the end, so a snapshot run leaves the user's preferences alone.
+        let defaultsDomain = Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName
+        let savedDefaults = UserDefaults.standard.persistentDomain(forName: defaultsDomain) ?? [:]
+        let restoreDefaults = { UserDefaults.standard.setPersistentDomain(savedDefaults, forName: defaultsDomain) }
+        defer { restoreDefaults() }
         var failures = 0
         for entry in entries {
+            restoreDefaults()
             for pass in [(suffix: "light", scheme: ColorScheme.light, appearance: NSAppearance.Name.aqua),
                          (suffix: "dark", scheme: ColorScheme.dark, appearance: NSAppearance.Name.darkAqua)] {
                 let url = outDir.appendingPathComponent("\(entry.name)-\(pass.suffix).png")

@@ -168,6 +168,14 @@ enum StudioSampleData {
 
     static func makeViewModel(selecting selected: ID? = .ubuntu) -> AppViewModel {
         if let cachedModel {
+            // The model is shared, so the last entry's list state (a filter, a search, grouping,
+            // a detail tab) would otherwise carry into this one and hide rows it expects.
+            cachedModel.filter = .all
+            cachedModel.search = ""
+            cachedModel.sortKey = .status
+            cachedModel.sortAscending = true
+            if cachedModel.grouping != .none { cachedModel.grouping = .none }
+            cachedModel.detailTab = .overview
             cachedModel.installSampleSnapshot(tasks, selecting: selected?.uuid)
             return cachedModel
         }

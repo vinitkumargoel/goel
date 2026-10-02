@@ -46,7 +46,7 @@ enum DownloadsSnapshots {
                 content(prepare(context), layout: .list,
                         columnsRaw: "size,status,speed,added,eta,ratio,peers,host,tags,protocol")
             },
-            StudioSnapshotEntry("downloads.list.grouped", width: 1212, height: 820) { context in
+            StudioSnapshotEntry("downloads.list.grouped", width: 1212, height: 920) { context in
                 content(prepare(context, tasks: statesTasks, grouping: .date), layout: .list)
             },
         ]

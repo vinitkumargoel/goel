@@ -111,7 +111,9 @@ enum GallerySection {
                     }
                 }
                 GalleryGroup("Radii") {
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(70), spacing: Studio.Space.sm), count: 4),
+                    // Swatches are square and taller than twice the largest radius (sheet 22), so no
+                    // continuous corner gets clamped into a lozenge.
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(76), spacing: Studio.Space.sm), count: 4),
                               spacing: Studio.Space.sm) {
                         ForEach([("badge", Studio.Radius.badge), ("small", Studio.Radius.small),
                                  ("control", Studio.Radius.control),
@@ -124,7 +126,7 @@ enum GallerySection {
                                     .fill(Studio.Palette.card)
                                     .overlay(RoundedRectangle(cornerRadius: value, style: .continuous)
                                         .strokeBorder(Studio.Palette.hairlineStrong))
-                                    .frame(width: 60, height: 44)
+                                    .frame(width: 56, height: 56)
                                 Text(verbatim: "\(name) \(Int(value))")
                                     .studioFont(.tiny)
                                     .foregroundStyle(Studio.Palette.ink3)
@@ -483,7 +485,7 @@ enum GallerySection {
                         StudioMenuRow(symbol: "tortoise", title: "1 MB/s", shortcut: "⌥1") {}
                         StudioMenuRow(symbol: "slider.horizontal.3", title: "Custom…") {}
                         StudioDivider()
-                        StudioMenuRow(symbol: "trash", title: "Clear history", isDestructive: true) {}
+                        StudioMenuRow(symbol: "trash", title: "Clear History", isDestructive: true) {}
                     }
                     .studioSurface(.raised, radius: Studio.Radius.tile, elevation: .floating)
                     StudioCard {
@@ -512,7 +514,7 @@ enum GallerySection {
                     StudioCard {
                         StudioEmptyState(symbol: "tray", title: "Nothing matches",
                                          message: "The Failed filter is hiding 10 downloads.") {
-                            Button("Clear filter") {}.buttonStyle(.studio(.primary))
+                            Button("Clear Filter") {}.buttonStyle(.studio(.primary))
                         }
                     }
                 }
