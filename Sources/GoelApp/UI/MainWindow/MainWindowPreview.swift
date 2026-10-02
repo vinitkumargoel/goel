@@ -29,17 +29,20 @@ extension EnvironmentValues {
     }
 }
 #else
-/// Release builds have no preview state. The type has no values, so `\.mainWindowPreview` is
-/// always `nil`, every `preview?.…` read is `nil`, and the window takes each value from its live
-/// source. The members exist only so the shared view code compiles unchanged; none can run.
-enum MainWindowPreview: Equatable {
-    var railExpanded: Bool? { switch self {} }
-    var flyout: RailFlyout? { switch self {} }
-    var isDropTargeted: Bool { switch self {} }
-    var omniboxText: String? { switch self {} }
-    var omniboxFocused: Bool { switch self {} }
-    var clipboardLink: String? { switch self {} }
-    var toolbarSlots: Set<ToolbarSlot>? { switch self {} }
+/// Release builds have no preview state. Nothing can make a value (the init is private) and it
+/// stores nothing, so `\.mainWindowPreview` is always `nil`, every `preview?.…` read is `nil`, and
+/// the window takes each value from its live source. The members exist only so the shared view
+/// code compiles unchanged.
+struct MainWindowPreview: Equatable {
+    private init() {}
+
+    var railExpanded: Bool? { nil }
+    var flyout: RailFlyout? { nil }
+    var isDropTargeted: Bool { false }
+    var omniboxText: String? { nil }
+    var omniboxFocused: Bool { false }
+    var clipboardLink: String? { nil }
+    var toolbarSlots: Set<ToolbarSlot>? { nil }
 }
 
 extension EnvironmentValues {
