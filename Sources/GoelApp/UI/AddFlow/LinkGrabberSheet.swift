@@ -241,10 +241,11 @@ private struct LinkGrabberResults: View {
         VStack(alignment: .leading, spacing: Studio.Space.m) {
             HStack(alignment: .top, spacing: Studio.Space.s) {
                 AddChipFlow {
-                    AddFilterChip.all(count: links.count, isOn: categoryFilter == nil) { categoryFilter = nil }
+                    StudioFilterChip(L10n.t("All"), count: links.count, isOn: categoryFilter == nil,
+                                     size: .small) { categoryFilter = nil }
                     ForEach(presentCategories, id: \.self) { category in
-                        AddFilterChip.category(category, count: links.filter { $0.category == category }.count,
-                                               isOn: categoryFilter == category) { categoryFilter = category }
+                        StudioFilterChip(category.label, count: links.filter { $0.category == category }.count,
+                                         isOn: categoryFilter == category, size: .small) { categoryFilter = category }
                     }
                 }
                 Button(allVisibleSelected ? L10n.t("Select None") : L10n.t("Select All")) {

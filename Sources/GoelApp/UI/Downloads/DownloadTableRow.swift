@@ -162,7 +162,7 @@ struct DownloadTableRow: DownloadHoverable {
                     FileNameText(task.compactDisplayName, lineLimit: 1)
                         .studioFont(Studio.TextStyle.bodyStrong.weight(650))
                         .foregroundStyle(Studio.Palette.ink)
-                    KindBadge(task: task)
+                    StudioKindBadge(kind: task.kind)
                 }
                 nameSubline
                 if !columns.showsSize, !task.compactSizeLine.isEmpty {

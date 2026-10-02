@@ -126,8 +126,8 @@ private struct StatsDailyChart: View {
             HStack(spacing: Studio.Space.s) {
                 WindowsEyebrow(L10n.t("Last 14 days"))
                 Spacer(minLength: Studio.Space.s)
-                legend(L10n.t("Downloaded"), Studio.Palette.accent)
-                legend(L10n.t("Uploaded"), Studio.Palette.upload)
+                StudioLegendItem(L10n.t("Downloaded"), color: Studio.Palette.accent)
+                StudioLegendItem(L10n.t("Uploaded"), color: Studio.Palette.upload)
             }
             HStack(alignment: .top, spacing: Studio.Space.s) {
                 VStack(alignment: .trailing, spacing: 0) {
@@ -204,13 +204,5 @@ private struct StatsDailyChart: View {
             }
         }
         .frame(height: Self.chartHeight)
-    }
-
-    private func legend(_ title: String, _ color: Color) -> some View {
-        HStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(color).frame(width: 9, height: 9)
-            Text(title).studioFont(.caption).foregroundStyle(Studio.Palette.ink2)
-        }
-        .accessibilityHidden(true)
     }
 }

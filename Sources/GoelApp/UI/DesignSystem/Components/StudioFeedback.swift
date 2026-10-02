@@ -96,6 +96,34 @@ struct StudioToastCard: View {
     }
 }
 
+/// A chart legend entry: a small rounded swatch and its caption. Decorative — the chart it labels
+/// carries the spoken values — so VoiceOver skips it.
+///
+///     HStack { StudioLegendItem(L10n.t("Downloaded"), color: Studio.Palette.accent) }
+struct StudioLegendItem: View {
+    let title: String
+    let color: Color
+
+    /// The swatch: a 9 pt square, rounded less than a badge so it still reads as a square.
+    private static let swatchSide: CGFloat = 9
+    private static let swatchRadius: CGFloat = 3
+
+    init(_ title: String, color: Color) {
+        self.title = title
+        self.color = color
+    }
+
+    var body: some View {
+        HStack(spacing: Studio.Space.xxs) {
+            RoundedRectangle(cornerRadius: Self.swatchRadius, style: .continuous)
+                .fill(color)
+                .frame(width: Self.swatchSide, height: Self.swatchSide)
+            Text(title).studioFont(.caption).foregroundStyle(Studio.Palette.ink2)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 /// A sparkline or small area chart (`.spark`): an accent line with a soft fill, an optional dashed
 /// upload line, optional grid lines and an end dot. Values are scaled to the tallest point (or
 /// `maxValue`).

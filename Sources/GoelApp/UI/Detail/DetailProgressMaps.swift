@@ -68,18 +68,11 @@ struct DetailPieceMap: View {
 
     private var legend: some View {
         HStack(spacing: Studio.Space.sm) {
-            legendItem(Studio.Palette.accent, L10n.t("Have"))
-            legendItem(Studio.Palette.warn, L10n.t("Downloading"))
-            legendItem(Studio.Palette.track, L10n.t("Missing"))
+            StudioLegendItem(L10n.t("Have"), color: Studio.Palette.accent)
+            StudioLegendItem(L10n.t("Downloading"), color: Studio.Palette.warn)
+            StudioLegendItem(L10n.t("Missing"), color: Studio.Palette.track)
         }
         .a11yDecorative()
-    }
-
-    private func legendItem(_ color: Color, _ label: String) -> some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(color).frame(width: 9, height: 9)
-            Text(label).studioFont(.caption).foregroundStyle(Studio.Palette.ink2)
-        }
     }
 }
 

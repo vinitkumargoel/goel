@@ -74,24 +74,25 @@ struct StatusProfilePicker: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(vm.settings.profiles) { profile in
-                StatusProfileSegment(
-                    name: profile.name,
-                    isSelected: profile.name == vm.settings.selectedProfileName,
-                    help: SpeedProfileText.queueSummary(profile, limitEnabled: vm.settings.speedLimitEnabled),
-                    spokenSummary: SpeedProfileText.spokenQueueSummary(profile, limitEnabled: vm.settings.speedLimitEnabled),
-                    editDisabled: profile.name != vm.settings.selectedProfileName
-                        && vm.managedPolicy.isLocked(.selectedProfileName),
-                    select: { vm.setProfile(profile.name) },
-                    edit: { editProfile(profile.name) })
-            }
-        }
-        .padding(2)
-        .background(Studio.Palette.segment, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .fixedSize()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(L10n.t("Queue profile"))
+        StudioSegmentedControl(
+            selection: Binding(get: { vm.settings.selectedProfileName }, set: { vm.setProfile($0) }),
+            segments: vm.settings.profiles.map(segment),
+            size: .small,
+            accessibilityLabel: L10n.t("Queue profile"))
+    }
+
+    private func segment(_ profile: TrafficProfile) -> StudioSegment<String> {
+        let limitEnabled = vm.settings.speedLimitEnabled
+        let editDisabled = profile.name != vm.settings.selectedProfileName
+            && vm.managedPolicy.isLocked(.selectedProfileName)
+        return StudioSegment(
+            profile.name, title: profile.name,
+            accessibilityLabel: L10n.t("%@ queue profile", profile.name),
+            accessibilityValue: SpeedProfileText.spokenQueueSummary(profile, limitEnabled: limitEnabled),
+            help: SpeedProfileText.queueSummary(profile, limitEnabled: limitEnabled),
+            actions: [StudioSegmentAction(title: L10n.t("Edit Profile…"), isEnabled: !editDisabled) {
+                editProfile(profile.name)
+            }])
     }
 
     /// The Speed & Connections pane edits the active profile, so editing one makes it the active one.
@@ -99,44 +100,6 @@ struct StatusProfilePicker: View {
         if name != vm.settings.selectedProfileName { vm.setProfile(name) }
         SettingsRoute.shared.request(.traffic)
         openSettings()
-    }
-}
-
-private struct StatusProfileSegment: View {
-    let name: String
-    let isSelected: Bool
-    let help: String
-    let spokenSummary: String
-    let editDisabled: Bool
-    let select: () -> Void
-    let edit: () -> Void
-
-    @State private var hovered = false
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
-        Button(action: select) {
-            Text(name)
-                .studioFont(.callout.size(11.5))
-                .foregroundStyle(isSelected || hovered ? Studio.Palette.ink : Studio.Palette.ink2)
-                .lineLimit(1)
-                .padding(.horizontal, 9)
-                .frame(minHeight: 22)
-                .background {
-                    if isSelected { shape.fill(Studio.Palette.card).studioElevation(.raised) }
-                }
-                .contentShape(shape)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovered = $0 }
-        .help(help)
-        .contextMenu {
-            Button(L10n.t("Edit Profile…"), action: edit).disabled(editDisabled)
-        }
-        .accessibilityLabel(L10n.t("%@ queue profile", name))
-        .accessibilityValue(spokenSummary)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction(named: L10n.t("Edit Profile"), edit)
     }
 }
 

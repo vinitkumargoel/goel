@@ -2,7 +2,7 @@
    pipeline end-to-end; it mirrors the keys in en.lproj/Localizable.strings.
    Missing keys fall back to English, then to the key itself. */
 
-"All (%d)" = "Alle (%d)";
+"All" = "Alle";
 "Active" = "Aktiv";
 "Paused" = "Pausiert";
 "Completed" = "Abgeschlossen";

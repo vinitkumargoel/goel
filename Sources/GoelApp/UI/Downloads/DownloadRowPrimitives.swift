@@ -26,34 +26,6 @@ struct FileTypeIcon: View {
     }
 }
 
-/// The protocol badge: HTTP, BT, HLS, FTP, SFTP (`.badge`).
-struct KindBadge: View {
-    let kind: DownloadKind
-    var size: CGFloat = 9.5
-
-    init(kind: DownloadKind, size: CGFloat = 9.5) {
-        self.kind = kind
-        self.size = size
-    }
-
-    init(task: DownloadTask) {
-        self.init(kind: task.kind)
-    }
-
-    var body: some View {
-        Text(kind.badgeLabel)
-            .studioFont(Studio.TextStyle.badge.size(size + 0.5))
-            .lineLimit(1)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .foregroundStyle(Studio.Palette.ink2)
-            .background(Studio.Palette.segment,
-                        in: RoundedRectangle(cornerRadius: Studio.Radius.badge, style: .continuous))
-            .fixedSize()
-            .accessibilityLabel(kind.accessibilityName)
-    }
-}
-
 /// A task's thin progress bar, coloured by state; a magnet fetching metadata sweeps instead.
 /// No sweep-in on appear: rows scroll in and out of a list, and re-growing every bar as it
 /// scrolled back into view read as progress resetting.

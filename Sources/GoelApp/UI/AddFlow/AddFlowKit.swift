@@ -327,69 +327,6 @@ struct AddPastedNote: View {
     }
 }
 
-/// A segmented control whose options can be switched off one by one (the cookie source's
-/// "From browser" without captured cookies). Same chrome as `StudioSegmentedControl`.
-struct AddSegmentPicker<Value: Hashable>: View {
-    struct Option: Identifiable {
-        let value: Value
-        let title: String
-        var isEnabled = true
-        var id: Value { value }
-    }
-
-    @Binding var selection: Value
-    let options: [Option]
-    var accessibilityLabel: String
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(options) { option in
-                AddSegmentButton(title: option.title, isSelected: option.value == selection,
-                                 isEnabled: option.isEnabled) { selection = option.value }
-            }
-        }
-        .padding(3)
-        .background(Studio.Palette.segment,
-                    in: RoundedRectangle(cornerRadius: Studio.Radius.segment, style: .continuous))
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
-
-private struct AddSegmentButton: View {
-    let title: String
-    let isSelected: Bool
-    let isEnabled: Bool
-    let action: () -> Void
-    @State private var hovered = false
-    @Environment(\.isFocused) private var isFocused
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
-        Button(action: action) {
-            Text(title)
-                .studioFont(.callout)
-                .lineLimit(1)
-                .foregroundStyle(isSelected || hovered ? Studio.Palette.ink : Studio.Palette.ink2)
-                .padding(.horizontal, Studio.Space.m)
-                .frame(minHeight: 26)
-                .frame(maxWidth: .infinity)
-                .background {
-                    if isSelected { shape.fill(Studio.Palette.card).studioElevation(.raised) }
-                }
-                .contentShape(shape)
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.45)
-        .studioFocusRing(isFocused, shape: shape)
-        .onHover { hovered = isEnabled && $0 }
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
 /// Lays chips out left to right and wraps them onto new lines, so eight type chips never clip.
 struct AddChipFlow: Layout {
     var spacing: CGFloat = Studio.Space.xs
@@ -462,41 +399,5 @@ func addFlowAnimate(reduceMotion: Bool, stillFrames: Bool, _ body: () -> Void) {
         body()
     } else {
         withAnimation(Studio.Motion.quick, body)
-    }
-}
-
-/// A type filter chip (`.chip` + `.n`): the visible title and count, read by VoiceOver as one
-/// label ("All (8)", "Archives (2)") the way the old chips were.
-struct AddFilterChip: View {
-    let title: String
-    let count: Int
-    let spokenLabel: String
-    let isOn: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                Text(verbatim: "\(count)")
-                    .studioFont(.monoSmall)
-                    .foregroundStyle(isOn ? Studio.Palette.inverseInk.opacity(0.7) : Studio.Palette.ink3)
-            }
-        }
-        .buttonStyle(StudioPillButtonStyle(isOn: isOn, size: .small))
-        .accessibilityLabel(spokenLabel)
-        .accessibilityAddTraits(isOn ? .isSelected : [])
-    }
-
-    static func all(count: Int, isOn: Bool, action: @escaping () -> Void) -> AddFilterChip {
-        AddFilterChip(title: L10n.t("All"), count: count, spokenLabel: L10n.t("All (%d)", count),
-                      isOn: isOn, action: action)
-    }
-
-    static func category(_ category: GrabbedLink.Category, count: Int, isOn: Bool,
-                         action: @escaping () -> Void) -> AddFilterChip {
-        AddFilterChip(title: category.label, count: count,
-                      spokenLabel: L10n.t("%1$@ (%2$@)", category.label, String(count)),
-                      isOn: isOn, action: action)
     }
 }

@@ -12,7 +12,6 @@
 "#" = "#";
 "%" = "%";
 "%1$@ %2$@" = "%1$@ %2$@";
-"%1$@ (%2$@)" = "%1$@ (%2$@)";
 "%1$@ adapters will share ranged HTTP segments · %2$@ stream(s) each." = "%1$@ adapters will share ranged HTTP segments · %2$@ stream(s) each.";
 "%1$@ and %2$d more" = "%1$@ and %2$d more";
 "%1$@ attached · %2$@" = "%1$@ attached · %2$@";
@@ -250,7 +249,6 @@
 "Alias to folder" = "Alias to folder";
 "All" = "All";
 "All %d are already in your list" = "All %d are already in your list";
-"All (%d)" = "All (%d)";
 "All downloads" = "All downloads";
 "Allow" = "Allow";
 "Allow access from the network" = "Allow access from the network";
@@ -763,7 +761,6 @@
 "Earlier this week" = "Earlier this week";
 "Edit Label…" = "Edit Label…";
 "Edit Note…" = "Edit Note…";
-"Edit Profile" = "Edit Profile";
 "Edit Profile…" = "Edit Profile…";
 "Edit Rule…" = "Edit Rule…";
 "Edit SFTP Server" = "Edit SFTP Server";

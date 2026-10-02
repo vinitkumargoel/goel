@@ -104,22 +104,41 @@ struct StudioSegment<Value: Hashable>: Identifiable {
     let value: Value
     let title: String
     var symbol: String?
-    /// Read by VoiceOver when `title` is empty (an icon-only segment).
+    /// Read by VoiceOver instead of `title`: an icon-only segment, or a fuller name
+    /// ("Medium queue profile").
     var accessibilityLabel: String?
+    /// Read by VoiceOver after the label, e.g. what a queue profile allows.
+    var accessibilityValue: String?
     /// The segment's own tooltip, e.g. what a queue profile allows. `nil` leaves only the
     /// control's tooltip, if any.
     var help: String?
+    /// Off for an option that does not apply right now (cookies "From browser" with none
+    /// captured): dimmed, not hoverable, not selectable.
+    var isEnabled = true
+    /// Right-click commands for this segment, also offered to VoiceOver as named actions.
+    var actions: [StudioSegmentAction] = []
 
     var id: Value { value }
 
     init(_ value: Value, title: String, symbol: String? = nil, accessibilityLabel: String? = nil,
-         help: String? = nil) {
+         accessibilityValue: String? = nil, help: String? = nil, isEnabled: Bool = true,
+         actions: [StudioSegmentAction] = []) {
         self.value = value
         self.title = title
         self.symbol = symbol
         self.accessibilityLabel = accessibilityLabel
+        self.accessibilityValue = accessibilityValue
         self.help = help
+        self.isEnabled = isEnabled
+        self.actions = actions
     }
+}
+
+/// A command on one segment: `StudioSegmentAction(title: L10n.t("Edit Profile…")) { … }`.
+struct StudioSegmentAction {
+    let title: String
+    var isEnabled = true
+    let perform: () -> Void
 }
 
 /// A segmented control (`.seg`): a sunken track with the selected segment lifted onto a card.
@@ -207,11 +226,40 @@ private struct StudioSegmentButton<Value: Hashable>: View {
             .contentShape(shape)
         }
         .buttonStyle(.plain)
+        .disabled(!segment.isEnabled)
+        .opacity(segment.isEnabled ? 1 : 0.45)
         .studioFocusRing(isFocused, shape: shape)
-        .onHover { hovered = $0 }
+        .onHover { hovered = segment.isEnabled && $0 }
         .modifier(StudioOptionalHelp(text: segment.help))
+        .modifier(StudioSegmentActions(actions: segment.actions))
         .accessibilityLabel(segment.accessibilityLabel ?? segment.title)
+        .accessibilityValue(segment.accessibilityValue ?? "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// A segment's commands as a context menu and VoiceOver actions; nothing when it has none, so
+/// plain segments get no empty menu.
+private struct StudioSegmentActions: ViewModifier {
+    let actions: [StudioSegmentAction]
+
+    func body(content: Content) -> some View {
+        if actions.isEmpty {
+            content
+        } else {
+            content
+                .contextMenu {
+                    ForEach(actions.indices, id: \.self) { index in
+                        Button(actions[index].title, action: actions[index].perform)
+                            .disabled(!actions[index].isEnabled)
+                    }
+                }
+                .accessibilityActions {
+                    ForEach(actions.indices.filter { actions[$0].isEnabled }, id: \.self) { index in
+                        Button(actions[index].title, action: actions[index].perform)
+                    }
+                }
+        }
     }
 }
 

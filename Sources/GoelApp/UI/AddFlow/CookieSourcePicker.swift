@@ -52,12 +52,13 @@ struct CookieSourcePicker: View {
     }
 
     private var picker: some View {
-        AddSegmentPicker(
+        StudioSegmentedControl(
             selection: $source,
-            options: CookieSource.allCases.map { option in
-                .init(value: option, title: option.displayName,
-                      isEnabled: !(option == .browser && capturedCookies == nil))
+            segments: CookieSource.allCases.map { option in
+                StudioSegment(option, title: option.displayName,
+                              isEnabled: !(option == .browser && capturedCookies == nil))
             },
+            fullWidth: true,
             accessibilityLabel: L10n.t("Cookie source"))
     }
 

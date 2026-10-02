@@ -139,10 +139,12 @@ private struct LinkReviewFilterBar: View {
                 .frame(width: 170)
                 .accessibilityLabel(L10n.t("Filter links"))
             AddChipFlow {
-                AddFilterChip.all(count: items.count, isOn: category == nil) { category = nil }
+                StudioFilterChip(L10n.t("All"), count: items.count, isOn: category == nil, size: .small) {
+                    category = nil
+                }
                 ForEach(LinkReview.categories(in: items), id: \.self) { kind in
-                    AddFilterChip.category(kind, count: items.filter { $0.category == kind }.count,
-                                           isOn: category == kind) { category = kind }
+                    StudioFilterChip(kind.label, count: items.filter { $0.category == kind }.count,
+                                     isOn: category == kind, size: .small) { category = kind }
                 }
             }
             .padding(.top, 3)

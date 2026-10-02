@@ -101,7 +101,7 @@ Use `StudioScaled { factor in … }` to scale a layout metric with the text size
 | `StudioIconButton` | `StudioIconButton("xmark", label: L10n.t("Close"), size: .small, bordered:, isOn:, shortcutHint: "⌘I") { … }` — label = tooltip + VoiceOver |
 | `StudioPillButtonStyle` | `.buttonStyle(StudioPillButtonStyle(isOn: on))` |
 | `StudioChip`, `StudioFilterChip` | `StudioFilterChip(L10n.t("Active"), count: 4, isOn: filter == .active) { … }` |
-| `StudioSegmentedControl` | `StudioSegmentedControl(selection: $layout, segments: [StudioSegment(.board, title: …, symbol: …, help: …)], size:, fullWidth:)` — `help` is that segment's own tooltip |
+| `StudioSegmentedControl` | `StudioSegmentedControl(selection: $layout, segments: [StudioSegment(.board, title: …, symbol: …, help: …)], size:, fullWidth:)` — per segment: `help` (its own tooltip), `accessibilityValue`, `isEnabled`, `actions: [StudioSegmentAction(title:) { … }]` (context menu + VoiceOver actions) |
 | `StudioTabBar` | `StudioTabBar(selection: $tab, tabs: DetailTab.allCases.map { StudioSegment($0, title: $0.title) })` |
 | `StudioOmnibox`, `StudioOmniboxSuggestion` | `StudioOmnibox(text: $q, placeholder: …, isFocused: $focus, onSubmit: go) { StudioOmniboxSuggestion { … } }` |
 | `StudioSearchField`, `.textFieldStyle(.studio)`, `StudioFocusedField`, `StudioFieldChrome` | `TextField(…).textFieldStyle(.studio(size: .small))` |
@@ -112,6 +112,7 @@ Use `StudioScaled { factor in … }` to scale a layout metric with the text size
 | `StudioPopover`, `StudioMenuRow` | `.popover { StudioPopover(title: …) { StudioMenuRow(symbol:, title:, shortcut:, isChecked:) { … } } }` |
 | `StudioEmptyState` | `StudioEmptyState(symbol: "tray", title: …, message: …) { buttons }` |
 | `StudioToastCard` | `StudioToastCard(tone: .good, symbol: "checkmark", title: …, actionTitle: L10n.t("Undo"), onAction:, onDismiss:)` |
+| `StudioLegendItem` | `StudioLegendItem(L10n.t("Downloaded"), color: Studio.Palette.accent)` — chart legend swatch + caption, decorative |
 | `StudioSparkline` / `StudioAreaChart` | `StudioSparkline(values: down, secondary: up, gridLines: 2, showsEndDot: true).frame(height: 60)` |
 | `StudioRailItem`, `StudioRailBadge`, `StudioRailSeparator` | `StudioRailItem(symbol:, title:, badge: 4, isSelected:, isExpanded:, count:, shortcut: "⌘1") { … }` |
 | `StudioLaneHeader` | `StudioLaneHeader(title: L10n.t("Downloading"), count: 4, detail: "↓ 43 MB/s", detailIsMono: true)` |
