@@ -25,12 +25,14 @@ struct DownloadBoardView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: gap) {
-                    ForEach(columns.indices, id: \.self) { column in
+                    // Keyed by lane id, not position: a lane appearing or emptying must not hand
+                    // its neighbour's identity (hover, scroll anchors, transitions) to another lane.
+                    ForEach(BoardColumn.make(lanes: lanes, columns: columns)) { column in
                         VStack(alignment: .leading, spacing: BoardLanes.stackedLaneGap) {
-                            ForEach(columns[column], id: \.self) { index in
-                                laneView(lanes[index])
+                            ForEach(column.lanes) { lane in
+                                laneView(lane)
                             }
-                            if column == columns.count - 1, vm.grouping == .none {
+                            if column.isLast, vm.grouping == .none {
                                 DownloadQueueSummaryCard()
                             }
                         }
@@ -119,7 +121,7 @@ struct DownloadQueueSummaryCard: View {
     @EnvironmentObject private var telemetry: TelemetryStore
 
     var body: some View {
-        let overview = QueueOverview(tasks: vm.tasks) { telemetry.displaySpeed(for: $0) }
+        let overview = vm.queueOverview
         if overview.remainingBytes > 0 {
             let history = telemetry.recentGlobalHistory(60)
             VStack(alignment: .leading, spacing: Studio.Space.sm) {

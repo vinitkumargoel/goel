@@ -70,6 +70,22 @@ struct BoardLane: Identifiable, Equatable {
     var totalBytes: Int64 { tasks.reduce(0) { $0 + ($1.totalBytes ?? 0) } }
 }
 
+/// One column of stacked lanes, identified by its first lane so SwiftUI keeps identity by lane.
+struct BoardColumn: Identifiable, Equatable {
+    let id: String
+    let lanes: [BoardLane]
+    let isLast: Bool
+
+    /// `columns` holds lane indices as ``BoardLanes/columns(heights:count:stackGap:)`` returns them.
+    static func make(lanes: [BoardLane], columns: [[Int]]) -> [BoardColumn] {
+        columns.enumerated().compactMap { offset, indices in
+            let members = indices.filter(lanes.indices.contains).map { lanes[$0] }
+            guard let first = members.first else { return nil }
+            return BoardColumn(id: first.id, lanes: members, isLast: offset == columns.count - 1)
+        }
+    }
+}
+
 enum BoardLanes {
 
     /// The lanes for what the list currently shows. Empty lanes are left out, so the board

@@ -80,6 +80,20 @@ final class DownloadBoardLanesTests: XCTestCase {
         XCTAssertEqual(split.flatMap { $0 }, [0, 1, 2, 3, 4])
     }
 
+    /// Columns are identified by their lanes, not their position, so a lane that empties out
+    /// doesn't hand its identity to the next one.
+    func testBoardColumnsAreKeyedByLaneID() {
+        let lanes = BoardLanes.statusLanes([task(status: .downloading), task(status: .queued),
+                                            task(status: .paused), task(status: .completed)], ranks: [:])
+        let columns = BoardColumn.make(lanes: lanes, columns: [[0], [1, 2], [3]])
+        XCTAssertEqual(columns.map(\.id), ["lane.downloading", "lane.upNext", "lane.done"])
+        XCTAssertEqual(columns[1].lanes.map(\.id), ["lane.upNext", "lane.needsYou"])
+        XCTAssertEqual(columns.map(\.isLast), [false, false, true])
+        let fewer = BoardColumn.make(lanes: Array(lanes.dropFirst()), columns: [[0, 1], [2]])
+        XCTAssertEqual(fewer.map(\.id), ["lane.upNext", "lane.done"])
+        XCTAssertEqual(BoardColumn.make(lanes: lanes, columns: [[9]]), [])
+    }
+
     func testColumnCountFollowsWidth() {
         XCTAssertEqual(BoardLanes.columnCount(width: 0, laneCount: 4, gap: 18), 4)
         XCTAssertEqual(BoardLanes.columnCount(width: 2000, laneCount: 4, gap: 18), 4)

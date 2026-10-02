@@ -66,7 +66,9 @@ enum DetailTab: String, CaseIterable, Identifiable {
 @MainActor
 final class AppViewModel: ObservableObject {
 
-    @Published var tasks: [DownloadTask] = []
+    @Published var tasks: [DownloadTask] = [] { didSet { tasksRevision &+= 1 } }
+    /// Bumped on every change to `tasks`, so derived values can be memoised against it.
+    private(set) var tasksRevision = 0
     @Published private(set) var settings = AppSettings() {
         didSet {
             // Must land before the `@Published` change publishes, or the redraw reads the old language.
@@ -127,6 +129,9 @@ final class AppViewModel: ObservableObject {
     }
     /// `visibleTasks` split under the Group by headers; empty when not grouping.
     @Published private(set) var visibleSections: [ListSection] = []
+    /// The board's lanes for `visibleTasks`, rebuilt with them rather than in every board body
+    /// (which re-runs on each speed tick). Cards still read live speeds from `TelemetryStore`.
+    @Published private(set) var boardLanes: [BoardLane] = []
     /// Each row's 1-based place in the queue — the "#" column and "Queued · #3".
     @Published private(set) var queueRanks: [DownloadTask.ID: Int] = [:]
     /// The rows a queue drag is carrying, set when the grip starts the drag. Drop targets read it
@@ -562,6 +567,8 @@ final class AppViewModel: ObservableObject {
         if sections != visibleSections { visibleSections = sections }
         let ranks = QueueOrder.ranks(tasks)
         if ranks != queueRanks { queueRanks = ranks }
+        let lanes = BoardLanes.make(visible: next, sections: sections, grouping: grouping, ranks: ranks)
+        if lanes != boardLanes { boardLanes = lanes }
         refreshCommandState()
     }
 
@@ -580,6 +587,10 @@ final class AppViewModel: ObservableObject {
         guard let primarySelection else { return nil }
         return tasks.first { $0.id == primarySelection }
     }
+
+    /// The whole queue at the displayed speeds; shared, so the status bar and the board's queue
+    /// card don't each fold every task on every speed tick.
+    var queueOverview: QueueOverview { telemetry.queueOverview(for: tasks, revision: tasksRevision) }
 
     var totalDownloadSpeed: Double { tasks.reduce(0) { $0 + $1.downloadSpeed } }
     var totalUploadSpeed: Double { tasks.reduce(0) { $0 + $1.uploadSpeed } }
