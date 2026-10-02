@@ -83,6 +83,15 @@ struct DownloadsContent: View {
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
         // The confirm dialog is modal: nothing reaches the queue behind it.
         guard vm.confirmRequest == nil else { return .ignored }
+        let result = handleNavigationKey(press)
+        // Only a move speaks: the hidden key target gives VoiceOver nothing to follow.
+        if result == .handled, [.upArrow, .downArrow, .leftArrow, .rightArrow, .home, .end].contains(press.key) {
+            A11yAnnouncer.announce(vm.keyboardSelectionAnnouncement)
+        }
+        return result
+    }
+
+    private func handleNavigationKey(_ press: KeyPress) -> KeyPress.Result {
         let extending = press.modifiers.contains(.shift)
         switch press.key {
         case .upArrow, .downArrow:
