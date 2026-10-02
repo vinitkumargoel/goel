@@ -130,8 +130,8 @@ struct DetailForcedDockNote: View {
     }
 }
 
-/// Pause / Resume / Retry, Folder and Copy (`.actbar`). The primary verb depends on the state;
-/// a finished download has none, so Folder and Copy share the row.
+/// Pause / Resume, Folder and Copy (`.actbar`). The primary verb depends on the state; a failed
+/// download has none here (the failure card above carries Retry), and a finished download has none, so Folder and Copy share the row.
 struct DetailActionButtons: View {
     let task: DownloadTask
     var fullWidth = true
@@ -168,10 +168,6 @@ struct DetailActionButtons: View {
             Button(L10n.t("Resume"), systemImage: "play.fill") { vm.resume(task.id) }
                 .buttonStyle(.studio(.primary, size: size, fullWidth: fullWidth))
                 .a11yButton(L10n.t("Resume %@", name))
-        } else if task.status.isFailed {
-            Button(L10n.t("Retry"), systemImage: "arrow.clockwise") { vm.retry(task.id) }
-                .buttonStyle(.studio(.primary, size: size, fullWidth: fullWidth))
-                .a11yButton(L10n.t("Retry %@", name))
         } else if completedVerbs && task.isFileMissing {
             Button(L10n.t("Locate…"), systemImage: "magnifyingglass") { vm.locateMissingFile(task) }
                 .buttonStyle(.studio(.primary, size: size, fullWidth: fullWidth))

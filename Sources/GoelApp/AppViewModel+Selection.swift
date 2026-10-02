@@ -63,6 +63,13 @@ extension AppViewModel {
         selectionAnchor = completed.first?.id
     }
 
+    func selectFailed() {
+        let failed = visibleTasks.filter { $0.status.isFailed }
+        selection = Set(failed.map(\.id))
+        primarySelection = failed.first?.id
+        selectionAnchor = failed.first?.id
+    }
+
     /// Brings one download into view and selects it: from the menu bar, a toast's Show, or the
     /// command palette. Only widens the list when the current filter or search hides the row.
     func reveal(_ id: DownloadTask.ID) {

@@ -194,22 +194,34 @@ extension DownloadTask {
 
     /// The name a compact row shows. A magnet still fetching its metadata has no real name yet —
     /// only the generic placeholder or, from some sources, the raw `magnet:?xt=…` URI — so it
-    /// reads "Fetching metadata · 5c1a9d3e" (the start of its info-hash) instead.
+    /// reads the link's own `dn=` name when it has one, else "Magnet link (5c1a…)".
     var compactDisplayName: String {
         guard case .magnet = source, totalBytes == nil else { return name }
-        return Self.pendingMagnetTitle(name: name, infoHash: displayInfoHash) ?? name
+        return Self.pendingMagnetTitle(name: name, infoHash: displayInfoHash, locator: source.locator) ?? name
     }
 
     /// nil when `name` is already a real name (a magnet's `dn=`) worth showing as-is.
-    static func pendingMagnetTitle(name: String, infoHash: String?) -> String? {
+    static func pendingMagnetTitle(name: String, infoHash: String?, locator: String? = nil) -> String? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let isPlaceholder = trimmed.isEmpty
             || trimmed == "Magnet download"
             || trimmed.lowercased().hasPrefix("magnet:")
         guard isPlaceholder else { return nil }
+        if let locator, let display = magnetDisplayName(in: locator) { return display }
         guard let hash = infoHash?.trimmingCharacters(in: .whitespacesAndNewlines), !hash.isEmpty else {
-            return L10n.t("Fetching metadata")
+            return L10n.t("Magnet link")
         }
-        return L10n.t("Fetching metadata · %@", String(hash.prefix(8)).lowercased())
+        return L10n.t("Magnet link (%@…)", String(hash.prefix(4)).lowercased())
+    }
+
+    /// The magnet's `dn=` display name, decoded; nil when absent or blank.
+    static func magnetDisplayName(in locator: String) -> String? {
+        guard let query = locator.split(separator: "?", maxSplits: 1).dropFirst().first else { return nil }
+        for pair in query.split(separator: "&") where pair.lowercased().hasPrefix("dn=") {
+            let raw = pair.dropFirst(3).replacingOccurrences(of: "+", with: " ")
+            let decoded = (raw.removingPercentEncoding ?? raw).trimmingCharacters(in: .whitespacesAndNewlines)
+            return decoded.isEmpty ? nil : decoded
+        }
+        return nil
     }
 }

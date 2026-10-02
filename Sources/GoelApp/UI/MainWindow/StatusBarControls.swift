@@ -127,3 +127,37 @@ struct Snail: Shape {
         return path
     }
 }
+
+/// "3 failed": filters the list to Failed; its menu offers Retry All.
+struct StatusFailedButton: View {
+    @EnvironmentObject private var vm: AppViewModel
+
+    var body: some View {
+        let failed = vm.count(for: .failed)
+        if failed > 0 {
+            Menu {
+                Button(L10n.t("Show Failed")) { show() }
+                Button(L10n.t("Retry All")) { vm.retryAllFailed() }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(StudioFonts.font(.ui, size: 11, weight: 600))
+                    Text(L10n.t("%d failed", failed)).studioFont(.small.weight(600).tabular)
+                }
+                .foregroundStyle(Studio.Palette.bad)
+            } primaryAction: {
+                show()
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(L10n.t("Show failed downloads"))
+            .accessibilityLabel(L10n.t("%d failed", failed))
+            .accessibilityHint(L10n.t("Activate to show failed downloads."))
+        }
+    }
+
+    private func show() {
+        vm.closeServerBrowser()
+        vm.filter = .failed
+    }
+}

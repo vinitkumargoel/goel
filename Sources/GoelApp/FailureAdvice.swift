@@ -18,7 +18,7 @@ enum FailureAdvice {
         case .unknown(let message):
             return looksLikeDiskFull(message)
                 ? L10n.t("The disk is full. Free up space or choose another folder, then retry.")
-                : nil
+                : L10n.t("Something went wrong. Retry, and if it keeps failing, copy the error details.")
         case .timedOut:
             return L10n.t("The server stopped answering. Check your connection, then retry.")
         case .checksumMismatch:
@@ -44,6 +44,12 @@ enum FailureAdvice {
             return L10n.t("Your proxy needs a login. Check the proxy settings.")
         case 408, 429:
             return L10n.t("The server is busy or limiting requests. Wait a few minutes, then retry.")
+        case 400:
+            return L10n.t("The server rejected the request. The link may be incomplete or malformed; check it on the page you got it from.")
+        case 416:
+            return L10n.t("The server rejected the resume point. Retry starts the download from the beginning.")
+        case 400...499:
+            return L10n.t("The server refused the request. Check the link, or try again later.")
         case 500...599:
             return L10n.t("The server had a problem. Try again later.")
         default:
@@ -105,7 +111,10 @@ enum FailureAdvice {
             return .retryLater(Recovery.retryLaterDelay)
         case .diskFull:
             return canChangeFolder(kind: kind, hasData: hasData) ? .changeFolder : nil
-        case .network(let message), .unknown(let message):
+        case .network(let message):
+            if looksLikeDiskFull(message) { return canChangeFolder(kind: kind, hasData: hasData) ? .changeFolder : nil }
+            return .retryLater(Recovery.retryLaterDelay)
+        case .unknown(let message):
             return looksLikeDiskFull(message) && canChangeFolder(kind: kind, hasData: hasData)
                 ? .changeFolder : nil
         case .checksumMismatch, .rangeNotSupported, .remoteFileChanged, .fileMissing, .canceled:

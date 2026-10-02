@@ -25,7 +25,7 @@ final class FailureAdviceTests: XCTestCase {
     }
 
     func testUnmappedStatusHasNoHint() {
-        XCTAssertNil(FailureAdvice.hint(for: .httpStatus(418)))
+        XCTAssertNil(FailureAdvice.hint(for: .httpStatus(302)))
     }
 
     func testDiskFullSuggestsAnotherFolder() {
@@ -45,8 +45,20 @@ final class FailureAdviceTests: XCTestCase {
             .contains("internet connection"))
     }
 
-    func testUnknownAndCanceledHaveNoHint() {
-        XCTAssertNil(FailureAdvice.hint(for: .unknown("something odd")))
+    func testPlainNetworkErrorOffersRetryLater() {
+        XCTAssertEqual(recovery(.network("The Internet connection appears to be offline.")),
+                       .retryLater(FailureAdvice.Recovery.retryLaterDelay))
+    }
+
+    func testBadRequestAndRejectedResumePointHaveHints() {
+        XCTAssertNotNil(FailureAdvice.hint(forHTTPStatus: 400))
+        XCTAssertTrue(FailureAdvice.hint(forHTTPStatus: 416)!.contains("beginning"))
+        XCTAssertNotNil(FailureAdvice.hint(forHTTPStatus: 418), "a generic 4xx still says something")
+        XCTAssertNil(FailureAdvice.hint(forHTTPStatus: 302))
+    }
+
+    func testUnknownErrorsGetAGenericHint() {
+        XCTAssertNotNil(FailureAdvice.hint(for: .unknown("something odd")))
         XCTAssertNil(FailureAdvice.hint(for: .canceled))
     }
 
@@ -108,7 +120,6 @@ final class FailureAdviceTests: XCTestCase {
     func testFailuresThatRetryAlreadyFixesHaveNoSpecialAction() {
         XCTAssertNil(recovery(.httpStatus(418)))
         XCTAssertNil(recovery(.checksumMismatch))
-        XCTAssertNil(recovery(.network("The Internet connection appears to be offline.")))
         XCTAssertNil(recovery(.canceled))
     }
 

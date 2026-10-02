@@ -129,7 +129,7 @@ final class AccessibilityLabelTests: XCTestCase {
                                   name: "magnet:?xt=urn:btih:5C1A9D3E77AA0011223344556677889900AABBCC",
                                   saveDirectory: "/tmp", status: .requestingMetadata)
         for label in [magnet.accessibilityIdentityLabel, magnet.accessibilityRowLabel] {
-            XCTAssertTrue(label.hasPrefix("Fetching metadata · 5c1a9d3e, "), label)
+            XCTAssertTrue(label.hasPrefix("Magnet link (5c1a…), "), label)
             XCTAssertFalse(label.contains("magnet:"), label)
         }
     }
