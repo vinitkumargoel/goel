@@ -100,7 +100,7 @@ struct LinkGrabberSheet: View {
             StudioFocusedField { focus in
                 HStack(spacing: Studio.Space.s) {
                     Image(systemName: "globe")
-                        .font(StudioFonts.font(.ui, size: 13, weight: 600))
+                        .studioFont(.ui, size: 13, weight: 600)
                         .foregroundStyle(Studio.Palette.ink3)
                         .a11yDecorative()
                     TextField(L10n.t("Page URL (https://…)"), text: $pageText)

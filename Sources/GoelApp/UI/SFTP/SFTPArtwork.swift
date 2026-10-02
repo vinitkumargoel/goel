@@ -15,6 +15,7 @@ struct SFTPEntryArtwork: View {
                 .clipShape(shape)
             shape.strokeBorder(Studio.Palette.artHighlight, lineWidth: 1)
             Image(systemName: SFTPFileIcon.symbol(for: entry))
+                // fixed-size: glyph is sized to its fixed tile.
                 .font(StudioFonts.font(.ui, size: size.glyph * 0.82, weight: 600))
                 .foregroundStyle(Studio.Palette.artInk)
         }
@@ -34,6 +35,7 @@ struct SFTPSymlinkBadge: View {
     var body: some View {
         let side: CGFloat = size == .xs ? 11 : size == .s ? 13 : 16
         Image(systemName: "arrow.up.forward")
+            // fixed-size: glyph is sized to its fixed tile.
             .font(StudioFonts.font(.ui, size: side * 0.55, weight: 800))
             .foregroundStyle(Studio.Palette.ink)
             .frame(width: side, height: side)
@@ -56,7 +58,7 @@ struct SFTPTransferArtwork: View {
                           isFaded: transfer.state == .paused || transfer.state == .cancelled)
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: transfer.arrowGlyph)
-                    .font(StudioFonts.font(.ui, size: size == .xs ? 7 : 8.5, weight: 800))
+                    .studioFont(.ui, size: size == .xs ? 7 : 8.5, weight: 800)
                     .foregroundStyle(Studio.Palette.onAccent)
                     .frame(width: size == .xs ? 12 : 15, height: size == .xs ? 12 : 15)
                     .background(transfer.studioDirectionColor, in: Circle())

@@ -77,7 +77,7 @@ struct DetailProgressHero: View {
                               tone: StudioProgressTone(task: task), diameter: compact ? 56 : 86,
                               accessibilityLabel: L10n.t("Download progress")) {
                 Image(systemName: state.symbol)
-                    .font(StudioFonts.font(.ui, size: 20, weight: 650))
+                    .studioFont(.ui, size: 20, weight: 650)
                     .foregroundStyle(StudioProgressTone(task: task).color)
                     .accessibilityHidden(true)
             }

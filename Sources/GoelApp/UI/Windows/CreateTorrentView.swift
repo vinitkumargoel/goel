@@ -91,7 +91,7 @@ struct CreateTorrentView: View {
         if sourcePath.isEmpty {
             WindowsDropZone(isTargeted: dropTargeted, minHeight: 120) {
                 Image(systemName: "folder")
-                    .font(StudioFonts.font(.ui, size: 24, weight: 600))
+                    .studioFont(.ui, size: 24, weight: 600)
                     .accessibilityHidden(true)
                 Text(L10n.t("Drop a file or folder here"))
                     .studioFont(.small)
@@ -260,7 +260,7 @@ struct CreateTorrentView: View {
     private func success(_ created: Created) -> some View {
         VStack(spacing: Studio.Space.m) {
             Image(systemName: "checkmark.circle.fill")
-                .font(StudioFonts.font(.ui, size: 40, weight: 600))
+                .studioFont(.ui, size: 40, weight: 600)
                 .foregroundStyle(Studio.Palette.good)
                 .accessibilityHidden(true)
             Text(created.isSeeding

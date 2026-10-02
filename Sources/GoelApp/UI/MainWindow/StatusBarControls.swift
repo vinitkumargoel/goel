@@ -140,7 +140,7 @@ struct StatusFailedButton: View {
                 Button(L10n.t("Retry All")) { vm.retryAllFailed() }
             } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: "exclamationmark.triangle.fill").font(StudioFonts.font(.ui, size: 11, weight: 600))
+                    Image(systemName: "exclamationmark.triangle.fill").studioFont(.ui, size: 11, weight: 600)
                     Text(L10n.t("%d failed", failed)).studioFont(.small.weight(600).tabular)
                 }
                 .foregroundStyle(Studio.Palette.bad)

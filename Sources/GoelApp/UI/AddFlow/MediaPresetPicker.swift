@@ -27,7 +27,7 @@ struct MediaPresetPicker: View {
         VStack(alignment: .leading, spacing: Studio.Space.sm) {
             HStack(spacing: Studio.Space.xs) {
                 Image(systemName: "play.rectangle")
-                    .font(StudioFonts.font(.ui, size: 12, weight: 650))
+                    .studioFont(.ui, size: 12, weight: 650)
                     .foregroundStyle(Studio.Palette.accent)
                     .a11yDecorative()
                 AddFieldLabel(L10n.t("Download as"))
@@ -141,7 +141,7 @@ private struct MediaPresetTile: View {
                         .minimumScaleFactor(0.85)
                     Spacer(minLength: 0)
                     Image(systemName: preset.symbol)
-                        .font(StudioFonts.font(.ui, size: 12, weight: 650))
+                        .studioFont(.ui, size: 12, weight: 650)
                         .foregroundStyle(isSelected ? Studio.Palette.accent : Studio.Palette.ink3)
                         .a11yDecorative()
                 }

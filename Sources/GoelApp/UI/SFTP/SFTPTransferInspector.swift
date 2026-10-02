@@ -350,7 +350,7 @@ struct SFTPTransferInspector: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(StudioFonts.font(.ui, size: 13, weight: 650))
+                .studioFont(.ui, size: 13, weight: 650)
                 .foregroundStyle(Studio.Palette.ink2)
         }
         .menuStyle(.borderlessButton)

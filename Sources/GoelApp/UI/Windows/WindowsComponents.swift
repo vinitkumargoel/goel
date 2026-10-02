@@ -120,6 +120,7 @@ struct WindowsGlyphTile: View {
 
     var body: some View {
         Image(systemName: symbol)
+            // fixed-size: glyph is sized to its fixed circle.
             .font(StudioFonts.font(.ui, size: side * 0.44, weight: 650))
             .foregroundStyle(tone.foreground)
             .frame(width: side, height: side)

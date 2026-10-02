@@ -59,7 +59,7 @@ struct CompletedHero: View {
             if canPlayInApp, thumbnail != nil {
                 Button { vm.playInApp(task) } label: {
                     Image(systemName: "play.fill")
-                        .font(StudioFonts.font(.ui, size: 20, weight: 700))
+                        .studioFont(.ui, size: 20, weight: 700)
                         .foregroundStyle(Studio.Palette.ink)
                         .frame(width: 52, height: 52)
                         .studioGlass(in: Circle())

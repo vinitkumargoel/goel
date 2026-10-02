@@ -34,7 +34,7 @@ struct SFTPAllTransfersView: View {
         let summary = SFTPTransferSummary(vm.sftpTransfers)
         return HStack(alignment: .center, spacing: Studio.Space.m) {
             Image(systemName: "arrow.up.arrow.down")
-                .font(StudioFonts.font(.ui, size: 16, weight: 650))
+                .studioFont(.ui, size: 16, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .frame(width: 36, height: 36)
                 .background(Studio.Palette.accentSoft,
@@ -75,7 +75,7 @@ struct SFTPAllTransfersView: View {
                     VStack(alignment: .leading, spacing: Studio.Space.s) {
                         HStack(spacing: Studio.Space.xs) {
                             Image(systemName: "server.rack")
-                                .font(StudioFonts.font(.ui, size: 10, weight: 700))
+                                .studioFont(.ui, size: 10, weight: 700)
                             Text(serverName(group.0))
                         }
                         .studioFont(.eyebrow)

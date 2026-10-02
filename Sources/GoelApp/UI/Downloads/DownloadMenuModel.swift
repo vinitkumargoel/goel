@@ -243,13 +243,13 @@ private struct DownloadStudioMenuRow: View {
             HStack(spacing: Studio.Space.sm) {
                 if showsCheckColumn {
                     Image(systemName: "checkmark")
-                        .font(StudioFonts.font(.ui, size: 11.5, weight: 700))
+                        .studioFont(.ui, size: 11.5, weight: 700)
                         .foregroundStyle(lit ? Studio.Palette.onAccent : Studio.Palette.accent)
                         .opacity(isChecked ? 1 : 0)
                         .frame(width: 15)
                 } else if let symbol = node.symbol {
                     Image(systemName: symbol)
-                        .font(StudioFonts.font(.ui, size: 12.5, weight: 600))
+                        .studioFont(.ui, size: 12.5, weight: 600)
                         .foregroundStyle(lit ? Studio.Palette.onAccent
                                          : node.isDestructive ? Studio.Palette.bad : Studio.Palette.ink3)
                         .frame(width: 15)

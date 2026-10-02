@@ -87,7 +87,7 @@ struct DropBasketView: View {
     private var dropTarget: some View {
         WindowsDropZone(isTargeted: isTargeted, minHeight: 96) {
             Image(systemName: isTargeted ? "arrow.down.circle.fill" : "arrow.down.to.line")
-                .font(StudioFonts.font(.ui, size: 20, weight: 650))
+                .studioFont(.ui, size: 20, weight: 650)
                 .accessibilityHidden(true)
             Text(L10n.t("Drop links here"))
                 .studioFont(.small.weight(700))
@@ -163,7 +163,7 @@ private struct DropBasketRecent: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if done {
                         Image(systemName: "checkmark")
-                            .font(StudioFonts.font(.ui, size: 10, weight: 750))
+                            .studioFont(.ui, size: 10, weight: 750)
                             .foregroundStyle(Studio.Palette.good)
                             .accessibilityHidden(true)
                     } else {

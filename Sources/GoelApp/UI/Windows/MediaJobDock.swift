@@ -98,7 +98,7 @@ struct MediaJobCard: View {
         StudioFileArtwork(kind: info.kind, size: .s, isFaded: info.isQuiet)
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: info.glyph)
-                    .font(StudioFonts.font(.ui, size: 8.5, weight: 800))
+                    .studioFont(.ui, size: 8.5, weight: 800)
                     .foregroundStyle(info.tone == .neutral ? Studio.Palette.ink2 : Studio.Palette.onAccent)
                     .frame(width: 16, height: 16)
                     .background(Circle().fill(info.tone == .neutral ? Studio.Palette.segment : info.tone.foreground))

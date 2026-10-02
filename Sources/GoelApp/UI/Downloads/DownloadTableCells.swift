@@ -207,7 +207,7 @@ struct DownloadTableHeader: View {
                     .foregroundStyle(isSortKey ? Studio.Palette.ink : Studio.Palette.ink3)
                 if isSortKey {
                     Image(systemName: ascending ? "chevron.up" : "chevron.down")
-                        .font(StudioFonts.font(.ui, size: 8, weight: 800))
+                        .studioFont(.ui, size: 8, weight: 800)
                         .foregroundStyle(Studio.Palette.accent)
                 }
                 if alignment != .trailing { Spacer(minLength: 0) }

@@ -77,7 +77,7 @@ struct RailRow<Trailing: View>: View {
     @ViewBuilder private var leading: some View {
         if let symbol {
             Image(systemName: symbol)
-                .font(StudioFonts.font(.ui, size: 13, weight: 600))
+                .studioFont(.ui, size: 13, weight: 600)
                 .foregroundStyle(isSelected ? Studio.Palette.accent : Studio.Palette.ink3)
         } else if let dot {
             RoundedRectangle(cornerRadius: 3, style: .continuous)

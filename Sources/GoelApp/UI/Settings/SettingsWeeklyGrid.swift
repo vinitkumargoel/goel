@@ -138,7 +138,7 @@ struct WeeklyProfileGrid: View {
                 if !name.isEmpty {
                     // The swatch carries the letter its cells show.
                     Text(ProfileScheduleSummary.glyphs(for: names)[name] ?? "")
-                        .font(StudioFonts.font(.ui, size: 8.5, weight: 700))
+                        .studioFont(.ui, size: 8.5, weight: 700)
                         .foregroundStyle(style.rim == nil ? Studio.Palette.onAccent : Studio.Palette.ink)
                         .padding(.horizontal, 2)
                         .frame(minWidth: 14, minHeight: 14)
@@ -211,7 +211,7 @@ struct WeeklyProfileGrid: View {
             .gesture(paintGesture(size: proxy.size))
         }
         .frame(height: Self.rowHeight * 7)
-        .help(L10n.t("Paint hours with a traffic profile. A manual change holds until the next painted hour."))
+        .help(L10n.t("Paint hours with a speed profile. A manual change holds until the next painted hour."))
         return keyboardAndVoiceOver(painted, cells: cells)
     }
 
@@ -296,6 +296,7 @@ struct WeeklyProfileGrid: View {
                 let name = cells[day * 24 + hour]
                 if let glyph = glyphs[name] {
                     let text = Text(glyph)
+                        // fixed-size: label is sized to the fixed grid cell.
                         .font(StudioFonts.font(.ui, size: min(10, rect.width * 0.55), weight: 700))
                         .foregroundColor(style.rim == nil ? Studio.Palette.onAccent : Studio.Palette.ink)
                     context.draw(text, at: CGPoint(x: rect.midX, y: rect.midY))

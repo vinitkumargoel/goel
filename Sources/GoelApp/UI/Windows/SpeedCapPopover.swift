@@ -64,7 +64,7 @@ struct SpeedCapPopover: View {
     private func field(text: Binding<String>, parsed: Int64?, field: Field, label: String) -> some View {
         HStack(spacing: Studio.Space.s) {
             Image(systemName: field == .down ? "arrow.down" : "arrow.up")
-                .font(StudioFonts.font(.ui, size: 11, weight: 700))
+                .studioFont(.ui, size: 11, weight: 700)
                 .foregroundStyle(field == .down ? Studio.Palette.accent : Studio.Palette.upload)
                 .accessibilityHidden(true)
             TextField("∞", text: text)

@@ -244,7 +244,7 @@ private struct DownloadStateButtonBody: View {
             : style.tone.background
         configuration.label
             .labelStyle(StudioButtonLabelStyle(spacing: Studio.Space.xxs, iconSize: 10.5))
-            // The glyph is sized to its fixed circle, not to the text-size setting.
+            // fixed-size: the glyph is sized to its fixed circle, not to the text-size setting.
             .font(StudioFonts.font(.ui, size: style.isCapsule ? 11.5 : style.side * 0.42,
                                    weight: style.isCapsule ? 650 : 700))
             .foregroundStyle(foreground)

@@ -249,7 +249,7 @@ struct DownloadIndexCell: View {
     var body: some View {
         if showsGrip {
             Image(systemName: "line.3.horizontal")
-                .font(StudioFonts.font(.ui, size: 12, weight: 650))
+                .studioFont(.ui, size: 12, weight: 650)
                 .foregroundStyle(Studio.Palette.ink3)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())

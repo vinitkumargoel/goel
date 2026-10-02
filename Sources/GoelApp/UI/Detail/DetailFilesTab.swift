@@ -88,7 +88,7 @@ struct DetailFilePriorityMenu: View {
             HStack(spacing: Studio.Space.xxs) {
                 Text(priority == .skip ? L10n.t("Skipped") : priority.title)
                 Image(systemName: "chevron.down")
-                    .font(StudioFonts.font(.ui, size: 8, weight: 700))
+                    .studioFont(.ui, size: 8, weight: 700)
             }
             .studioFont(.caption.weight(600))
             .foregroundStyle(priority == .high ? Studio.Palette.accent : Studio.Palette.ink2)

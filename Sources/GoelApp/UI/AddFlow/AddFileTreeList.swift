@@ -56,7 +56,7 @@ struct AddFileTreeList: View {
                     toggleExpanded(node.id, current: open)
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(StudioFonts.font(.ui, size: 10, weight: 700))
+                        .studioFont(.ui, size: 10, weight: 700)
                         .foregroundStyle(Studio.Palette.ink3)
                         .rotationEffect(.degrees(isOpen ? 90 : 0))
                         .frame(width: 14, height: 20)

@@ -92,7 +92,7 @@ struct SFTPColumnHeader: View {
                 Text(key.title)
                 if active {
                     Image(systemName: ascending ? "chevron.up" : "chevron.down")
-                        .font(StudioFonts.font(.ui, size: 8, weight: 800))
+                        .studioFont(.ui, size: 8, weight: 800)
                 }
             }
             .studioFont(.eyebrow)

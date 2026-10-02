@@ -190,6 +190,7 @@ struct StudioArtGlyph: View {
     var body: some View {
         if let symbol = kind.symbol {
             Image(systemName: symbol)
+                // fixed-size: glyph is sized to the artwork's fixed tile.
                 .font(StudioFonts.font(.ui, size: size * 0.82, weight: 600))
                 .imageScale(.medium)
                 .frame(width: size, height: size)

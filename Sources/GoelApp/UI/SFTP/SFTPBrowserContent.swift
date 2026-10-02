@@ -92,7 +92,7 @@ extension SFTPBrowserView {
     private var dropStrip: some View {
         HStack(spacing: Studio.Space.sm) {
             Image(systemName: "arrow.up.doc")
-                .font(StudioFonts.font(.ui, size: 14, weight: 650))
+                .studioFont(.ui, size: 14, weight: 650)
             Text(L10n.t("Drop files or folders here to upload to %@", model.displayPath))
                 .studioFont(.small.weight(550))
                 .lineLimit(1)
@@ -116,7 +116,7 @@ extension SFTPBrowserView {
             Studio.Palette.canvas
             VStack(spacing: Studio.Space.sm) {
                 Image(systemName: "arrow.up.doc")
-                    .font(StudioFonts.font(.ui, size: 30, weight: 600))
+                    .studioFont(.ui, size: 30, weight: 600)
                 Text(L10n.t("Upload to %@", model.displayPath))
                     .studioFont(.title3)
                     .multilineTextAlignment(.center)

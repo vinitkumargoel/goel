@@ -59,7 +59,7 @@ struct AddInputStep: View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
         return HStack(spacing: Studio.Space.sm) {
             Image(systemName: "arrow.down.to.line")
-                .font(StudioFonts.font(.ui, size: 16, weight: 650))
+                .studioFont(.ui, size: 16, weight: 650)
                 .a11yDecorative()
             Text(MarkdownText.attributed(L10n.t("Drag a URL or **.torrent** file here")))
                 .studioFont(.small)

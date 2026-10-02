@@ -59,7 +59,7 @@ struct DownloadsEmptyState: View {
     private func clipboardRow(_ link: String) -> some View {
         Group {
             Image(systemName: "link")
-                .font(StudioFonts.font(.ui, size: 15, weight: 650))
+                .studioFont(.ui, size: 15, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .frame(width: 32, height: 32)
                 .background(Studio.Palette.accentSoft,
@@ -173,7 +173,7 @@ private struct EmptyStateWay: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: Studio.Space.sm) {
                 Image(systemName: symbol)
-                    .font(StudioFonts.font(.ui, size: 17, weight: 650))
+                    .studioFont(.ui, size: 17, weight: 650)
                     .foregroundStyle(isPrimary ? Studio.Palette.onAccent : Studio.Palette.accent)
                     .frame(width: 40, height: 40)
                     .background(isPrimary ? Studio.Palette.accent : Studio.Palette.accentSoft,

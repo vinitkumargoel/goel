@@ -26,7 +26,7 @@ struct StudioChip: View {
             }
             if let symbol {
                 Image(systemName: symbol)
-                    .font(StudioFonts.font(.ui, size: size == .small ? 11 : 12, weight: 650))
+                    .studioFont(.ui, size: size == .small ? 11 : 12, weight: 650)
                     .accessibilityHidden(true)
             }
             Text(title)
@@ -61,7 +61,7 @@ struct StudioFilterChip: View {
             HStack(spacing: 6) {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(StudioFonts.font(.ui, size: size == .small ? 11 : 12, weight: 650))
+                        .studioFont(.ui, size: size == .small ? 11 : 12, weight: 650)
                 }
                 Text(title)
                 if let count {
@@ -203,7 +203,7 @@ private struct StudioSegmentButton<Value: Hashable>: View {
             HStack(spacing: 6) {
                 if let symbol = segment.symbol {
                     Image(systemName: symbol)
-                        .font(StudioFonts.font(.ui, size: size == .small ? 11 : 12, weight: 650))
+                        .studioFont(.ui, size: size == .small ? 11 : 12, weight: 650)
                 }
                 if !segment.title.isEmpty {
                     Text(segment.title)

@@ -59,7 +59,7 @@ struct CommandPalette: View {
     private func searchField(_ matches: [PaletteCommand]) -> some View {
         HStack(spacing: Studio.Space.m) {
             Image(systemName: "command")
-                .font(StudioFonts.font(.ui, size: 18, weight: 650))
+                .studioFont(.ui, size: 18, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .frame(width: 20, height: 20)
                 .accessibilityHidden(true)
@@ -205,7 +205,7 @@ private struct PaletteRow: View {
         Button(action: action) {
             HStack(spacing: Studio.Space.m) {
                 Image(systemName: command.symbol)
-                    .font(StudioFonts.font(.ui, size: 14, weight: 600))
+                    .studioFont(.ui, size: 14, weight: 600)
                     .foregroundStyle(isHighlighted ? Studio.Palette.accent : Studio.Palette.ink3)
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 1) {

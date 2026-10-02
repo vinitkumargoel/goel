@@ -106,7 +106,7 @@ struct StudioNote<Accessory: View>: View {
         HStack(alignment: .top, spacing: Studio.Space.sm) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(StudioFonts.font(.ui, size: 13, weight: 650))
+                    .studioFont(.ui, size: 13, weight: 650)
                     .foregroundStyle(tone == .neutral ? Studio.Palette.ink3 : tone.foreground)
                     .accessibilityHidden(true)
             }

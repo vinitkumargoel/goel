@@ -16,7 +16,7 @@ struct StudioEmptyState<Actions: View>: View {
     var body: some View {
         VStack(spacing: Studio.Space.ml) {
             Image(systemName: symbol)
-                .font(StudioFonts.font(.ui, size: 26, weight: 600))
+                .studioFont(.ui, size: 26, weight: 600)
                 .foregroundStyle(Studio.Palette.accent)
                 .frame(width: 64, height: 64)
                 .background(Studio.Palette.accentSoft, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
@@ -63,7 +63,7 @@ struct StudioToastCard: View {
     var body: some View {
         HStack(spacing: Studio.Space.m) {
             Image(systemName: symbol)
-                .font(StudioFonts.font(.ui, size: 14, weight: 700))
+                .studioFont(.ui, size: 14, weight: 700)
                 .foregroundStyle(tone.foreground)
                 .frame(width: 32, height: 32)
                 .background(tone.background,

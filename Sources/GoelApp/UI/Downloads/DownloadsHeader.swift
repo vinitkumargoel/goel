@@ -128,7 +128,7 @@ struct DownloadsHeaderMenuButton: View {
                 Image(systemName: symbol)
                 if showsTitle { Text(title) }
                 Image(systemName: "chevron.down")
-                    .font(StudioFonts.font(.ui, size: 8.5, weight: 750))
+                    .studioFont(.ui, size: 8.5, weight: 750)
                     .opacity(0.7)
             }
         }
@@ -210,7 +210,7 @@ struct DownloadsFilterChips: View {
                 HStack(spacing: 5) {
                     Text(L10n.t("Type"))
                     Image(systemName: "chevron.down")
-                        .font(StudioFonts.font(.ui, size: 9, weight: 750))
+                        .studioFont(.ui, size: 9, weight: 750)
                 }
             }
             .buttonStyle(StudioPillButtonStyle(isOn: false))
@@ -233,7 +233,7 @@ struct DownloadsFilterChips: View {
                     .studioFont(.monoSmall)
                     .opacity(0.7)
                 Image(systemName: "xmark")
-                    .font(StudioFonts.font(.ui, size: 9, weight: 750))
+                    .studioFont(.ui, size: 9, weight: 750)
             }
         }
         .buttonStyle(StudioPillButtonStyle(isOn: true))

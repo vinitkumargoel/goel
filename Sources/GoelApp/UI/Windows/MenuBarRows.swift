@@ -164,7 +164,7 @@ struct MenuBarFinishedRow: View {
     var body: some View {
         WindowsCompactCard(isHovered: hovered) {
             Image(systemName: "line.3.horizontal")
-                .font(StudioFonts.font(.ui, size: 11, weight: 700))
+                .studioFont(.ui, size: 11, weight: 700)
                 .foregroundStyle(Studio.Palette.ink3)
                 .accessibilityHidden(true)
             HStack(spacing: 11) {
@@ -379,7 +379,7 @@ struct MenuBarCountdownSection: View {
                                   tone: .warn, diameter: 40, lineWidth: 4,
                                   accessibilityLabel: L10n.t("Time left")) {
                     Text(verbatim: "\(remaining)")
-                        .font(StudioFonts.font(.display, size: 12, weight: 700, tabularNumbers: true))
+                        .studioFont(.display, size: 12, weight: 700, tabularNumbers: true)
                         .foregroundStyle(Studio.Palette.ink)
                 }
                 VStack(alignment: .leading, spacing: Studio.Space.xs) {

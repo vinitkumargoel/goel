@@ -138,7 +138,7 @@ struct AddAdvancedOptions: View {
         } label: {
             HStack(spacing: Studio.Space.s) {
                 Image(systemName: "chevron.right")
-                    .font(StudioFonts.font(.ui, size: 11, weight: 700))
+                    .studioFont(.ui, size: 11, weight: 700)
                     .foregroundStyle(Studio.Palette.ink3)
                     .rotationEffect(.degrees(model.showAdvanced ? 90 : 0))
                     .a11yDecorative()

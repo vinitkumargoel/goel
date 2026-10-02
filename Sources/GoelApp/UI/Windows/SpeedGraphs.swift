@@ -191,7 +191,7 @@ struct GlobalSpeedHistoryPopover: View {
         let average = SpeedHistoryWindow.average(values)
         return HStack(spacing: Studio.Space.s) {
             Image(systemName: direction.symbol)
-                .font(StudioFonts.font(.ui, size: 11, weight: 700))
+                .studioFont(.ui, size: 11, weight: 700)
                 .foregroundStyle(direction.tint)
             Text(current.speedString)
                 .studioFont(.mono.weight(600))

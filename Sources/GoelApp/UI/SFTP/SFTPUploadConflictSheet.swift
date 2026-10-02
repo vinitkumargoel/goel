@@ -44,7 +44,7 @@ struct SFTPUploadConflictSheet: View {
     private var header: some View {
         HStack(alignment: .top, spacing: Studio.Space.m) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(StudioFonts.font(.ui, size: 16, weight: 650))
+                .studioFont(.ui, size: 16, weight: 650)
                 .foregroundStyle(Studio.Palette.warn)
                 .frame(width: 36, height: 36)
                 .background(Studio.Palette.warnSoft,

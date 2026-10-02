@@ -108,7 +108,7 @@ struct StudioFormCard<Content: View>: View {
                     HStack(spacing: Studio.Space.sm) {
                         if let symbol {
                             Image(systemName: symbol)
-                                .font(StudioFonts.font(.ui, size: 14, weight: 650))
+                                .studioFont(.ui, size: 14, weight: 650)
                                 .foregroundStyle(Studio.Palette.accent)
                                 .accessibilityHidden(true)
                         }
@@ -227,7 +227,7 @@ struct StudioCheckboxToggleStyle: ToggleStyle {
                     if configuration.isOn || configuration.isMixed {
                         shape.fill(Studio.Palette.accent)
                         Image(systemName: configuration.isMixed ? "minus" : "checkmark")
-                            .font(StudioFonts.font(.ui, size: 10, weight: 800))
+                            .studioFont(.ui, size: 10, weight: 800)
                             .foregroundStyle(Studio.Palette.onAccent)
                     } else {
                         shape.fill(Studio.Palette.card)

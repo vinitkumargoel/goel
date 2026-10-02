@@ -38,7 +38,7 @@ struct MainOmnibox<Accessory: View>: View {
     private func inputRow(_ input: OmniboxInput) -> some View {
         HStack(spacing: Studio.Space.m) {
             Image(systemName: symbol(for: input))
-                .font(StudioFonts.font(.ui, size: 18, weight: 650))
+                .studioFont(.ui, size: 18, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .frame(width: 20, height: 20)
                 .accessibilityHidden(true)

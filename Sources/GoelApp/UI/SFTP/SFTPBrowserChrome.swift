@@ -23,7 +23,7 @@ extension SFTPBrowserView {
         let isLong = message.count > 140 || message.contains("\n")
         return HStack(alignment: .firstTextBaseline, spacing: Studio.Space.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(StudioFonts.font(.ui, size: 13, weight: 650))
+                .studioFont(.ui, size: 13, weight: 650)
                 .foregroundStyle(Studio.Palette.bad)
                 .a11yDecorative()
             Text(message)

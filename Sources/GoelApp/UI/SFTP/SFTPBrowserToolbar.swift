@@ -128,7 +128,7 @@ extension SFTPBrowserView {
 
     private var crumbChevron: some View {
         Image(systemName: "chevron.right")
-            .font(StudioFonts.font(.ui, size: 9, weight: 700))
+            .studioFont(.ui, size: 9, weight: 700)
             .foregroundStyle(Studio.Palette.ink3)
             .a11yDecorative()
     }

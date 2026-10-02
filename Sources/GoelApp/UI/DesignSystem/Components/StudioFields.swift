@@ -95,7 +95,7 @@ struct StudioSearchField: View {
         StudioFocusedField(size: size) { focus in
             HStack(spacing: Studio.Space.s) {
                 Image(systemName: "magnifyingglass")
-                    .font(StudioFonts.font(.ui, size: size == .small ? 12 : 13, weight: 600))
+                    .studioFont(.ui, size: size == .small ? 12 : 13, weight: 600)
                     .foregroundStyle(Studio.Palette.ink3)
                     .accessibilityHidden(true)
                 TextField(placeholder, text: $text)
@@ -142,7 +142,7 @@ struct StudioOmnibox<Suggestions: View>: View {
         VStack(spacing: 0) {
             HStack(spacing: Studio.Space.m) {
                 Image(systemName: symbol)
-                    .font(StudioFonts.font(.ui, size: 18, weight: 650))
+                    .studioFont(.ui, size: 18, weight: 650)
                     .foregroundStyle(Studio.Palette.accent)
                     .frame(width: 20, height: 20)
                     .accessibilityHidden(true)
