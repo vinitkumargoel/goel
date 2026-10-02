@@ -253,7 +253,8 @@ final class AppViewModel: ObservableObject {
 
     static let sidebarVisibleKey = "sidebarVisible"
 
-    @Published var confirmRequest: ConfirmRequest?
+    /// While set, the dialog covers the queue: selection commands (⌘P, ⌘⌫ …) stand down.
+    @Published var confirmRequest: ConfirmRequest? { didSet { refreshCommandState() } }
 
     struct ConfirmRequest: Identifiable {
         let id = UUID()
@@ -567,7 +568,7 @@ final class AppViewModel: ObservableObject {
 
     func refreshCommandState() {
         commandState.apply(.make(tasks: tasks, visible: visibleTasks, selection: selection,
-                                 listVisible: selectedServer == nil,
+                                 listVisible: selectedServer == nil && confirmRequest == nil,
                                  autoShutdown: settings.autoShutdown))
     }
 
