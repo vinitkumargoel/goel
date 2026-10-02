@@ -22,34 +22,14 @@ enum ListPresentation {
         sortKey: SortKey,
         ascending: Bool
     ) -> [DownloadTask] {
-        let rest = DownloadFilters(type: filters.type, tag: filters.tag)
-        let coreStatus = isCoreStatus(filters.status)
-        let extra: ((DownloadTask) -> Bool)?
-        if coreStatus {
-            extra = rest.isEmpty ? nil : { rest.matches($0) }
-        } else {
-            extra = { filters.matches($0) }
-        }
-        return TaskListQuery.visible(
-            tasks: tasks,
-            filter: coreStatus ? mapFilter(filters.status) : .all,
-            search: search,
-            sortKey: mapSort(sortKey),
-            ascending: ascending,
-            extraMatch: extra
-        )
+        var list = filters.isEmpty ? tasks : tasks.filter(filters.matches)
+        let query = TaskListQuery.Search(search)
+        if !query.isEmpty { list = list.filter(query.matches) }
+        return list.sorted { compare($0, $1, key: sortKey, ascending: ascending) }
     }
 
     static func count(tasks: [DownloadTask], filters: DownloadFilters) -> Int {
         filters.isEmpty ? tasks.count : tasks.reduce(0) { $0 + (filters.matches($1) ? 1 : 0) }
-    }
-
-    /// Statuses `TaskListQuery` filters itself; the rest are matched app-side.
-    private static func isCoreStatus(_ filter: SidebarFilter) -> Bool {
-        switch filter {
-        case .all, .active, .paused, .completed, .seeding: return true
-        case .type, .failed, .queued, .tag: return false
-        }
     }
 
     static func matches(_ task: DownloadTask, filter: SidebarFilter) -> Bool {
@@ -63,7 +43,34 @@ enum ListPresentation {
     }
 
     static func compare(_ a: DownloadTask, _ b: DownloadTask, key: SortKey, ascending: Bool) -> Bool {
-        TaskListQuery.compare(a, b, key: mapSort(key), ascending: ascending)
+        guard let measure = measure(key) else {
+            return TaskListQuery.compare(a, b, key: mapSort(key), ascending: ascending)
+        }
+        let result = measure(a) < measure(b)
+        return ascending ? result : !result
+    }
+
+    /// The app-side sort keys as one number each. A row with no ETA (not moving) or no known
+    /// size sorts as the longest wait; ratio and peers mean nothing off BitTorrent, so a plain
+    /// download sorts below every torrent.
+    private static func measure(_ key: SortKey) -> ((DownloadTask) -> Double)? {
+        switch key {
+        case .eta:
+            return { $0.estimatedTimeRemaining ?? .infinity }
+        case .progress:
+            return { $0.fractionCompleted }
+        case .remaining:
+            return { task in
+                guard let total = task.totalBytes else { return .infinity }
+                return task.status.hasData ? 0 : Double(max(0, total - task.bytesDownloaded))
+            }
+        case .ratio:
+            return { $0.kind == .torrent ? $0.shareRatio : -1 }
+        case .peers:
+            return { $0.kind == .torrent ? Double($0.connectionCount) : -1 }
+        case .index, .name, .size, .status, .added, .downloadSpeed, .uploadSpeed:
+            return nil
+        }
     }
 
     static func statusOrder(_ s: DownloadStatus) -> Int {
@@ -98,6 +105,8 @@ enum ListPresentation {
         case .added: return .added
         case .downloadSpeed: return .downloadSpeed
         case .uploadSpeed: return .uploadSpeed
+        // Sorted app-side by `measure`; never reaches TaskListQuery.
+        case .eta, .progress, .remaining, .ratio, .peers: return .index
         }
     }
 }

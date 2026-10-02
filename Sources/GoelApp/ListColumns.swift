@@ -25,8 +25,9 @@ enum ListColumn: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// The four the list always had, so an untouched install looks the same.
-    static let defaults: Set<ListColumn> = [.size, .status, .speed, .added]
+    /// What an untouched install shows: the four core columns plus ETA (shed first when narrow).
+    /// Only applies while nothing is stored, so a customised set is never changed behind the user.
+    static let defaults: Set<ListColumn> = [.size, .status, .speed, .added, .eta]
 
     /// The optional columns, in the order they are shed when the list is too narrow (last first).
     static let extras: [ListColumn] = [.eta, .ratio, .peers, .protocol, .tags, .host, .savePath]
@@ -41,10 +42,10 @@ enum ListColumn: String, CaseIterable, Identifiable, Sendable {
         case .tags: return 110
         case .savePath: return 160
         case .protocol: return 90
-        case .size: return 84
+        case .size: return 104
         case .status: return 150
         case .speed: return 92
-        case .added: return 96
+        case .added: return 118
         }
     }
 }

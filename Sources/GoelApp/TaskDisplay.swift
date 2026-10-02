@@ -110,6 +110,15 @@ extension DownloadTask {
         return L10n.t("%1$@ · %2$@", total.byteString, percent)
     }
 
+    /// The Size column: "2.91 GB of 4.7 GB" while a row with bytes on disk is downloading or
+    /// paused, the total otherwise, nil while the size is unknown.
+    var sizeColumnText: String? {
+        guard let total = totalBytes, total > 0 else { return nil }
+        let unfinished = status == .downloading || status == .paused || status == .verifying
+        guard unfinished, bytesDownloaded > 0, bytesDownloaded < total else { return total.byteString }
+        return L10n.t("%1$@ of %2$@", bytesDownloaded.byteString, total.byteString)
+    }
+
     /// How far a seeding torrent is toward its ratio target, for the status column's micro-bar;
     /// nil when it seeds without a target, so no bar pretends there is one.
     var seedTargetProgress: Double? {
@@ -127,8 +136,8 @@ extension DownloadTask {
     /// order and the 12/24-hour clock all follow the locale instead of a fixed English pattern.
     var addedString: String { Self.addedString(for: addedAt) }
 
-    /// The list's narrow column: "Yesterday at 11:45 PM" doesn't fit, so it is "Yest 23:45" or
-    /// "12 Mar". The detail panel and the tooltip keep the full form.
+    /// The list's narrow column: "Today 23:45", "Yesterday 23:45" or "12 Mar". The detail panel
+    /// and the tooltip keep the full form ("Yesterday at 11:45 PM").
     var addedColumnString: String { DisplayFormat.compactDateTime(addedAt, locale: DisplayFormat.appLocale) }
 
     static func addedString(for date: Date, locale: Locale = DisplayFormat.appLocale) -> String {

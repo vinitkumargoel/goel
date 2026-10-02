@@ -17,6 +17,24 @@ final class TaskDisplayTests: XCTestCase {
         )
     }
 
+    /// The Size column says how far along a moving or paused row is, not just the total.
+    func testSizeColumnShowsDoneOfTotalWhileUnfinished() {
+        var running = task("a.iso", totalBytes: 4_700_000_000, status: .downloading)
+        running.bytesDownloaded = 2_910_000_000
+        XCTAssertEqual(running.sizeColumnText,
+                       L10n.t("%1$@ of %2$@", Int64(2_910_000_000).byteString, Int64(4_700_000_000).byteString))
+        var paused = running
+        paused.status = .paused
+        XCTAssertEqual(paused.sizeColumnText, running.sizeColumnText)
+
+        var done = running
+        done.status = .completed
+        XCTAssertEqual(done.sizeColumnText, Int64(4_700_000_000).byteString)
+        let notStarted = task("b.iso", totalBytes: 1_000, status: .downloading)
+        XCTAssertEqual(notStarted.sizeColumnText, Int64(1_000).byteString)
+        XCTAssertNil(task("c.iso", totalBytes: nil).sizeColumnText)
+    }
+
     func testMagnetWithoutMetadataIsMagnetUntilItsSizeIsKnown() {
         let pending = task("Season Pack",
                            source: .magnet("magnet:?xt=urn:btih:abc123"),

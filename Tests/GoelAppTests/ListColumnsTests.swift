@@ -18,10 +18,10 @@ final class ListColumnsTests: XCTestCase {
 
     func testToggleAddsAndRemoves() {
         var raw = ""
-        raw = ListColumnPrefs.toggling(.eta, in: raw)
-        XCTAssertTrue(ListColumnPrefs.decode(raw).contains(.eta))
+        raw = ListColumnPrefs.toggling(.ratio, in: raw)
+        XCTAssertTrue(ListColumnPrefs.decode(raw).contains(.ratio))
         XCTAssertTrue(ListColumnPrefs.decode(raw).isSuperset(of: ListColumn.defaults))
-        raw = ListColumnPrefs.toggling(.eta, in: raw)
+        raw = ListColumnPrefs.toggling(.ratio, in: raw)
         XCTAssertEqual(ListColumnPrefs.decode(raw), ListColumn.defaults)
     }
 
@@ -29,8 +29,23 @@ final class ListColumnsTests: XCTestCase {
         for width: CGFloat in [0, 500, 700, 1200] {
             let chosen = DownloadColumns(scale: 1, listWidth: width)
             XCTAssertEqual(chosen.layout, DownloadColumns.layout(for: width, columns: DownloadColumns()))
-            XCTAssertTrue(chosen.extras.isEmpty)
+            XCTAssertTrue(chosen.extras.allSatisfy { $0 == .eta }, "ETA is the only default extra")
         }
+    }
+
+    /// A fresh install shows ETA when there is room; a stored choice made before is kept as is.
+    func testEtaIsADefaultColumnButStoredChoicesStand() {
+        XCTAssertTrue(ListColumn.defaults.contains(.eta))
+        XCTAssertEqual(DownloadColumns(scale: 1, listWidth: 1200).extras, [.eta])
+        XCTAssertFalse(ListColumnPrefs.decode("size,status,speed,added").contains(.eta))
+    }
+
+    func testOnlyNumericExtrasSort() {
+        XCTAssertEqual(ListColumn.eta.sortKey, .eta)
+        XCTAssertEqual(ListColumn.ratio.sortKey, .ratio)
+        XCTAssertEqual(ListColumn.peers.sortKey, .peers)
+        XCTAssertNil(ListColumn.savePath.sortKey)
+        XCTAssertNil(ListColumn.tags.sortKey)
     }
 
     func testUnchosenCoreColumnsFreeRoomForTheName() {
@@ -45,7 +60,7 @@ final class ListColumnsTests: XCTestCase {
         let chosen = ListColumn.defaults.union([.eta, .ratio, .savePath])
         let wide = DownloadColumns(scale: 1, listWidth: 2000, chosen: chosen)
         XCTAssertEqual(wide.extras, [.eta, .ratio, .savePath])
-        let medium = DownloadColumns(scale: 1, listWidth: 900, chosen: chosen)
+        let medium = DownloadColumns(scale: 1, listWidth: 980, chosen: chosen)
         XCTAssertEqual(medium.extras, [.eta, .ratio])
         let narrow = DownloadColumns(scale: 1, listWidth: 420, chosen: chosen)
         XCTAssertTrue(narrow.extras.isEmpty)

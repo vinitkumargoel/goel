@@ -39,6 +39,11 @@ enum SortKey: String, CaseIterable, Identifiable {
     case added = "Added"
     case downloadSpeed = "Download speed"
     case uploadSpeed = "Upload speed"
+    case eta = "ETA"
+    case progress = "Progress"
+    case remaining = "Remaining"
+    case ratio = "Ratio"
+    case peers = "Peers"
     var id: String { rawValue }
 }
 
