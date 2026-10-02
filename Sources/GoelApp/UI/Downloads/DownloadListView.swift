@@ -20,7 +20,6 @@ struct DownloadListView: View {
 /// density without writing them.
 struct DownloadsContent: View {
     @EnvironmentObject private var vm: AppViewModel
-    @EnvironmentObject private var telemetry: TelemetryStore
     @Binding var layout: DownloadsLayout
     @Binding var columnsRaw: String
     @Binding var density: ListDensity
