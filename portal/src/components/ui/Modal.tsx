@@ -50,6 +50,7 @@ export function Modal({
         className={`sheet${className ? ` ${className}` : ''}`}
         role={role}
         aria-modal="true"
+        tabIndex={-1}
         aria-labelledby={labelledBy}
         aria-describedby={describedBy}
         style={width ? { width: `min(${width}px, 100%)` } : undefined}

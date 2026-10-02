@@ -178,7 +178,7 @@ function SheetFocus({
   /** The download has loaded, so its Close button exists; until then the sheet itself takes focus. */
   ready: boolean
 }) {
-  useDialogFocus(target, { onEscape, trap })
+  useDialogFocus(target, { onEscape, trap, initialFocus: false })
   useEffect(() => {
     const root = target.current
     const close = root?.querySelector<HTMLElement>('.dx')
