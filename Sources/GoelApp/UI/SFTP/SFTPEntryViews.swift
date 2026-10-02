@@ -45,7 +45,7 @@ struct SFTPEntryRow: View {
                 .frame(width: Self.dateWidth, alignment: .trailing)
         }
         .padding(.horizontal, Studio.Space.ml)
-        .padding(.vertical, 7)
+        .padding(.vertical, Studio.Space.cozy)
         .frame(minHeight: 38)
         .background(highlight)
         .overlay {
@@ -92,7 +92,7 @@ struct SFTPColumnHeader: View {
                 Text(key.title)
                 if active {
                     Image(systemName: ascending ? "chevron.up" : "chevron.down")
-                        .font(StudioFonts.font(.ui, size: 8, weight: 800))
+                        .studioFont(.ui, size: 8, weight: 800)
                 }
             }
             .studioFont(.eyebrow)

@@ -155,7 +155,7 @@ struct SFTPConnectionEditor: View {
                 StudioFocusedField { focus in
                     HStack(spacing: Studio.Space.s) {
                         Image(systemName: "link")
-                            .font(StudioFonts.font(.ui, size: 12, weight: 650))
+                            .studioFont(.ui, size: 12, weight: 650)
                             .foregroundStyle(Studio.Palette.accent)
                             .accessibilityHidden(true)
                         TextField(L10n.t("Paste an address — sftp://user@host:22/path"), text: $pastedAddress)

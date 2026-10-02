@@ -26,7 +26,7 @@ struct StudioChip: View {
             }
             if let symbol {
                 Image(systemName: symbol)
-                    .font(StudioFonts.font(.ui, size: size == .small ? 11 : 12, weight: 650))
+                    .studioFont(.ui, size: size == .small ? 11 : 12, weight: 650)
                     .accessibilityHidden(true)
             }
             Text(title)
@@ -61,7 +61,7 @@ struct StudioFilterChip: View {
             HStack(spacing: 6) {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(StudioFonts.font(.ui, size: size == .small ? 11 : 12, weight: 650))
+                        .studioFont(.ui, size: size == .small ? 11 : 12, weight: 650)
                 }
                 Text(title)
                 if let count {
@@ -89,7 +89,7 @@ struct StudioChipChrome: ViewModifier {
             .studioFont(.callout.size(size == .small ? 11.5 : 12.5).weight(600))
             .lineLimit(1)
             .foregroundStyle(isOn ? Studio.Palette.inverseInk : hovered ? Studio.Palette.ink : Studio.Palette.ink2)
-            .padding(.horizontal, size == .small ? 9 : 12)
+            .padding(.horizontal, size == .small ? Studio.Space.roomy : 12)
             .frame(minHeight: size == .small ? 24 : 30)
             .background(Capsule().fill(isOn ? Studio.Palette.ink : hovered ? Studio.Palette.well : Studio.Palette.card))
             .overlay {
@@ -203,7 +203,7 @@ private struct StudioSegmentButton<Value: Hashable>: View {
             HStack(spacing: 6) {
                 if let symbol = segment.symbol {
                     Image(systemName: symbol)
-                        .font(StudioFonts.font(.ui, size: size == .small ? 11 : 12, weight: 650))
+                        .studioFont(.ui, size: size == .small ? 11 : 12, weight: 650)
                 }
                 if !segment.title.isEmpty {
                     Text(segment.title)
@@ -212,7 +212,7 @@ private struct StudioSegmentButton<Value: Hashable>: View {
                 }
             }
             .foregroundStyle(isSelected || hovered ? Studio.Palette.ink : Studio.Palette.ink2)
-            .padding(.horizontal, size == .small ? 9 : 12)
+            .padding(.horizontal, size == .small ? Studio.Space.roomy : 12)
             .frame(minHeight: size == .small ? 22 : 26)
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .background {

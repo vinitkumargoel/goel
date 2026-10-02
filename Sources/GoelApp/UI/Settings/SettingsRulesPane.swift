@@ -153,7 +153,7 @@ private struct RuleCard: View {
                 .accessibilityLabel(L10n.t("Enable rule %@", rule.name))
         }
         .padding(.horizontal, Studio.Space.m)
-        .padding(.vertical, 11)
+        .padding(.vertical, Studio.Space.relaxed)
         .studioSurface(.card, radius: Studio.Radius.compactCard)
         .onHover { hovered = $0 }
     }

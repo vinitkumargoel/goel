@@ -24,7 +24,7 @@ struct StatusSpeedLimitChip: View {
                     .lineLimit(1)
             }
             .foregroundStyle(on ? Studio.Palette.warn : hovered ? Studio.Palette.ink : Studio.Palette.ink2)
-            .padding(.horizontal, 9)
+            .padding(.horizontal, Studio.Space.roomy)
             .frame(minHeight: 24)
             .background(Capsule().fill(on ? Studio.Palette.warnSoft
                                           : hovered ? Studio.Palette.well : Studio.Palette.card))
@@ -139,8 +139,8 @@ struct StatusFailedButton: View {
                 Button(L10n.t("Show Failed")) { show() }
                 Button(L10n.t("Retry All")) { vm.retryAllFailed() }
             } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "exclamationmark.triangle.fill").font(StudioFonts.font(.ui, size: 11, weight: 600))
+                HStack(spacing: Studio.Space.snug) {
+                    Image(systemName: "exclamationmark.triangle.fill").studioFont(.ui, size: 11, weight: 600)
                     Text(L10n.t("%d failed", failed)).studioFont(.small.weight(600).tabular)
                 }
                 .foregroundStyle(Studio.Palette.bad)

@@ -153,7 +153,7 @@ struct StudioButtonLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: spacing) {
             configuration.icon
-                .font(StudioFonts.font(.ui, size: iconSize, weight: 650))
+                .studioFont(.ui, size: iconSize, weight: 650)
             configuration.title
         }
     }
@@ -224,6 +224,7 @@ private struct StudioIconButtonBody: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: style.size.radius, style: .continuous)
         configuration.label
+            // fixed-size: glyph sits in a fixed-size button frame.
             .font(StudioFonts.font(.ui, size: style.size.glyph, weight: 600))
             .foregroundStyle(style.isOn ? Studio.Palette.accent : hovered ? Studio.Palette.ink : Studio.Palette.ink2)
             .frame(width: style.size.side, height: style.size.side)

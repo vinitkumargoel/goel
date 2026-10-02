@@ -26,7 +26,7 @@ struct StudioSheet<Content: View, Footer: View>: View {
             HStack(alignment: .center, spacing: Studio.Space.m) {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(StudioFonts.font(.ui, size: 16, weight: 650))
+                        .studioFont(.ui, size: 16, weight: 650)
                         .foregroundStyle(Studio.Palette.accent)
                         .frame(width: 36, height: 36)
                         .background(Studio.Palette.accentSoft,
@@ -51,7 +51,7 @@ struct StudioSheet<Content: View, Footer: View>: View {
                 }
             }
             .padding(.horizontal, Studio.Space.xl)
-            .padding(.top, 18)
+            .padding(.top, Studio.Space.section)
             .padding(.bottom, Studio.Space.m)
 
             VStack(alignment: .leading, spacing: Studio.Space.ml) {
@@ -203,12 +203,12 @@ struct StudioMenuRow: View {
             HStack(spacing: Studio.Space.sm) {
                 if isChecked {
                     Image(systemName: "checkmark")
-                        .font(StudioFonts.font(.ui, size: 12, weight: 700))
+                        .studioFont(.ui, size: 12, weight: 700)
                         .foregroundStyle(lit ? Studio.Palette.onAccent : Studio.Palette.accent)
                         .frame(width: 15)
                 } else if let symbol {
                     Image(systemName: symbol)
-                        .font(StudioFonts.font(.ui, size: 13, weight: 600))
+                        .studioFont(.ui, size: 13, weight: 600)
                         .foregroundStyle(lit ? Studio.Palette.onAccent
                                          : isDestructive ? Studio.Palette.bad : Studio.Palette.ink3)
                         .frame(width: 15)

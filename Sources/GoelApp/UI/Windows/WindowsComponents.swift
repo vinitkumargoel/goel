@@ -15,7 +15,7 @@ struct WindowsCompactCard<Content: View>: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.compactCard, style: .continuous)
-        HStack(spacing: 11) { content() }
+        HStack(spacing: Studio.Space.relaxed) { content() }
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .studioSurface(isHovered ? .well : .card, radius: Studio.Radius.compactCard, isSelected: isSelected)
@@ -55,7 +55,7 @@ struct WindowsLabeledField<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: Studio.Space.snug) {
             Text(label)
                 .studioFont(.small.weight(650))
                 .foregroundStyle(Studio.Palette.ink2)
@@ -120,6 +120,7 @@ struct WindowsGlyphTile: View {
 
     var body: some View {
         Image(systemName: symbol)
+            // fixed-size: glyph is sized to its fixed circle.
             .font(StudioFonts.font(.ui, size: side * 0.44, weight: 650))
             .foregroundStyle(tone.foreground)
             .frame(width: side, height: side)

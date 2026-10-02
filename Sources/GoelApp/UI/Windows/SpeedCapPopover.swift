@@ -34,8 +34,8 @@ struct SpeedCapPopover: View {
                     .foregroundStyle(Studio.Palette.ink3)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 18)
+            .padding(.horizontal, Studio.Space.section)
+            .padding(.top, Studio.Space.section)
             .padding(.bottom, Studio.Space.ml)
             HStack(spacing: Studio.Space.s) {
                 Spacer()
@@ -47,7 +47,7 @@ struct SpeedCapPopover: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canApply)
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, Studio.Space.section)
             .padding(.vertical, Studio.Space.m)
             .background(Studio.Palette.well)
             .overlay(alignment: .top) { StudioDivider() }
@@ -64,7 +64,7 @@ struct SpeedCapPopover: View {
     private func field(text: Binding<String>, parsed: Int64?, field: Field, label: String) -> some View {
         HStack(spacing: Studio.Space.s) {
             Image(systemName: field == .down ? "arrow.down" : "arrow.up")
-                .font(StudioFonts.font(.ui, size: 11, weight: 700))
+                .studioFont(.ui, size: 11, weight: 700)
                 .foregroundStyle(field == .down ? Studio.Palette.accent : Studio.Palette.upload)
                 .accessibilityHidden(true)
             TextField("∞", text: text)

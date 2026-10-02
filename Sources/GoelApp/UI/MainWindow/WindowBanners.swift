@@ -50,7 +50,7 @@ struct WarningBanner: View {
     var body: some View {
         HStack(spacing: Studio.Space.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(StudioFonts.font(.ui, size: 13, weight: 650))
+                .studioFont(.ui, size: 13, weight: 650)
                 .foregroundStyle(Studio.Palette.warn)
                 .accessibilityHidden(true)
             Text(message)

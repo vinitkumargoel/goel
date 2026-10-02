@@ -45,7 +45,7 @@ private struct ToastCard: View {
         let tone = Self.tone(for: toast.kind)
         HStack(spacing: Studio.Space.m) {
             Image(systemName: Self.symbol(for: toast.kind))
-                .font(StudioFonts.font(.ui, size: 14, weight: 700))
+                .studioFont(.ui, size: 14, weight: 700)
                 .foregroundStyle(tone.foreground)
                 .frame(width: 32, height: 32)
                 .background(tone.background,

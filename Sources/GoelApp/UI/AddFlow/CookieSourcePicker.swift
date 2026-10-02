@@ -43,7 +43,7 @@ struct CookieSourcePicker: View {
     private var header: some View {
         HStack(spacing: Studio.Space.xs) {
             Image(systemName: "person.badge.key")
-                .font(StudioFonts.font(.ui, size: 12, weight: 650))
+                .studioFont(.ui, size: 12, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .a11yDecorative()
             AddFieldLabel(L10n.t("Sign-in cookies"))
@@ -84,7 +84,7 @@ struct CookieSourcePicker: View {
             let names = sanitizedCookieHeader.map(CookieHeader.names(in:)) ?? []
             HStack(alignment: .top, spacing: Studio.Space.xs) {
                 Image(systemName: names.isEmpty ? "exclamationmark.triangle.fill" : "lock.fill")
-                    .font(StudioFonts.font(.ui, size: 11, weight: 650))
+                    .studioFont(.ui, size: 11, weight: 650)
                     .foregroundStyle(names.isEmpty ? Studio.Palette.warn : Studio.Palette.good)
                 Text(summaryText(names: names))
                     .studioFont(.caption)

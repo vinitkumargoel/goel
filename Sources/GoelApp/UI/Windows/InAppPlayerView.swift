@@ -51,7 +51,7 @@ struct InAppPlayerView: View {
     private var header: some View {
         HStack(spacing: Studio.Space.s) {
             Image(systemName: "play.rectangle.fill")
-                .font(StudioFonts.font(.ui, size: 14, weight: 650))
+                .studioFont(.ui, size: 14, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .accessibilityHidden(true)
             Text(item.title)
@@ -78,7 +78,7 @@ struct InAppPlayerView: View {
         VStack(alignment: .leading, spacing: Studio.Space.m) {
             HStack(spacing: Studio.Space.s) {
                 Image(systemName: "film")
-                    .font(StudioFonts.font(.ui, size: 17, weight: 650))
+                    .studioFont(.ui, size: 17, weight: 650)
                     .foregroundStyle(Studio.Palette.warn)
                     .accessibilityHidden(true)
                 Text(L10n.t("Can’t play this file here"))

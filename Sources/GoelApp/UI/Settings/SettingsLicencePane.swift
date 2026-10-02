@@ -247,7 +247,7 @@ private struct LicenceList: View {
     let items: [String]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: Studio.Space.snug) {
             Text(title)
                 .studioFont(.small.weight(650))
                 .foregroundStyle(tone.foreground)

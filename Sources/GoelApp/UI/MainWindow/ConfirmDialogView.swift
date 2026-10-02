@@ -23,7 +23,7 @@ struct ConfirmDialogView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: Studio.Space.m) {
                     Image(systemName: request.isDestructive ? "trash" : "questionmark")
-                        .font(StudioFonts.font(.ui, size: 16, weight: 650))
+                        .studioFont(.ui, size: 16, weight: 650)
                         .foregroundStyle(request.isDestructive ? Studio.Palette.bad : Studio.Palette.accent)
                         .frame(width: 36, height: 36)
                         .background(request.isDestructive ? Studio.Palette.badSoft : Studio.Palette.accentSoft,
@@ -126,7 +126,7 @@ struct DropTargetOverlay: View {
             Studio.Palette.scrim.ignoresSafeArea()
             VStack(spacing: Studio.Space.sm) {
                 Image(systemName: "arrow.down.to.line")
-                    .font(StudioFonts.font(.ui, size: 30, weight: 600))
+                    .studioFont(.ui, size: 30, weight: 600)
                 Text(L10n.t("Drop a URL or .torrent file here"))
                     .studioFont(.title3)
                 Text(L10n.t("Links, magnets and .torrent files are added to the queue"))

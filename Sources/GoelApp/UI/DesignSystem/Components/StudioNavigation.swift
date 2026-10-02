@@ -27,7 +27,7 @@ struct StudioRailItem: View {
         Button(action: action) {
             HStack(spacing: Studio.Space.sm) {
                 Image(systemName: symbol)
-                    .font(StudioFonts.font(.ui, size: 17, weight: 600))
+                    .studioFont(.ui, size: 17, weight: 600)
                     .frame(width: 20, height: 20)
                 if isExpanded {
                     Text(title)
@@ -77,7 +77,7 @@ struct StudioRailBadge: View {
 
     var body: some View {
         Text(verbatim: value > 99 ? "99+" : "\(value)")
-            .font(StudioFonts.font(.ui, size: 9.5, weight: 700, tabularNumbers: true))
+            .studioFont(.ui, size: 9.5, weight: 700, tabularNumbers: true)
             .foregroundStyle(Studio.Palette.onAccent)
             .padding(.horizontal, 4)
             .frame(minWidth: 16, minHeight: 16)
@@ -125,7 +125,7 @@ struct StudioLaneHeader: View {
                 Text(verbatim: "\(count)")
                     .studioFont(.monoSmall.weight(600))
                     .foregroundStyle(Studio.Palette.ink2)
-                    .padding(.horizontal, 7)
+                    .padding(.horizontal, Studio.Space.cozy)
                     .padding(.vertical, 2)
                     .background(Studio.Palette.segment, in: Capsule())
                     .accessibilityLabel(L10n.t("%d items", count))
@@ -155,11 +155,11 @@ struct StudioWordmark: View {
     var body: some View {
         HStack(alignment: .top, spacing: 1) {
             Text(verbatim: "Goel")
-                .font(StudioFonts.font(.display, size: size, weight: 750))
+                .studioFont(.display, size: size, weight: 750)
                 .tracking(-size * 0.03)
                 .foregroundStyle(Studio.Palette.ink)
             Text(verbatim: "°")
-                .font(StudioFonts.font(.display, size: size * 0.8, weight: 750))
+                .studioFont(.display, size: size * 0.8, weight: 750)
                 .foregroundStyle(Studio.Palette.accent)
         }
         .accessibilityElement(children: .ignore)

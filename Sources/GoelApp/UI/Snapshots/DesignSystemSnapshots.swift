@@ -278,7 +278,7 @@ enum GallerySection {
                     StudioProgressArc(fraction: nil)
                     StudioProgressArc(fraction: 0.62, diameter: 86) {
                         Image(systemName: "arrow.down")
-                            .font(StudioFonts.font(.ui, size: 20, weight: 700))
+                            .studioFont(.ui, size: 20, weight: 700)
                             .foregroundStyle(Studio.Palette.accent)
                     }
                     StudioProgressArc(fraction: 0.62, diameter: 132)

@@ -11,7 +11,7 @@ struct MenuBarFailedRow: View {
 
     var body: some View {
         WindowsCompactCard(isFailure: true) {
-            HStack(spacing: 11) {
+            HStack(spacing: Studio.Space.relaxed) {
                 StudioFileArtwork(kind: StudioArtKind(task: task), size: .s)
                 VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     FileNameText(task.compactDisplayName, lineLimit: 1)
@@ -50,7 +50,7 @@ struct MenuBarDownloadRow: View {
     var body: some View {
         let state = StudioDownloadState(task: task)
         WindowsCompactCard {
-            HStack(spacing: 11) {
+            HStack(spacing: Studio.Space.relaxed) {
                 StudioFileArtwork(kind: StudioArtKind(task: task), size: .s,
                                   isFaded: state == .paused || state == .queued,
                                   isFetchingMetadata: state == .requestingMetadata)
@@ -66,7 +66,7 @@ struct MenuBarDownloadRow: View {
                                          height: StudioLinearProgress.thinHeight)
                         .padding(.vertical, Studio.Space.hair)
                         .accessibilityHidden(true)
-                    HStack(spacing: 5) {
+                    HStack(spacing: Studio.Space.snug) {
                         Text(task.statusDetailText)
                             .studioFont(.mono)
                             .foregroundStyle(Studio.Palette.ink3)
@@ -164,10 +164,10 @@ struct MenuBarFinishedRow: View {
     var body: some View {
         WindowsCompactCard(isHovered: hovered) {
             Image(systemName: "line.3.horizontal")
-                .font(StudioFonts.font(.ui, size: 11, weight: 700))
+                .studioFont(.ui, size: 11, weight: 700)
                 .foregroundStyle(Studio.Palette.ink3)
                 .accessibilityHidden(true)
-            HStack(spacing: 11) {
+            HStack(spacing: Studio.Space.relaxed) {
                 StudioFileArtwork(kind: StudioArtKind(task: task), size: .s)
                 VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     FileNameText(task.name, lineLimit: 1)
@@ -228,7 +228,7 @@ struct MenuBarSFTPTransferRow: View {
     var body: some View {
         WindowsCompactCard {
             Button(action: onShowRemoteFolder) {
-                HStack(spacing: 11) {
+                HStack(spacing: Studio.Space.relaxed) {
                     WindowsGlyphTile(symbol: transfer.arrowGlyph,
                                      tone: transfer.direction == .upload ? .upload : .accent)
                     VStack(alignment: .leading, spacing: 3) {
@@ -379,7 +379,7 @@ struct MenuBarCountdownSection: View {
                                   tone: .warn, diameter: 40, lineWidth: 4,
                                   accessibilityLabel: L10n.t("Time left")) {
                     Text(verbatim: "\(remaining)")
-                        .font(StudioFonts.font(.display, size: 12, weight: 700, tabularNumbers: true))
+                        .studioFont(.display, size: 12, weight: 700, tabularNumbers: true)
                         .foregroundStyle(Studio.Palette.ink)
                 }
                 VStack(alignment: .leading, spacing: Studio.Space.xs) {

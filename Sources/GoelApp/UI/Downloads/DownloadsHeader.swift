@@ -55,7 +55,7 @@ struct DownloadsHeader: View {
             Text(verbatim: "\(vm.visibleTasks.count)")
                 .studioFont(Studio.TextStyle.monoSmall.weight(600))
                 .foregroundStyle(Studio.Palette.ink2)
-                .padding(.horizontal, 7)
+                .padding(.horizontal, Studio.Space.cozy)
                 .padding(.vertical, Studio.Space.hair)
                 .background(Studio.Palette.segment, in: Capsule())
                 .accessibilityLabel(vm.visibleTasks.count == 1 ? L10n.t("%d download", 1)
@@ -124,11 +124,11 @@ struct DownloadsHeaderMenuButton: View {
         Button {
             isOpen.toggle()
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: Studio.Space.snug) {
                 Image(systemName: symbol)
                 if showsTitle { Text(title) }
                 Image(systemName: "chevron.down")
-                    .font(StudioFonts.font(.ui, size: 8.5, weight: 750))
+                    .studioFont(.ui, size: 8.5, weight: 750)
                     .opacity(0.7)
             }
         }
@@ -207,10 +207,10 @@ struct DownloadsFilterChips: View {
             Button {
                 typeMenuOpen.toggle()
             } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: Studio.Space.snug) {
                     Text(L10n.t("Type"))
                     Image(systemName: "chevron.down")
-                        .font(StudioFonts.font(.ui, size: 9, weight: 750))
+                        .studioFont(.ui, size: 9, weight: 750)
                 }
             }
             .buttonStyle(StudioPillButtonStyle(isOn: false))
@@ -233,7 +233,7 @@ struct DownloadsFilterChips: View {
                     .studioFont(.monoSmall)
                     .opacity(0.7)
                 Image(systemName: "xmark")
-                    .font(StudioFonts.font(.ui, size: 9, weight: 750))
+                    .studioFont(.ui, size: 9, weight: 750)
             }
         }
         .buttonStyle(StudioPillButtonStyle(isOn: true))

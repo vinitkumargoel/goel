@@ -97,7 +97,7 @@ struct DetailSegmentBars: View {
             }
         } else {
             DetailSection(L10n.t("%d parallel segments", live.count)) {
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: Studio.Space.cozy) {
                     ForEach(Array(live.enumerated()), id: \.element.id) { index, segment in
                         row(index: index, segment: segment)
                     }

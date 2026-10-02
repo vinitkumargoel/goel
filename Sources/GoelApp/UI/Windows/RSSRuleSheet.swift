@@ -100,7 +100,7 @@ struct RSSRuleSheet: View {
         WindowsLabeledField(label: L10n.t("Folder")) {
             HStack(spacing: Studio.Space.s) {
                 Image(systemName: "folder")
-                    .font(StudioFonts.font(.ui, size: 12, weight: 650))
+                    .studioFont(.ui, size: 12, weight: 650)
                     .foregroundStyle(Studio.Palette.accent)
                     .accessibilityHidden(true)
                 Text(draft.saveDirectory.isEmpty ? L10n.t("Default folder rule")
@@ -175,7 +175,7 @@ private struct RSSRulePreview: View {
                             let matches = RSSRuleMatcher.matches(title: item.title, feed: draft)
                             HStack(spacing: Studio.Space.s) {
                                 Image(systemName: matches ? "checkmark.circle.fill" : "circle")
-                                    .font(StudioFonts.font(.ui, size: 11, weight: 650))
+                                    .studioFont(.ui, size: 11, weight: 650)
                                     .foregroundStyle(matches ? Studio.Palette.accent : Studio.Palette.ink3)
                                     .accessibilityHidden(true)
                                 Text(item.title)

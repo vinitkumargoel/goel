@@ -174,7 +174,7 @@ struct QueueOverviewPanel: View {
             DetailFactRow(L10n.t("Speed limit"),
                           value: SpeedProfileText.pill(limitEnabled: vm.settings.speedLimitEnabled,
                                                        profile: vm.settings.selectedProfile))
-            DetailFactRow(L10n.t("Queue profile"), value: vm.settings.selectedProfile.name)
+            DetailFactRow(L10n.t("Speed profile"), value: vm.settings.selectedProfile.name)
         }
     }
 }

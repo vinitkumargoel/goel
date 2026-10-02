@@ -35,7 +35,7 @@ struct AutoShutdownCountdownCard: View {
             StudioProgressArc(fraction: Double(remaining) / Double(max(1, total)), tone: .warn, diameter: 104,
                               lineWidth: 8, accessibilityLabel: L10n.t("Time left")) {
                 Text(verbatim: "\(remaining)")
-                    .font(StudioFonts.font(.display, size: 34, weight: 750, tabularNumbers: true))
+                    .studioFont(.display, size: 34, weight: 750, tabularNumbers: true)
                     .foregroundStyle(Studio.Palette.ink)
             }
             .accessibilityValue(AutoShutdownCountdown.message(remaining: remaining))

@@ -141,7 +141,7 @@ private struct OnboardingLogo: View {
                                      startPoint: .topLeading, endPoint: .bottomTrailing))
                 .studioElevation(.raised)
             Text(verbatim: "g")
-                .font(StudioFonts.font(.display, size: 38, weight: 800))
+                .studioFont(.display, size: 38, weight: 800)
                 .foregroundStyle(Studio.Palette.onAccent)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .offset(y: -3)
@@ -162,7 +162,7 @@ private struct OnboardingLicenceStrip: View {
     var body: some View {
         HStack(alignment: .center, spacing: Studio.Space.sm) {
             Image(systemName: "key")
-                .font(StudioFonts.font(.ui, size: 13, weight: 650))
+                .studioFont(.ui, size: 13, weight: 650)
                 .foregroundStyle(Studio.Palette.ink3)
                 .accessibilityHidden(true)
             Button {

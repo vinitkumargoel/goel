@@ -134,18 +134,18 @@ struct WeeklyProfileGrid: View {
         let selected = brush == name
         let style = Self.style(for: name, in: names)
         return Button { brush = name } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: Studio.Space.snug) {
                 if !name.isEmpty {
                     // The swatch carries the letter its cells show.
                     Text(ProfileScheduleSummary.glyphs(for: names)[name] ?? "")
-                        .font(StudioFonts.font(.ui, size: 8.5, weight: 700))
+                        .studioFont(.ui, size: 8.5, weight: 700)
                         .foregroundStyle(style.rim == nil ? Studio.Palette.onAccent : Studio.Palette.ink)
                         .padding(.horizontal, 2)
                         .frame(minWidth: 14, minHeight: 14)
-                        .background(style.fill, in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                        .background(style.fill, in: RoundedRectangle(cornerRadius: Studio.Radius.hair, style: .continuous))
                         .overlay {
                             if let rim = style.rim {
-                                RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(rim, lineWidth: 1)
+                                RoundedRectangle(cornerRadius: Studio.Radius.hair, style: .continuous).strokeBorder(rim, lineWidth: 1)
                             }
                         }
                         .accessibilityHidden(true)
@@ -211,7 +211,7 @@ struct WeeklyProfileGrid: View {
             .gesture(paintGesture(size: proxy.size))
         }
         .frame(height: Self.rowHeight * 7)
-        .help(L10n.t("Paint hours with a traffic profile. A manual change holds until the next painted hour."))
+        .help(L10n.t("Paint hours with a speed profile. A manual change holds until the next painted hour."))
         return keyboardAndVoiceOver(painted, cells: cells)
     }
 
@@ -284,7 +284,7 @@ struct WeeklyProfileGrid: View {
             for hour in 0..<24 {
                 let rect = CGRect(x: CGFloat(hour) * w + gap / 2, y: CGFloat(day) * h + gap / 2,
                                   width: w - gap, height: h - gap)
-                let path = Path(roundedRect: rect, cornerRadius: 5, style: .continuous)
+                let path = Path(roundedRect: rect, cornerRadius: Studio.Radius.mini, style: .continuous)
                 let style = style(for: cells[day * 24 + hour], in: names)
                 context.fill(path, with: .color(style.fill))
                 if let rim = style.rim {
@@ -296,6 +296,7 @@ struct WeeklyProfileGrid: View {
                 let name = cells[day * 24 + hour]
                 if let glyph = glyphs[name] {
                     let text = Text(glyph)
+                        // fixed-size: label is sized to the fixed grid cell.
                         .font(StudioFonts.font(.ui, size: min(10, rect.width * 0.55), weight: 700))
                         .foregroundColor(style.rim == nil ? Studio.Palette.onAccent : Studio.Palette.ink)
                     context.draw(text, at: CGPoint(x: rect.midX, y: rect.midY))

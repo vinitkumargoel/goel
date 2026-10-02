@@ -217,7 +217,7 @@ private struct ProfileFieldTile<Field: View>: View {
     @ViewBuilder var field: () -> Field
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: Studio.Space.snug) {
             Text(label)
                 .studioFont(.small.weight(650))
                 .foregroundStyle(Studio.Palette.ink2)

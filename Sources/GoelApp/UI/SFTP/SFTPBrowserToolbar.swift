@@ -128,7 +128,7 @@ extension SFTPBrowserView {
 
     private var crumbChevron: some View {
         Image(systemName: "chevron.right")
-            .font(StudioFonts.font(.ui, size: 9, weight: 700))
+            .studioFont(.ui, size: 9, weight: 700)
             .foregroundStyle(Studio.Palette.ink3)
             .a11yDecorative()
     }
@@ -163,7 +163,7 @@ extension SFTPBrowserView {
                 Text(verbatim: "\(visibleEntries.count)")
                     .studioFont(Studio.TextStyle.monoSmall.weight(600))
                     .foregroundStyle(Studio.Palette.ink2)
-                    .padding(.horizontal, 7)
+                    .padding(.horizontal, Studio.Space.cozy)
                     .padding(.vertical, Studio.Space.hair)
                     .background(Studio.Palette.segment, in: Capsule())
                     .fixedSize()
@@ -309,7 +309,7 @@ private struct SFTPCrumbBody: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.badge, style: .continuous)
         configuration.label
-            .padding(.horizontal, 5)
+            .padding(.horizontal, Studio.Space.snug)
             .padding(.vertical, 3)
             .background(shape.fill(hovered && isEnabled ? Studio.Palette.segment : .clear))
             .studioFocusRing(isFocused, shape: shape)

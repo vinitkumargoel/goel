@@ -59,7 +59,7 @@ struct CommandPalette: View {
     private func searchField(_ matches: [PaletteCommand]) -> some View {
         HStack(spacing: Studio.Space.m) {
             Image(systemName: "command")
-                .font(StudioFonts.font(.ui, size: 18, weight: 650))
+                .studioFont(.ui, size: 18, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .frame(width: 20, height: 20)
                 .accessibilityHidden(true)
@@ -84,7 +84,7 @@ struct CommandPalette: View {
             }
             StudioKeyCaps("esc")
         }
-        .padding(.leading, 18)
+        .padding(.leading, Studio.Space.section)
         .padding(.trailing, Studio.Space.ml)
         .frame(minHeight: 58)
         // Arrow keys must be handled on the field, not the list, or they move the text cursor.
@@ -205,7 +205,7 @@ private struct PaletteRow: View {
         Button(action: action) {
             HStack(spacing: Studio.Space.m) {
                 Image(systemName: command.symbol)
-                    .font(StudioFonts.font(.ui, size: 14, weight: 600))
+                    .studioFont(.ui, size: 14, weight: 600)
                     .foregroundStyle(isHighlighted ? Studio.Palette.accent : Studio.Palette.ink3)
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 1) {
@@ -227,7 +227,7 @@ private struct PaletteRow: View {
                 }
             }
             .padding(.horizontal, Studio.Space.sm)
-            .padding(.vertical, 7)
+            .padding(.vertical, Studio.Space.cozy)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isHighlighted ? Studio.Palette.accentSoft : .clear,
                         in: RoundedRectangle(cornerRadius: Studio.Radius.segment, style: .continuous))

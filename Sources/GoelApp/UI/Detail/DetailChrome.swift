@@ -121,7 +121,7 @@ struct DetailForcedDockNote: View {
     var body: some View {
         if vm.detailDockForcedBottom {
             Label(L10n.t("Docked bottom because the window is narrow"), systemImage: "arrow.down.to.line")
-                .labelStyle(StudioButtonLabelStyle(spacing: 5, iconSize: 10.5))
+                .labelStyle(StudioButtonLabelStyle(spacing: Studio.Space.snug, iconSize: 10.5))
                 .studioFont(.caption)
                 .foregroundStyle(Studio.Palette.ink3)
                 .lineLimit(1)

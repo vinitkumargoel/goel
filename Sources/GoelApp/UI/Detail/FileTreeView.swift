@@ -101,7 +101,7 @@ struct FileTreeView<Trailing: View>: View {
         if node.isFolder {
             Button { toggleExpanded(node) } label: {
                 Image(systemName: isOpen ? "chevron.down" : "chevron.right")
-                    .font(StudioFonts.font(.ui, size: 9.5, weight: 700))
+                    .studioFont(.ui, size: 9.5, weight: 700)
                     .foregroundStyle(Studio.Palette.ink3)
                     .frame(width: 12, height: 17)
                     // 24 × 25 to click, still 12 × 17 to see.
@@ -154,7 +154,7 @@ struct DetailCheckMark: View {
     @State private var hovered = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Studio.Radius.mini, style: .continuous)
         ZStack {
             if state == .off {
                 shape.fill(Studio.Palette.card)
@@ -162,7 +162,7 @@ struct DetailCheckMark: View {
             } else {
                 shape.fill(Studio.Palette.accent)
                 Image(systemName: state == .mixed ? "minus" : "checkmark")
-                    .font(StudioFonts.font(.ui, size: 10, weight: 800))
+                    .studioFont(.ui, size: 10, weight: 800)
                     .foregroundStyle(Studio.Palette.onAccent)
             }
         }

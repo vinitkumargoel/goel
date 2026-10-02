@@ -37,7 +37,7 @@ struct DetailProgressHero: View {
     var body: some View {
         let speed = telemetry.displaySpeed(for: task)
         let state = StudioDownloadState(task: task)
-        HStack(alignment: .center, spacing: 18) {
+        HStack(alignment: .center, spacing: Studio.Space.section) {
             VStack(alignment: .leading, spacing: Studio.Space.xs) {
                 if task.status == .requestingMetadata {
                     Text(L10n.t("Waiting for metadata…"))
@@ -77,7 +77,7 @@ struct DetailProgressHero: View {
                               tone: StudioProgressTone(task: task), diameter: compact ? 56 : 86,
                               accessibilityLabel: L10n.t("Download progress")) {
                 Image(systemName: state.symbol)
-                    .font(StudioFonts.font(.ui, size: 20, weight: 650))
+                    .studioFont(.ui, size: 20, weight: 650)
                     .foregroundStyle(StudioProgressTone(task: task).color)
                     .accessibilityHidden(true)
             }

@@ -100,7 +100,7 @@ struct LinkGrabberSheet: View {
             StudioFocusedField { focus in
                 HStack(spacing: Studio.Space.s) {
                     Image(systemName: "globe")
-                        .font(StudioFonts.font(.ui, size: 13, weight: 600))
+                        .studioFont(.ui, size: 13, weight: 600)
                         .foregroundStyle(Studio.Palette.ink3)
                         .a11yDecorative()
                     TextField(L10n.t("Page URL (https://…)"), text: $pageText)
@@ -270,7 +270,7 @@ private struct LinkGrabberResults: View {
 
     private func card(_ link: GrabbedLink) -> some View {
         let isOn = selected.contains(link.url)
-        return HStack(spacing: 11) {
+        return HStack(spacing: Studio.Space.relaxed) {
             Toggle(isOn: Binding(
                 get: { selected.contains(link.url) },
                 set: { on in
@@ -295,7 +295,7 @@ private struct LinkGrabberResults: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Studio.Space.m)
-        .padding(.vertical, 11)
+        .padding(.vertical, Studio.Space.relaxed)
         .studioSurface(.card, radius: Studio.Radius.compactCard, isSelected: false)
     }
 

@@ -22,7 +22,7 @@ extension SFTPConnectionEditor {
             VStack(alignment: .leading, spacing: Studio.Space.sm) {
                 HStack(alignment: .top, spacing: Studio.Space.sm) {
                     Image(systemName: "key.slash")
-                        .font(StudioFonts.font(.ui, size: 13, weight: 650))
+                        .studioFont(.ui, size: 13, weight: 650)
                         .foregroundStyle(Studio.Palette.bad)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
@@ -191,7 +191,7 @@ struct SFTPTestSuccessCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: Studio.Space.sm) {
             Image(systemName: "checkmark.shield.fill")
-                .font(StudioFonts.font(.ui, size: 14, weight: 650))
+                .studioFont(.ui, size: 14, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
@@ -236,7 +236,7 @@ struct SFTPTestFailureCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: Studio.Space.sm) {
             Image(systemName: "xmark.octagon.fill")
-                .font(StudioFonts.font(.ui, size: 14, weight: 650))
+                .studioFont(.ui, size: 14, weight: 650)
                 .foregroundStyle(Studio.Palette.bad)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Studio.Space.xs) {
@@ -284,7 +284,7 @@ struct SFTPLabeledField<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: Studio.Space.snug) {
             Text(required ? L10n.t("%@ *", label) : label)
                 .studioFont(.callout.weight(650).size(12))
                 .foregroundStyle(Studio.Palette.ink2)

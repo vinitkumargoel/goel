@@ -60,7 +60,7 @@ struct DetailFilesTab: View {
                 .accessibilityLabel(A11y.bytes(task.totalBytes ?? 0))
         }
         .padding(.horizontal, Studio.Space.s)
-        .padding(.vertical, 7)
+        .padding(.vertical, Studio.Space.cozy)
         .background(Studio.Palette.well, in: RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
     }
 }
@@ -88,7 +88,7 @@ struct DetailFilePriorityMenu: View {
             HStack(spacing: Studio.Space.xxs) {
                 Text(priority == .skip ? L10n.t("Skipped") : priority.title)
                 Image(systemName: "chevron.down")
-                    .font(StudioFonts.font(.ui, size: 8, weight: 700))
+                    .studioFont(.ui, size: 8, weight: 700)
             }
             .studioFont(.caption.weight(600))
             .foregroundStyle(priority == .high ? Studio.Palette.accent : Studio.Palette.ink2)

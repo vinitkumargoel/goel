@@ -59,7 +59,7 @@ struct AddInputStep: View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
         return HStack(spacing: Studio.Space.sm) {
             Image(systemName: "arrow.down.to.line")
-                .font(StudioFonts.font(.ui, size: 16, weight: 650))
+                .studioFont(.ui, size: 16, weight: 650)
                 .a11yDecorative()
             Text(MarkdownText.attributed(L10n.t("Drag a URL or **.torrent** file here")))
                 .studioFont(.small)
@@ -86,9 +86,9 @@ struct AddInputStep: View {
                     Text(L10n.t("Continue"))
                     Text(verbatim: "⌘↩")
                         .studioFont(.keyCap)
-                        .padding(.horizontal, 5)
+                        .padding(.horizontal, Studio.Space.snug)
                         .padding(.vertical, Studio.Space.hair)
-                        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .overlay(RoundedRectangle(cornerRadius: Studio.Radius.mini, style: .continuous)
                             .strokeBorder(Studio.Palette.onAccent.opacity(0.6), lineWidth: 1))
                         .accessibilityHidden(true)
                 }

@@ -147,13 +147,13 @@ struct DownloadStudioMenu: View {
                 .studioFont(.eyebrow)
                 .foregroundStyle(Studio.Palette.ink3)
                 .padding(.horizontal, Studio.Space.sm)
-                .padding(.top, isFirst ? 5 : 7)
+                .padding(.top, isFirst ? Studio.Space.snug : Studio.Space.cozy)
                 .padding(.bottom, 3)
                 .accessibilityAddTraits(.isHeader)
         case .divider:
             // Strong: menus sit on `cardRaised`, where the plain hairline vanishes in dark.
             StudioDivider(strong: true)
-                .padding(.vertical, 5)
+                .padding(.vertical, Studio.Space.snug)
                 .padding(.horizontal, Studio.Space.xs)
         case .row(let node):
             switch node.kind {
@@ -243,13 +243,13 @@ private struct DownloadStudioMenuRow: View {
             HStack(spacing: Studio.Space.sm) {
                 if showsCheckColumn {
                     Image(systemName: "checkmark")
-                        .font(StudioFonts.font(.ui, size: 11.5, weight: 700))
+                        .studioFont(.ui, size: 11.5, weight: 700)
                         .foregroundStyle(lit ? Studio.Palette.onAccent : Studio.Palette.accent)
                         .opacity(isChecked ? 1 : 0)
                         .frame(width: 15)
                 } else if let symbol = node.symbol {
                     Image(systemName: symbol)
-                        .font(StudioFonts.font(.ui, size: 12.5, weight: 600))
+                        .studioFont(.ui, size: 12.5, weight: 600)
                         .foregroundStyle(lit ? Studio.Palette.onAccent
                                          : node.isDestructive ? Studio.Palette.bad : Studio.Palette.ink3)
                         .frame(width: 15)

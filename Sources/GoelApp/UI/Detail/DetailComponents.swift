@@ -72,7 +72,7 @@ struct DetailCopyButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "doc.on.doc")
-                .font(StudioFonts.font(.ui, size: 10.5, weight: 600))
+                .studioFont(.ui, size: 10.5, weight: 600)
                 .foregroundStyle(hovered ? Studio.Palette.accent : Studio.Palette.ink3)
                 .frame(width: 20, height: 20)
                 .background(hovered ? Studio.Palette.segment : .clear,
@@ -91,7 +91,7 @@ struct DetailFacts<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) { content() }
+        VStack(alignment: .leading, spacing: Studio.Space.roomy) { content() }
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -231,15 +231,15 @@ struct DetailMenuButton<Items: View>: View {
         Menu {
             items()
         } label: {
-            HStack(spacing: size == .small ? 5 : 7) {
+            HStack(spacing: size == .small ? Studio.Space.snug : Studio.Space.cozy) {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(StudioFonts.font(.ui, size: size == .small ? 12 : 13, weight: 650))
+                        .studioFont(.ui, size: size == .small ? 12 : 13, weight: 650)
                 }
                 Text(title)
                 if showsChevron {
                     Image(systemName: "chevron.down")
-                        .font(StudioFonts.font(.ui, size: 9, weight: 700))
+                        .studioFont(.ui, size: 9, weight: 700)
                         .foregroundStyle(Studio.Palette.ink3)
                 }
             }

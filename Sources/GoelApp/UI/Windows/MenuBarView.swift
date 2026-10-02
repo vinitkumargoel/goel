@@ -202,7 +202,7 @@ struct MenuBarPopover: View {
         } label: {
             HStack(spacing: Studio.Space.xxs) {
                 Text(L10n.t("%d more in Goel°", count))
-                Image(systemName: "chevron.right").font(StudioFonts.font(.ui, size: 9, weight: 700))
+                Image(systemName: "chevron.right").studioFont(.ui, size: 9, weight: 700)
             }
             .frame(maxWidth: .infinity)
         }
@@ -239,7 +239,7 @@ struct MenuBarPopover: View {
     private var emptyState: some View {
         VStack(spacing: Studio.Space.sm) {
             Image(systemName: "arrow.down")
-                .font(StudioFonts.font(.ui, size: 20, weight: 650))
+                .studioFont(.ui, size: 20, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .frame(width: 48, height: 48)
                 .background(Studio.Palette.accentSoft,
@@ -297,7 +297,7 @@ struct MenuBarPopover: View {
             Button(L10n.t("Quit Goel°")) { NSApp.terminate(nil) }
         } label: {
             Image(systemName: "ellipsis")
-                .font(StudioFonts.font(.ui, size: 13, weight: 650))
+                .studioFont(.ui, size: 13, weight: 650)
                 .frame(width: 22, height: 22)
         }
         .menuStyle(.borderlessButton)

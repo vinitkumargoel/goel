@@ -170,7 +170,7 @@ struct GlobalSpeedHistoryPopover: View {
                 legend(.up, history)
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, Studio.Space.section)
         .padding(.top, Studio.Space.l)
         .padding(.bottom, Studio.Space.l)
         .frame(width: 360)
@@ -191,7 +191,7 @@ struct GlobalSpeedHistoryPopover: View {
         let average = SpeedHistoryWindow.average(values)
         return HStack(spacing: Studio.Space.s) {
             Image(systemName: direction.symbol)
-                .font(StudioFonts.font(.ui, size: 11, weight: 700))
+                .studioFont(.ui, size: 11, weight: 700)
                 .foregroundStyle(direction.tint)
             Text(current.speedString)
                 .studioFont(.mono.weight(600))

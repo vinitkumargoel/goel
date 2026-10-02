@@ -138,7 +138,7 @@ struct AddAdvancedOptions: View {
         } label: {
             HStack(spacing: Studio.Space.s) {
                 Image(systemName: "chevron.right")
-                    .font(StudioFonts.font(.ui, size: 11, weight: 700))
+                    .studioFont(.ui, size: 11, weight: 700)
                     .foregroundStyle(Studio.Palette.ink3)
                     .rotationEffect(.degrees(model.showAdvanced ? 90 : 0))
                     .a11yDecorative()
@@ -162,7 +162,7 @@ struct AddAdvancedOptions: View {
         HStack(alignment: .top, spacing: Studio.Space.m) {
             AddFieldLabel(label)
                 .frame(width: labelWidth, alignment: .leading)
-                .padding(.top, 7)
+                .padding(.top, Studio.Space.cozy)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

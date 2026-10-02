@@ -83,7 +83,7 @@ struct MediaFormatPicker: View {
     private var header: some View {
         HStack(spacing: Studio.Space.s) {
             Image(systemName: "square.stack.3d.up")
-                .font(StudioFonts.font(.ui, size: 12, weight: 650))
+                .studioFont(.ui, size: 12, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .a11yDecorative()
             AddFieldLabel(L10n.t("Quality"))

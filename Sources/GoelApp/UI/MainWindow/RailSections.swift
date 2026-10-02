@@ -93,7 +93,7 @@ struct RailFilterSections: View {
                 Text(title).studioFont(.eyebrow)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .font(StudioFonts.font(.ui, size: 9, weight: 700))
+                    .studioFont(.ui, size: 9, weight: 700)
                     .rotationEffect(.degrees(typesExpanded ? 90 : 0))
                     .accessibilityHidden(true)
             }
@@ -219,7 +219,7 @@ struct RailMediaSection: View {
                     center.isDockHidden.toggle()
                 } trailing: {
                     Image(systemName: center.isDockHidden ? "eye.slash" : "eye")
-                        .font(StudioFonts.font(.ui, size: 11, weight: 600))
+                        .studioFont(.ui, size: 11, weight: 600)
                         .foregroundStyle(Studio.Palette.ink3)
                         .accessibilityHidden(true)
                 }

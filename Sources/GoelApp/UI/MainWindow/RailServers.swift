@@ -93,7 +93,7 @@ private struct RailServerRow: View {
         } label: {
             HStack(alignment: .top, spacing: Studio.Space.sm) {
                 Image(systemName: "server.rack")
-                    .font(StudioFonts.font(.ui, size: 13, weight: 600))
+                    .studioFont(.ui, size: 13, weight: 600)
                     .foregroundStyle(selected ? Studio.Palette.accent : Studio.Palette.ink3)
                     .frame(width: 18)
                     .padding(.top, Studio.Space.hair)
@@ -120,7 +120,7 @@ private struct RailServerRow: View {
                 }
             }
             .padding(.horizontal, Studio.Space.sm)
-            .padding(.vertical, 7)
+            .padding(.vertical, Studio.Space.cozy)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 if selected {
@@ -159,7 +159,7 @@ private struct RailServerRow: View {
         Group {
             if differentiateWithoutColor {
                 Image(systemName: reachability.studioSymbol)
-                    .font(StudioFonts.font(.ui, size: 11, weight: 650))
+                    .studioFont(.ui, size: 11, weight: 650)
                     .foregroundStyle(reachability.studioTint)
             } else {
                 switch reachability {
@@ -170,7 +170,7 @@ private struct RailServerRow: View {
                         .background { Circle().fill(Studio.Palette.goodSoft).frame(width: 13, height: 13) }
                 case .offline:
                     Image(systemName: "xmark")
-                        .font(StudioFonts.font(.ui, size: 9, weight: 800))
+                        .studioFont(.ui, size: 9, weight: 800)
                         .foregroundStyle(reachability.studioTint)
                 case .unknown:
                     Circle()
@@ -204,7 +204,7 @@ private struct RailServerRow: View {
         }
         if let os = meta?.os {
             HStack(spacing: 3) {
-                Image(systemName: os.symbol).font(StudioFonts.font(.ui, size: 8.5, weight: 600))
+                Image(systemName: os.symbol).studioFont(.ui, size: 8.5, weight: 600)
                 Text(os.label).studioFont(.tiny.size(10).weight(650)).lineLimit(1)
             }
             .foregroundStyle(Studio.Palette.ink2)

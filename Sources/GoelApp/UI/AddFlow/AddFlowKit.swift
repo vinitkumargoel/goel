@@ -34,7 +34,7 @@ struct AddFlowHeader<Leading: View, Trailing: View>: View {
             trailing()
         }
         .padding(.horizontal, Studio.Space.xl)
-        .padding(.top, 18)
+        .padding(.top, Studio.Space.section)
         .padding(.bottom, Studio.Space.m)
     }
 }
@@ -61,7 +61,7 @@ struct AddFlowSymbolTile: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(StudioFonts.font(.ui, size: 16, weight: 650))
+            .studioFont(.ui, size: 16, weight: 650)
             .foregroundStyle(Studio.Palette.accent)
             .frame(width: 36, height: 36)
             .background(Studio.Palette.accentSoft,
@@ -122,7 +122,7 @@ struct AddStatusLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Studio.Space.xs) {
             Image(systemName: symbol)
-                .font(StudioFonts.font(.ui, size: 11.5, weight: 650))
+                .studioFont(.ui, size: 11.5, weight: 650)
                 .foregroundStyle(tone == .neutral ? Studio.Palette.ink3 : tone.foreground)
                 .accessibilityHidden(true)
             Text(text)
@@ -144,7 +144,7 @@ struct AddCallout<Actions: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: Studio.Space.sm) {
             Image(systemName: symbol)
-                .font(StudioFonts.font(.ui, size: 13, weight: 650))
+                .studioFont(.ui, size: 13, weight: 650)
                 .foregroundStyle(tone.foreground)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Studio.Space.s) {
@@ -184,7 +184,7 @@ struct AddTextArea: View {
                 Text(placeholder)
                     .studioFont(style.weight(400))
                     .foregroundStyle(Studio.Palette.ink3)
-                    .padding(.horizontal, 5)
+                    .padding(.horizontal, Studio.Space.snug)
                     .accessibilityHidden(true)
                     .allowsHitTesting(false)
             }
@@ -196,7 +196,7 @@ struct AddTextArea: View {
                 .accessibilityLabel(accessibilityLabel)
                 .accessibilityHint(accessibilityHint ?? "")
         }
-        .padding(.horizontal, 7)
+        .padding(.horizontal, Studio.Space.cozy)
         .padding(.vertical, Studio.Space.s)
         .frame(height: height)
         .modifier(StudioFieldChrome(isFocused: focused, isInvalid: isInvalid))
@@ -208,7 +208,7 @@ struct AddCheckGlyph: View {
     let state: FileCheckState
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Studio.Radius.mini, style: .continuous)
         ZStack {
             if state == .off {
                 shape.fill(Studio.Palette.card)
@@ -216,7 +216,7 @@ struct AddCheckGlyph: View {
             } else {
                 shape.fill(Studio.Palette.accent)
                 Image(systemName: state == .mixed ? "minus" : "checkmark")
-                    .font(StudioFonts.font(.ui, size: 10, weight: 800))
+                    .studioFont(.ui, size: 10, weight: 800)
                     .foregroundStyle(Studio.Palette.onAccent)
             }
         }
@@ -304,7 +304,7 @@ struct AddPastedNote: View {
     var body: some View {
         HStack(spacing: Studio.Space.xxs) {
             Image(systemName: "doc.on.clipboard")
-                .font(StudioFonts.font(.ui, size: 11, weight: 650))
+                .studioFont(.ui, size: 11, weight: 650)
                 .foregroundStyle(Studio.Palette.accent)
                 .accessibilityHidden(true)
             Text(L10n.t("Pasted from clipboard"))
@@ -312,7 +312,7 @@ struct AddPastedNote: View {
                 .foregroundStyle(Studio.Palette.ink2)
             Button(action: onClear) {
                 Image(systemName: "xmark")
-                    .font(StudioFonts.font(.ui, size: 9, weight: 800))
+                    .studioFont(.ui, size: 9, weight: 800)
                     .frame(width: 16, height: 16)
             }
             .buttonStyle(StudioIconButtonStyle(size: .small))

@@ -78,7 +78,7 @@ struct TrackerRow: View {
                 menu
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             }
-            .padding(.vertical, 7)
+            .padding(.vertical, Studio.Space.cozy)
             StudioDivider()
         }
         .contentShape(Rectangle())
@@ -98,7 +98,7 @@ struct TrackerRow: View {
     private var menu: some View {
         Menu { menuItems } label: {
             Image(systemName: "ellipsis")
-                .font(StudioFonts.font(.ui, size: 12, weight: 650))
+                .studioFont(.ui, size: 12, weight: 650)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
@@ -138,7 +138,7 @@ struct TrackerEditSheet: View {
     private var validCount: Int { TrackerList.parse(text).count }
 
     var body: some View {
-        StudioSheet(title: isEdit ? L10n.t("Edit Tracker") : L10n.t("Add Trackers"),
+        StudioSheet(title: isEdit ? L10n.t("Edit tracker") : L10n.t("Add trackers"),
                     subtitle: isEdit ? L10n.t("Change the announce URL. The torrent re-announces right away.")
                                      : L10n.t("One announce URL per line — udp://, http://, https:// or wss://."),
                     symbol: "antenna.radiowaves.left.and.right", width: 470) {

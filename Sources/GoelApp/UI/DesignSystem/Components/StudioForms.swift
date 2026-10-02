@@ -76,12 +76,12 @@ struct StudioFormRow<Control: View>: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.leading, isIndented ? 18 : 0)
+                .padding(.leading, isIndented ? Studio.Space.section : 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
                 control()
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, Studio.Space.section)
             .padding(.vertical, Studio.Space.m)
             .frame(minHeight: 52)
         }
@@ -108,7 +108,7 @@ struct StudioFormCard<Content: View>: View {
                     HStack(spacing: Studio.Space.sm) {
                         if let symbol {
                             Image(systemName: symbol)
-                                .font(StudioFonts.font(.ui, size: 14, weight: 650))
+                                .studioFont(.ui, size: 14, weight: 650)
                                 .foregroundStyle(Studio.Palette.accent)
                                 .accessibilityHidden(true)
                         }
@@ -117,7 +117,7 @@ struct StudioFormCard<Content: View>: View {
                             .foregroundStyle(Studio.Palette.ink)
                             .accessibilityAddTraits(.isHeader)
                     }
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, Studio.Space.section)
                     .padding(.top, Studio.Space.ml)
                     .padding(.bottom, Studio.Space.xxs)
                 }
@@ -222,12 +222,12 @@ struct StudioCheckboxToggleStyle: ToggleStyle {
             configuration.isOn.toggle()
         } label: {
             HStack(spacing: Studio.Space.s) {
-                let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+                let shape = RoundedRectangle(cornerRadius: Studio.Radius.mini, style: .continuous)
                 ZStack {
                     if configuration.isOn || configuration.isMixed {
                         shape.fill(Studio.Palette.accent)
                         Image(systemName: configuration.isMixed ? "minus" : "checkmark")
-                            .font(StudioFonts.font(.ui, size: 10, weight: 800))
+                            .studioFont(.ui, size: 10, weight: 800)
                             .foregroundStyle(Studio.Palette.onAccent)
                     } else {
                         shape.fill(Studio.Palette.card)

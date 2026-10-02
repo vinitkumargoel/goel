@@ -115,12 +115,14 @@ struct StudioArcPercentLabel: View {
             let size = diameter * (big ? 0.26 : 0.25)
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(verbatim: "\(percent)")
+                    // fixed-size: the number is sized to the arc's fixed diameter.
                     .font(StudioFonts.font(.display, size: size, weight: big ? 750 : 700, tabularNumbers: true))
                     .tracking(-size * (big ? 0.04 : 0.02))
                 // Room for the unit from 60 pt up (the queue ring, the detail hero); a card's
                 // 46 pt arc shows the bare number.
                 if diameter >= 60 {
                     Text(verbatim: "%")
+                        // fixed-size: the number is sized to the arc's fixed diameter.
                         .font(StudioFonts.font(.display, size: size * 0.47, weight: 600))
                 }
             }

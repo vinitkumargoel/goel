@@ -37,7 +37,7 @@ struct FailureCard: View {
             if !compact {
                 HStack(spacing: Studio.Space.s) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(StudioFonts.font(.ui, size: 16, weight: 650))
+                        .studioFont(.ui, size: 16, weight: 650)
                         .foregroundStyle(Studio.Palette.bad)
                         .accessibilityHidden(true)
                     Text(L10n.t("Download failed"))
@@ -66,7 +66,7 @@ struct FailureCard: View {
             HStack(alignment: .firstTextBaseline, spacing: Studio.Space.xs) {
                 if compact {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(StudioFonts.font(.ui, size: 11.5, weight: 650))
+                        .studioFont(.ui, size: 11.5, weight: 650)
                         .foregroundStyle(Studio.Palette.bad)
                 }
                 Text(error.message)
