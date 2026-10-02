@@ -106,14 +106,19 @@ struct StudioSegment<Value: Hashable>: Identifiable {
     var symbol: String?
     /// Read by VoiceOver when `title` is empty (an icon-only segment).
     var accessibilityLabel: String?
+    /// The segment's own tooltip, e.g. what a queue profile allows. `nil` leaves only the
+    /// control's tooltip, if any.
+    var help: String?
 
     var id: Value { value }
 
-    init(_ value: Value, title: String, symbol: String? = nil, accessibilityLabel: String? = nil) {
+    init(_ value: Value, title: String, symbol: String? = nil, accessibilityLabel: String? = nil,
+         help: String? = nil) {
         self.value = value
         self.title = title
         self.symbol = symbol
         self.accessibilityLabel = accessibilityLabel
+        self.help = help
     }
 }
 
@@ -204,8 +209,19 @@ private struct StudioSegmentButton<Value: Hashable>: View {
         .buttonStyle(.plain)
         .studioFocusRing(isFocused, shape: shape)
         .onHover { hovered = $0 }
+        .modifier(StudioOptionalHelp(text: segment.help))
         .accessibilityLabel(segment.accessibilityLabel ?? segment.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// `.help(text)` only when there is text, so a segment without its own tooltip falls back to
+/// the one on the control instead of an empty one.
+private struct StudioOptionalHelp: ViewModifier {
+    let text: String?
+
+    func body(content: Content) -> some View {
+        if let text { content.help(text) } else { content }
     }
 }
 

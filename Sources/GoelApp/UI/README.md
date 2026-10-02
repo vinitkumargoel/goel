@@ -101,7 +101,7 @@ Use `StudioScaled { factor in … }` to scale a layout metric with the text size
 | `StudioIconButton` | `StudioIconButton("xmark", label: L10n.t("Close"), size: .small, bordered:, isOn:, shortcutHint: "⌘I") { … }` — label = tooltip + VoiceOver |
 | `StudioPillButtonStyle` | `.buttonStyle(StudioPillButtonStyle(isOn: on))` |
 | `StudioChip`, `StudioFilterChip` | `StudioFilterChip(L10n.t("Active"), count: 4, isOn: filter == .active) { … }` |
-| `StudioSegmentedControl` | `StudioSegmentedControl(selection: $layout, segments: [StudioSegment(.board, title: …, symbol: …)], size:, fullWidth:)` |
+| `StudioSegmentedControl` | `StudioSegmentedControl(selection: $layout, segments: [StudioSegment(.board, title: …, symbol: …, help: …)], size:, fullWidth:)` — `help` is that segment's own tooltip |
 | `StudioTabBar` | `StudioTabBar(selection: $tab, tabs: DetailTab.allCases.map { StudioSegment($0, title: $0.title) })` |
 | `StudioOmnibox`, `StudioOmniboxSuggestion` | `StudioOmnibox(text: $q, placeholder: …, isFocused: $focus, onSubmit: go) { StudioOmniboxSuggestion { … } }` |
 | `StudioSearchField`, `.textFieldStyle(.studio)`, `StudioFocusedField`, `StudioFieldChrome` | `TextField(…).textFieldStyle(.studio(size: .small))` |

@@ -293,7 +293,11 @@ private struct MenuBarSpeedControls: View {
 
             StudioSegmentedControl(
                 selection: Binding(get: { vm.settings.selectedProfileName }, set: { vm.setProfile($0) }),
-                segments: settings.profiles.map { StudioSegment($0.name, title: $0.name) },
+                segments: settings.profiles.map { profile in
+                    StudioSegment(profile.name, title: profile.name,
+                                  help: SpeedProfileText.queueSummary(
+                                      profile, limitEnabled: settings.speedLimitEnabled))
+                },
                 size: .small, fullWidth: true,
                 accessibilityLabel: L10n.t("Queue profile"))
                 .disabled(profileLocked)
