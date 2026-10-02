@@ -89,7 +89,9 @@ final class AppViewModel: ObservableObject {
     let appearance = AppAppearance()
 
     /// Memoized on purpose — as a computed property this re-sorts on every SwiftUI `body` pass.
-    @Published private(set) var visibleTasks: [DownloadTask] = []
+    @Published private(set) var visibleTasks: [DownloadTask] = [] { didSet { visibleRevision &+= 1 } }
+    /// Bumped on every change to `visibleTasks`; keys the `selectedTasks` memo.
+    private(set) var visibleRevision = 0
 
     @Published var persistenceWarning: String?
 
@@ -112,7 +114,18 @@ final class AppViewModel: ObservableObject {
         )
     }
 
-    @Published var selection: Set<DownloadTask.ID> = [] { didSet { refreshCommandState() } }
+    @Published var selection: Set<DownloadTask.ID> = [] {
+        didSet {
+            selectionRevision &+= 1
+            refreshCommandState()
+        }
+    }
+    /// Bumped on every change to `selection`; keys the `selectedTasks` memo.
+    private(set) var selectionRevision = 0
+    private var selectedTasksMemo: (visible: Int, selection: Int, value: [DownloadTask])?
+    /// How many times `selectedTasks` was actually filtered; it also versions the selection
+    /// summary, since it changes exactly when the selected rows do. Tests read it to prove reuse.
+    private(set) var selectedTasksBuilds = 0
 
     @Published var primarySelection: DownloadTask.ID?
 
@@ -635,6 +648,25 @@ final class AppViewModel: ObservableObject {
     /// The whole queue at the displayed speeds; shared, so the status bar and the board's queue
     /// card don't each fold every task on every speed tick.
     var queueOverview: QueueOverview { telemetry.queueOverview(for: tasks, revision: tasksRevision) }
+
+    /// The selected rows in list order — what every command acting on "the selection" runs over.
+    /// Filtered once per list or selection change rather than in every body on every speed tick.
+    var selectedTasks: [DownloadTask] {
+        if let memo = selectedTasksMemo, memo.visible == visibleRevision, memo.selection == selectionRevision {
+            return memo.value
+        }
+        let value = visibleTasks.filter { selection.contains($0.id) }
+        selectedTasksMemo = (visibleRevision, selectionRevision, value)
+        selectedTasksBuilds &+= 1
+        return value
+    }
+
+    /// The multi-selection panel's aggregate and overview, shared and refolded only when the
+    /// selected rows or the displayed speeds change.
+    var selectionSummary: SelectionSummary {
+        let tasks = selectedTasks
+        return telemetry.selectionSummary(for: tasks, revision: selectedTasksBuilds)
+    }
 
     var totalDownloadSpeed: Double { tasks.reduce(0) { $0 + $1.downloadSpeed } }
     var totalUploadSpeed: Double { tasks.reduce(0) { $0 + $1.uploadSpeed } }

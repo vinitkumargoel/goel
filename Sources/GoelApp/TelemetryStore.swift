@@ -43,6 +43,12 @@ struct SpeedRing<Element> {
     }
 }
 
+/// What `MultiSelectionPanel` draws: the selection's aggregate and its own queue-style overview.
+struct SelectionSummary {
+    let aggregate: SelectionAggregate
+    let queue: QueueOverview
+}
+
 /// The 2 Hz speed read-outs and history rings, kept out of `AppViewModel` so a changing number
 /// redraws the views that show numbers — not the list, sidebar and menus besides.
 @MainActor
@@ -63,6 +69,9 @@ final class TelemetryStore: ObservableObject {
     private var overviewMemo: (tasks: Int, speeds: Int, value: QueueOverview)?
     /// How many times the overview was actually folded; tests read it to prove reuse.
     private(set) var queueOverviewBuilds = 0
+    private var selectionMemo: (tasks: Int, speeds: Int, value: SelectionSummary)?
+    /// How many times the selection summary was actually folded; tests read it to prove reuse.
+    private(set) var selectionSummaryBuilds = 0
 
     private var taskRings: [DownloadTask.ID: SpeedRing<SpeedSample>] = [:]
     private var sftpRings: [UUID: SpeedRing<Double>] = [:]
@@ -83,6 +92,18 @@ final class TelemetryStore: ObservableObject {
         let value = QueueOverview(tasks: tasks) { displaySpeed(for: $0) }
         overviewMemo = (revision, speedRevision, value)
         queueOverviewBuilds += 1
+        return value
+    }
+
+    /// The multi-selection panel's figures, folded over the selected rows only, once per selection
+    /// revision and speed tick. `revision` must change whenever `tasks` does.
+    func selectionSummary(for tasks: [DownloadTask], revision: Int) -> SelectionSummary {
+        if let memo = selectionMemo, memo.tasks == revision, memo.speeds == speedRevision { return memo.value }
+        let value = SelectionSummary(
+            aggregate: SelectionAggregate(tasks: tasks) { displaySpeed(for: $0) },
+            queue: QueueOverview(tasks: tasks) { displaySpeed(for: $0) })
+        selectionMemo = (revision, speedRevision, value)
+        selectionSummaryBuilds += 1
         return value
     }
 

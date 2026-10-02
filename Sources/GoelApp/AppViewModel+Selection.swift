@@ -7,11 +7,6 @@ extension AppViewModel {
 
     func isSelected(_ id: DownloadTask.ID) -> Bool { selection.contains(id) }
 
-    /// The selected rows in list order — what every command acting on "the selection" runs over.
-    var selectedTasks: [DownloadTask] {
-        visibleTasks.filter { selection.contains($0.id) }
-    }
-
     func selectOnly(_ id: DownloadTask.ID) {
         selection = [id]
         primarySelection = id

@@ -13,7 +13,7 @@ struct QueueOverviewPanel: View {
     @State private var diskFree: Int64?
 
     var body: some View {
-        let overview = QueueOverview(tasks: vm.tasks) { telemetry.displaySpeed(for: $0) }
+        let overview = vm.queueOverview
         VStack(alignment: .leading, spacing: 0) {
             header(overview)
             ScrollView {
