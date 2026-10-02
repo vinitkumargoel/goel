@@ -133,9 +133,12 @@ struct DownloadBoardCard: DownloadHoverable {
                               isFaded: task.status == .paused || task.isFileMissing,
                               isFetchingMetadata: task.status == .requestingMetadata)
             VStack(alignment: .leading, spacing: Studio.Space.hair) {
-                FileNameText(task.compactDisplayName, lineLimit: 1)
+                // Two lines, broken at the name's separators: a narrow lane cut one line mid-word
+                // ("Field Recor…gs Vol. 3.flac").
+                FileNameText(task.compactDisplayName, lineLimit: 2)
                     .studioFont(Studio.TextStyle.bodyStrong.weight(650))
                     .foregroundStyle(Studio.Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                 metaLine
                 compactExtra
             }
