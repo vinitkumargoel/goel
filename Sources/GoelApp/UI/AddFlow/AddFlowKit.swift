@@ -1,0 +1,500 @@
+import SwiftUI
+import GoelCore
+
+// The add flow's sheet chrome and small form pieces (`.sheet-h`, `.sheet-f`, `.lbl`, `.help`,
+// `.field.area`, `.check`, `.radio`, `.oi`). Area-local: promoted at integration if others need them.
+
+/// The sheet header (`.sheet-h`): a leading tile or artwork, an optional eyebrow, the title and
+/// trailing context.
+struct AddFlowHeader<Leading: View, Trailing: View>: View {
+    let title: String
+    var eyebrow: String?
+    @ViewBuilder var leading: () -> Leading
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Studio.Space.m) {
+            leading()
+            VStack(alignment: .leading, spacing: Studio.Space.xxs) {
+                if let eyebrow {
+                    Text(eyebrow)
+                        .studioFont(.eyebrow)
+                        .foregroundStyle(Studio.Palette.ink3)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Text(title)
+                    .studioFont(.title2)
+                    .foregroundStyle(Studio.Palette.ink)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            Spacer(minLength: Studio.Space.s)
+            trailing()
+        }
+        .padding(.horizontal, Studio.Space.xl)
+        .padding(.top, 18)
+        .padding(.bottom, Studio.Space.m)
+    }
+}
+
+extension AddFlowHeader where Leading == AddFlowSymbolTile {
+    /// A header with the accent glyph tile on the left.
+    init(title: String, eyebrow: String? = nil, symbol: String,
+         @ViewBuilder trailing: @escaping () -> Trailing) {
+        self.init(title: title, eyebrow: eyebrow, leading: { AddFlowSymbolTile(symbol: symbol) },
+                  trailing: trailing)
+    }
+}
+
+extension AddFlowHeader where Leading == AddFlowSymbolTile, Trailing == EmptyView {
+    init(title: String, eyebrow: String? = nil, symbol: String) {
+        self.init(title: title, eyebrow: eyebrow, leading: { AddFlowSymbolTile(symbol: symbol) },
+                  trailing: { EmptyView() })
+    }
+}
+
+/// The 36 pt accent tile the grabber and the add steps put beside their title.
+struct AddFlowSymbolTile: View {
+    let symbol: String
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(StudioFonts.font(.ui, size: 16, weight: 650))
+            .foregroundStyle(Studio.Palette.accent)
+            .frame(width: 36, height: 36)
+            .background(Studio.Palette.accentSoft,
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+/// The sheet footer (`.sheet-f`): well fill, a hairline on top, buttons laid out by the caller so
+/// each step keeps its own keyboard shortcuts.
+struct AddFlowFooter<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        HStack(spacing: Studio.Space.s) { content() }
+            .padding(.horizontal, Studio.Space.xl)
+            .padding(.vertical, Studio.Space.ml)
+            .frame(maxWidth: .infinity)
+            .background(Studio.Palette.well)
+            .overlay(alignment: .top) { StudioDivider() }
+    }
+}
+
+/// A form caption (`.lbl`).
+struct AddFieldLabel: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .studioFont(.small.weight(650))
+            .foregroundStyle(Studio.Palette.ink2)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Explanatory text under a control (`.help`).
+struct AddHelpText: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .studioFont(.caption)
+            .foregroundStyle(Studio.Palette.ink3)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A one-line status under a control: a tinted glyph and text ("SHA-256 — verified after…").
+struct AddStatusLine: View {
+    let symbol: String
+    let text: String
+    var tone: StudioTone = .neutral
+    /// Colours the text too, not just the glyph (errors read as errors).
+    var tintsText = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Studio.Space.xs) {
+            Image(systemName: symbol)
+                .font(StudioFonts.font(.ui, size: 11.5, weight: 650))
+                .foregroundStyle(tone == .neutral ? Studio.Palette.ink3 : tone.foreground)
+                .accessibilityHidden(true)
+            Text(text)
+                .studioFont(.caption)
+                .foregroundStyle(tintsText ? tone.foreground : Studio.Palette.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// A callout with actions under its message: the "Couldn’t reach…" block with Try again.
+struct AddCallout<Actions: View>: View {
+    var tone: StudioTone = .warn
+    let symbol: String
+    let message: String
+    var accessibilityLabel: String?
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Studio.Space.sm) {
+            Image(systemName: symbol)
+                .font(StudioFonts.font(.ui, size: 13, weight: 650))
+                .foregroundStyle(tone.foreground)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: Studio.Space.s) {
+                Text(message)
+                    .studioFont(.callout.weight(400))
+                    .foregroundStyle(Studio.Palette.ink)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(accessibilityLabel ?? message)
+                HStack(spacing: Studio.Space.s) { actions() }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Studio.Space.m)
+        .padding(.vertical, Studio.Space.sm)
+        .background(tone.background, in: RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous))
+    }
+}
+
+/// A multi-line text field (`.field.area`): a plain `TextEditor` in Studio field chrome, with a
+/// placeholder while empty and the accent rim while focused.
+struct AddTextArea: View {
+    @Binding var text: String
+    var placeholder: String = ""
+    var height: CGFloat = 96
+    var style: Studio.TextStyle = .monoBody
+    var accessibilityLabel: String
+    var accessibilityHint: String?
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if text.isEmpty, !placeholder.isEmpty {
+                Text(placeholder)
+                    .studioFont(style)
+                    .foregroundStyle(Studio.Palette.ink3)
+                    .padding(.horizontal, 5)
+                    .accessibilityHidden(true)
+                    .allowsHitTesting(false)
+            }
+            TextEditor(text: $text)
+                .studioFont(style)
+                .foregroundStyle(Studio.Palette.ink)
+                .scrollContentBackground(.hidden)
+                .focused($focused)
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityHint(accessibilityHint ?? "")
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, Studio.Space.s)
+        .frame(height: height)
+        .modifier(StudioFieldChrome(isFocused: focused))
+    }
+}
+
+/// The checkbox glyph (`.check`), including the mixed bar a folder shows.
+struct AddCheckGlyph: View {
+    let state: FileCheckState
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        ZStack {
+            if state == .off {
+                shape.fill(Studio.Palette.card)
+                shape.strokeBorder(Studio.Palette.hairlineStrong, lineWidth: 1.5)
+            } else {
+                shape.fill(Studio.Palette.accent)
+                Image(systemName: state == .mixed ? "minus" : "checkmark")
+                    .font(StudioFonts.font(.ui, size: 10, weight: 800))
+                    .foregroundStyle(Studio.Palette.onAccent)
+            }
+        }
+        .frame(width: 17, height: 17)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The radio glyph (`.radio`): a ring, or a thick accent ring when chosen.
+struct AddRadioGlyph: View {
+    let isOn: Bool
+
+    var body: some View {
+        ZStack {
+            Circle().fill(Studio.Palette.card)
+            Circle().strokeBorder(isOn ? Studio.Palette.accent : Studio.Palette.hairlineStrong,
+                                  lineWidth: isOn ? 5 : 1.5)
+        }
+        .frame(width: 17, height: 17)
+        .accessibilityHidden(true)
+    }
+}
+
+/// An option row (`.oi`): rounded, accent-soft when chosen, a quiet fill on hover, the focus ring
+/// from the keyboard.
+struct AddOptionRowStyle: ButtonStyle {
+    var isOn = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        AddOptionRowBody(configuration: configuration, isOn: isOn)
+    }
+}
+
+private struct AddOptionRowBody: View {
+    let configuration: ButtonStyleConfiguration
+    let isOn: Bool
+    @State private var hovered = false
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+        configuration.label
+            .padding(.horizontal, Studio.Space.sm)
+            .padding(.vertical, Studio.Space.s)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(shape.fill(fill))
+            .studioFocusRing(isFocused, shape: shape)
+            .contentShape(shape)
+            .onHover { hovered = $0 }
+    }
+
+    private var fill: Color {
+        if isOn { return Studio.Palette.accentSoft }
+        if configuration.isPressed { return Studio.Palette.track }
+        return hovered ? Studio.Palette.segment : .clear
+    }
+}
+
+/// The scroll area a list sits in: the well fill and hairline, so its edge is visible.
+struct AddListWell<Content: View>: View {
+    var height: CGFloat?
+    var maxHeight: CGFloat?
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous)
+        ScrollView {
+            content()
+                .padding(Studio.Space.xxs)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(height: height)
+        .frame(maxHeight: maxHeight)
+        .background(shape.fill(Studio.Palette.well))
+        .overlay(shape.strokeBorder(Studio.Palette.hairline, lineWidth: 1))
+        .clipShape(shape)
+    }
+}
+
+/// "Pasted from clipboard" with a clear button, shown while the pasted text is unchanged.
+struct AddPastedNote: View {
+    var clearHelp: String = L10n.t("Clear the pasted text")
+    let onClear: () -> Void
+
+    var body: some View {
+        HStack(spacing: Studio.Space.xxs) {
+            Image(systemName: "doc.on.clipboard")
+                .font(StudioFonts.font(.ui, size: 11, weight: 650))
+                .foregroundStyle(Studio.Palette.accent)
+                .accessibilityHidden(true)
+            Text(L10n.t("Pasted from clipboard"))
+                .studioFont(.caption.weight(600))
+                .foregroundStyle(Studio.Palette.ink2)
+            Button(action: onClear) {
+                Image(systemName: "xmark")
+                    .font(StudioFonts.font(.ui, size: 9, weight: 800))
+                    .frame(width: 16, height: 16)
+            }
+            .buttonStyle(StudioIconButtonStyle(size: .small))
+            .frame(width: 18, height: 18)
+            .help(clearHelp)
+            .accessibilityLabel(clearHelp)
+        }
+        .padding(.leading, Studio.Space.s)
+        .padding(.trailing, 2)
+        .frame(minHeight: 22)
+        .background(Studio.Palette.accentSoft, in: Capsule())
+    }
+}
+
+/// A segmented control whose options can be switched off one by one (the cookie source's
+/// "From browser" without captured cookies). Same chrome as `StudioSegmentedControl`.
+struct AddSegmentPicker<Value: Hashable>: View {
+    struct Option: Identifiable {
+        let value: Value
+        let title: String
+        var isEnabled = true
+        var id: Value { value }
+    }
+
+    @Binding var selection: Value
+    let options: [Option]
+    var accessibilityLabel: String
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(options) { option in
+                AddSegmentButton(title: option.title, isSelected: option.value == selection,
+                                 isEnabled: option.isEnabled) { selection = option.value }
+            }
+        }
+        .padding(3)
+        .background(Studio.Palette.segment,
+                    in: RoundedRectangle(cornerRadius: Studio.Radius.segment, style: .continuous))
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+private struct AddSegmentButton: View {
+    let title: String
+    let isSelected: Bool
+    let isEnabled: Bool
+    let action: () -> Void
+    @State private var hovered = false
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
+        Button(action: action) {
+            Text(title)
+                .studioFont(.callout)
+                .lineLimit(1)
+                .foregroundStyle(isSelected || hovered ? Studio.Palette.ink : Studio.Palette.ink2)
+                .padding(.horizontal, Studio.Space.m)
+                .frame(minHeight: 26)
+                .frame(maxWidth: .infinity)
+                .background {
+                    if isSelected { shape.fill(Studio.Palette.card).studioElevation(.raised) }
+                }
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.45)
+        .studioFocusRing(isFocused, shape: shape)
+        .onHover { hovered = isEnabled && $0 }
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// Lays chips out left to right and wraps them onto new lines, so eight type chips never clip.
+struct AddChipFlow: Layout {
+    var spacing: CGFloat = Studio.Space.xs
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(0, rows.count - 1))
+        let width = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2),
+                                      proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var current = Row()
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let needed = current.indices.isEmpty ? size.width : current.width + spacing + size.width
+            if needed > width, !current.indices.isEmpty {
+                rows.append(current)
+                current = Row()
+            }
+            current.width = current.indices.isEmpty ? size.width : current.width + spacing + size.width
+            current.height = max(current.height, size.height)
+            current.indices.append(index)
+        }
+        if !current.indices.isEmpty { rows.append(current) }
+        return rows
+    }
+}
+
+extension GrabbedLink.Category {
+    /// The artwork family the grabber and the review rows draw for this type.
+    var artKind: StudioArtKind {
+        switch self {
+        case .archive: return .archive
+        case .video: return .video
+        case .audio: return .audio
+        case .image: return .image
+        case .software: return .app
+        case .document: return .doc
+        case .other: return .other
+        }
+    }
+}
+
+/// Animates `body` unless Reduce Motion or the snapshot harness asks for still frames.
+@MainActor
+func addFlowAnimate(reduceMotion: Bool, stillFrames: Bool, _ body: () -> Void) {
+    if reduceMotion || stillFrames {
+        body()
+    } else {
+        withAnimation(Studio.Motion.quick, body)
+    }
+}
+
+/// A type filter chip (`.chip` + `.n`): the visible title and count, read by VoiceOver as one
+/// label ("All (8)", "Archives (2)") the way the old chips were.
+struct AddFilterChip: View {
+    let title: String
+    let count: Int
+    let spokenLabel: String
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(title)
+                Text(verbatim: "\(count)")
+                    .studioFont(.monoSmall)
+                    .foregroundStyle(isOn ? Studio.Palette.inverseInk.opacity(0.7) : Studio.Palette.ink3)
+            }
+        }
+        .buttonStyle(StudioPillButtonStyle(isOn: isOn, size: .small))
+        .accessibilityLabel(spokenLabel)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    static func all(count: Int, isOn: Bool, action: @escaping () -> Void) -> AddFilterChip {
+        AddFilterChip(title: L10n.t("All"), count: count, spokenLabel: L10n.t("All (%d)", count),
+                      isOn: isOn, action: action)
+    }
+
+    static func category(_ category: GrabbedLink.Category, count: Int, isOn: Bool,
+                         action: @escaping () -> Void) -> AddFilterChip {
+        AddFilterChip(title: category.label, count: count,
+                      spokenLabel: L10n.t("%1$@ (%2$@)", category.label, String(count)),
+                      isOn: isOn, action: action)
+    }
+}

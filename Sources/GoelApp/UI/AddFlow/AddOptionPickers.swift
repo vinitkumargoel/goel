@@ -62,6 +62,7 @@ struct SaveFolderPicker: View {
 }
 
 /// "When done": nothing, open, reveal, or one that needs a target picked right away.
+/// Also used by Settings › Rules and the row's When Done menu (labels only).
 struct WhenDonePicker: View {
     @Binding var whenDone: WhenDone
     var width: CGFloat? = 170
@@ -113,30 +114,51 @@ struct WhenDonePicker: View {
     }
 }
 
-/// Priority, as the Add sheet offers it.
+/// Priority as the add flow offers it: High · Normal · Low, a full-width segmented control.
 struct PriorityPicker: View {
     @Binding var priority: FilePriority
 
     var body: some View {
-        Dropdown(selection: $priority, items: [
-            .option(.high, L10n.t("High")),
-            .option(.normal, L10n.t("Normal")),
-            .option(.low, L10n.t("Low")),
-        ], width: 110, accessibilityName: L10n.t("Priority"))
+        StudioSegmentedControl(selection: $priority, segments: [
+            StudioSegment(FilePriority.high, title: L10n.t("High")),
+            StudioSegment(FilePriority.normal, title: L10n.t("Normal")),
+            StudioSegment(FilePriority.low, title: L10n.t("Low")),
+        ], fullWidth: true, accessibilityLabel: L10n.t("Priority"))
     }
 }
 
-/// A labelled column in an add footer: the caption above its control.
+/// When the download starts: now, or one of the scheduled presets.
+struct StartPicker: View {
+    @Binding var selection: String
+    var width: CGFloat?
+
+    static let now = "now"
+
+    var body: some View {
+        Dropdown(selection: $selection, items: Self.options, width: width,
+                 accessibilityName: L10n.t("Start"))
+    }
+
+    static var options: [Dropdown<String>.Item] {
+        [.option(now, L10n.t("Now"))] + ScheduledStartOption.presets.map { .option($0.id, $0.label) }
+    }
+
+    /// The date the selection stands for; nil starts right away.
+    static func date(for selection: String) -> Date? {
+        ScheduledStartOption.presets.first { $0.id == selection }?.date()
+    }
+}
+
+/// A labelled column in the add forms: the caption above its control.
 struct AddOptionColumn<Content: View>: View {
     let title: String
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .scaledFont(size: Theme.TextSize.meta, weight: .semibold)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Studio.Space.xs) {
+            AddFieldLabel(title)
             content
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
