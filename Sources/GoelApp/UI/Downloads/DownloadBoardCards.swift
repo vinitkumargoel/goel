@@ -9,6 +9,8 @@ struct DownloadBoardCard: DownloadHoverable {
     let task: DownloadTask
     var queueRank: Int?
     let isSelected: Bool
+    /// The card the queue's arrow keys are on, while the queue has keyboard focus.
+    var showsFocusRing = false
     var isHovered = false
     let speed: SpeedSample
     let summary: DownloadSelectionSummary?
@@ -27,6 +29,7 @@ struct DownloadBoardCard: DownloadHoverable {
         lhs.task == rhs.task
             && lhs.queueRank == rhs.queueRank
             && lhs.isSelected == rhs.isSelected
+            && lhs.showsFocusRing == rhs.showsFocusRing
             && lhs.isHovered == rhs.isHovered
             && lhs.speed == rhs.speed
             && lhs.summary == rhs.summary
@@ -48,6 +51,7 @@ struct DownloadBoardCard: DownloadHoverable {
                     .allowsHitTesting(false)
             }
         }
+        .studioFocusRing(showsFocusRing, shape: RoundedRectangle(cornerRadius: radius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .modifier(DownloadItemBehaviour(task: task, layout: .board, isSelected: isSelected, queueRank: queueRank,
                                         summary: summary, context: context, vm: vm, quickLook: quickLook))

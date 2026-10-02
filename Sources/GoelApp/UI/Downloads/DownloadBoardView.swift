@@ -75,6 +75,7 @@ struct DownloadBoardView: View {
             task: task,
             queueRank: inputs.ranks[task.id],
             isSelected: isSelected,
+            showsFocusRing: inputs.focused && vm.primarySelection == task.id,
             speed: telemetry.displaySpeed(for: task),
             summary: isSelected ? inputs.summary : nil,
             context: inputs.context,
@@ -101,6 +102,7 @@ struct DownloadItemInputs {
     let context: DownloadItemContext
     let summary: DownloadSelectionSummary
     let ranks: [DownloadTask.ID: Int]
+    /// The queue has keyboard focus: the primary selection draws the focus ring.
     let focused: Bool
 
     @MainActor

@@ -120,6 +120,7 @@ struct DownloadTableView: View {
             isSelected: isSelected,
             // Only a selected row draws focus, so the rest stay equal when focus moves.
             listFocused: inputs.focused && isSelected,
+            showsFocusRing: inputs.focused && vm.primarySelection == task.id,
             speed: telemetry.displaySpeed(for: task),
             summary: isSelected ? inputs.summary : nil,
             context: inputs.context,

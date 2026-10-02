@@ -34,7 +34,8 @@ struct SettingsSidebar: View {
                             if !panes.isEmpty {
                                 groupHeader(group.title)
                                 ForEach(panes) { pane in
-                                    SettingsSidebarRow(pane: pane, isSelected: pane == selection) {
+                                    SettingsSidebarRow(pane: pane, isSelected: pane == selection,
+                                                       showsFocusRing: listFocused && pane == selection) {
                                         selection = pane
                                     }
                                 }
@@ -47,6 +48,7 @@ struct SettingsSidebar: View {
                 .scrollContentBackground(.hidden)
                 .focusable()
                 .focused($listFocused)
+                // The system ring would circle the whole list; the selected row draws its own.
                 .focusEffectDisabled()
                 .onMoveCommand(perform: move)
             }
@@ -96,6 +98,8 @@ struct SettingsSidebar: View {
 private struct SettingsSidebarRow: View {
     let pane: SettingsView.Pane
     let isSelected: Bool
+    /// The list has keyboard focus and ↑/↓ move this row.
+    var showsFocusRing = false
     let action: () -> Void
 
     @State private var hovered = false
@@ -124,6 +128,7 @@ private struct SettingsSidebarRow: View {
                     shape.fill(Studio.Palette.segment)
                 }
             }
+            .studioFocusRing(showsFocusRing, shape: shape)
             .contentShape(shape)
         }
         .buttonStyle(.plain)
