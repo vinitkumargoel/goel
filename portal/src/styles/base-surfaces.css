@@ -1,0 +1,605 @@
+/*
+ * Studio primitives, continued: surfaces (cards, wells, sheets), tables, file artwork, progress
+ * rings and bars, and the sparkline. Imported after base-controls.css.
+ */
+
+/* ------------------------------------------------------------------ surfaces */
+
+.card {
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: var(--sh-card);
+  border: 1px solid var(--card-edge);
+}
+
+.card.pad {
+  padding: 16px;
+}
+
+.well {
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  background: var(--seg-bg);
+  color: var(--ink-2);
+}
+
+.note > .ic {
+  margin-top: 1px;
+}
+
+.note.warn {
+  background: var(--warn-soft);
+  color: var(--ink);
+}
+
+.note.warn > .ic {
+  color: var(--warn);
+}
+
+.note.bad {
+  background: var(--bad-soft);
+  color: var(--ink);
+}
+
+.note.bad > .ic {
+  color: var(--bad);
+}
+
+.note.acc {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.note.acc > .ic {
+  color: var(--accent);
+}
+
+.note.good {
+  background: var(--good-soft);
+  color: var(--ink);
+}
+
+.note.good > .ic {
+  color: var(--good);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px 16px;
+  font-size: 12.5px;
+}
+
+.facts dt {
+  color: var(--ink-3);
+}
+
+.facts dd {
+  text-align: right;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.stat b {
+  font: 700 24px/1 var(--f-display);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat b small {
+  font-size: 13px;
+  color: var(--ink-2);
+  font-weight: 600;
+  margin-left: 2px;
+}
+
+.stat span {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+button.stat {
+  transition:
+    border-color 0.12s,
+    background-color 0.12s;
+}
+
+button.stat:hover {
+  border-color: var(--line-2);
+}
+
+.hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+}
+
+.bignum {
+  font: 750 46px/0.95 var(--f-display);
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+}
+
+.bignum small {
+  font-size: 0.45em;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-left: 2px;
+}
+
+.sect {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sect-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.lg::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.lg.acc::before {
+  background: var(--accent);
+}
+
+.lg.up::before {
+  background: var(--up);
+}
+
+.lg.warn::before {
+  background: var(--warn);
+}
+
+.lnum {
+  font: 500 11px var(--f-mono);
+  color: var(--ink-3);
+  min-width: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ tables */
+
+.tbl {
+  width: 100%;
+  font-size: 12.5px;
+}
+
+.tbl th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--ink-3);
+  padding: 0 10px 8px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
+.tbl td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.tbl .r {
+  text-align: right;
+}
+
+/* ------------------------------------------------------------------ file artwork */
+
+.art {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex: none;
+  color: var(--art-ink);
+  box-shadow: inset 0 0 0 1px var(--art-hi);
+  background: linear-gradient(145deg, var(--t-other), var(--t-other-2));
+}
+
+.art .ic {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+  position: relative;
+}
+
+.art.xs {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+.art.xs .ic {
+  width: 12px;
+  height: 12px;
+}
+
+.art.s {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.art.s .ic {
+  width: 15px;
+  height: 15px;
+}
+
+.art.l {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+}
+
+.art.l .ic {
+  width: 28px;
+  height: 28px;
+}
+
+.art.band {
+  width: auto;
+  height: 66px;
+  border-radius: 0;
+  box-shadow: none;
+  place-items: center start;
+  padding-left: 16px;
+}
+
+.art.band .ic {
+  width: 24px;
+  height: 24px;
+  opacity: 0.95;
+}
+
+.art.video {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 7px, var(--art-hi) 7px 11px) top / 100% 5px no-repeat,
+    repeating-linear-gradient(90deg, transparent 0 7px, var(--art-hi) 7px 11px) bottom / 100% 5px no-repeat,
+    linear-gradient(145deg, var(--t-video), var(--t-video-2));
+}
+
+.art.audio {
+  background:
+    repeating-radial-gradient(circle at 100% 100%, transparent 0 5px, var(--art-hi) 5px 6.5px),
+    linear-gradient(145deg, var(--t-audio), var(--t-audio-2));
+}
+
+.art.iso {
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 9%, var(--art-hi) 9% 11%, transparent 11%),
+    repeating-radial-gradient(circle at 50% 50%, transparent 0 5px, var(--art-hi) 5px 6px),
+    linear-gradient(145deg, var(--t-disc), var(--t-disc-2));
+}
+
+.art.archive {
+  background:
+    repeating-linear-gradient(135deg, transparent 0 6px, var(--art-hi) 6px 9px),
+    linear-gradient(145deg, var(--t-arch), var(--t-arch-2));
+}
+
+.art.app {
+  background:
+    radial-gradient(var(--art-hi) 1.4px, transparent 1.9px) 0 0 / 8px 8px,
+    linear-gradient(145deg, var(--t-app), var(--t-app-2));
+}
+
+.art.doc {
+  background:
+    repeating-linear-gradient(180deg, transparent 0 6px, var(--art-hi) 6px 7.5px),
+    linear-gradient(145deg, var(--t-doc), var(--t-doc-2));
+}
+
+.art.image {
+  background:
+    radial-gradient(circle at 72% 30%, var(--art-hi) 0 12%, transparent 13%),
+    linear-gradient(160deg, transparent 55%, var(--art-hi) 55% 58%, transparent 58%),
+    linear-gradient(145deg, var(--t-image), var(--t-image-2));
+}
+
+.art.magnet {
+  background: conic-gradient(from 200deg at 30% 120%, var(--t-mag), var(--t-mag-2), var(--t-mag));
+}
+
+.art.dir {
+  background:
+    linear-gradient(160deg, var(--art-hi) 0 30%, transparent 30%),
+    linear-gradient(145deg, var(--t-dir), var(--t-dir-2));
+}
+
+.art.other {
+  background:
+    linear-gradient(160deg, var(--art-hi) 0 22%, transparent 22%),
+    linear-gradient(145deg, var(--t-other), var(--t-other-2));
+}
+
+.art.ghost {
+  background: var(--seg-bg);
+  color: var(--ink-3);
+  box-shadow: none;
+}
+
+.art.faded {
+  filter: grayscale(0.85);
+  opacity: 0.6;
+}
+
+.art .badge.glass {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* ------------------------------------------------------------------ progress */
+
+.ring {
+  width: 46px;
+  height: 46px;
+  transform: rotate(-90deg);
+  flex: none;
+  display: block;
+}
+
+.ring circle {
+  fill: none;
+  stroke-width: 4;
+}
+
+.ring .t {
+  stroke: var(--track);
+}
+
+.ring .v {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: var(--p) 100;
+  transition: stroke-dasharray 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.ring.sweep .v {
+  animation: studio-sweep 1.2s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.ring.paused .v {
+  stroke: var(--ink-3);
+}
+
+.ring.up .v {
+  stroke: var(--up);
+}
+
+.ring.good .v {
+  stroke: var(--good);
+}
+
+.ring.bad .v {
+  stroke: var(--bad);
+}
+
+.ring.warn .v {
+  stroke: var(--warn);
+}
+
+.ring.spin .v {
+  stroke-dasharray: 22 100;
+  animation: studio-spin 1.6s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+.rw {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.rw > b,
+.rw > span {
+  position: absolute;
+  font: 700 11.5px/1 var(--f-display);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.rw > span .ic {
+  width: 15px;
+  height: 15px;
+}
+
+.bar {
+  height: 6px;
+  border-radius: 99px;
+  background: var(--track);
+  overflow: hidden;
+  flex: none;
+  position: relative;
+}
+
+.bar > i {
+  display: block;
+  height: 100%;
+  width: var(--p);
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.bar.thin {
+  height: 4px;
+}
+
+.bar.paused > i {
+  background: var(--ink-3);
+}
+
+.bar.up > i {
+  background: var(--up);
+}
+
+.bar.good > i {
+  background: var(--good);
+}
+
+.bar.bad > i {
+  background: var(--bad);
+}
+
+.bar.warn > i {
+  background: var(--warn);
+}
+
+.bar.ind > i {
+  width: 35%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: studio-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes studio-sweep {
+  from {
+    stroke-dasharray: 0 100;
+  }
+}
+
+@keyframes studio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes studio-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@keyframes studio-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes studio-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+@keyframes studio-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes studio-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes studio-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--accent-line);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+/* ------------------------------------------------------------------ sparkline */
+
+.spark {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.spark .a {
+  fill: var(--accent-soft);
+  stroke: none;
+}
+
+.spark .l {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark .l2 {
+  fill: none;
+  stroke: var(--up);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark .g {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark .e {
+  fill: var(--accent);
+  stroke: var(--card);
+  stroke-width: 2;
+}

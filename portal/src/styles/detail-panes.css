@@ -1,0 +1,506 @@
+/*
+ * The detail sheet, continued from detail.css: the Files tab, the Queue overview, the action bar,
+ * the player dialog, and the sheet's touch and phone overrides (which stay last).
+ */
+
+/* ------------------------------------------------------------------ files */
+
+.ft-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ft-filter {
+  flex: 1;
+  min-width: 140px;
+}
+
+.ft-select {
+  padding: 0;
+  flex: none;
+}
+
+.ft-head {
+  display: flex;
+  padding: 0 6px;
+}
+
+.ft-sum {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ft-sum > .ft-dir::after {
+  content: ' ·';
+}
+
+.ft-tot {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ft-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* check · artwork · name (size and done under it) · priority · save */
+.ft-row {
+  --depth: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) 72px 26px;
+  align-items: center;
+  column-gap: 8px;
+  padding: 4px 6px 4px calc(6px + var(--depth) * 16px);
+  border-radius: 10px;
+  min-height: 42px;
+}
+
+.ft-row:hover {
+  background: var(--hover);
+}
+
+.ft-folder {
+  background: var(--card-2);
+}
+
+/* A folder's toggle spans the artwork, name and priority columns. */
+.ft-folder .ft-toggle {
+  grid-column: 2 / 5;
+}
+
+.ft-single {
+  grid-template-columns: auto auto minmax(0, 1fr) 26px;
+}
+
+.ft-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  text-align: left;
+  border-radius: 8px;
+}
+
+.ft-ico {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ft-lead {
+  width: 14px;
+}
+
+.ft-check {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.ft-check:disabled {
+  opacity: 0.55;
+}
+
+.ft-name {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ft-name > b {
+  font-weight: 650;
+}
+
+.ft-label {
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ft-head-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.ft-tail {
+  flex: none;
+}
+
+.ft-sub {
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ft-prio {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ft-prio-btn {
+  justify-content: center;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+}
+
+.ft-prio-btn.high {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+.ft-prio-btn.low {
+  color: var(--ink-3);
+}
+
+.ft-row.skipped {
+  color: var(--ink-3);
+}
+
+.ft-file.skipped .ft-label {
+  text-decoration: line-through;
+}
+
+.ft-save-gap {
+  width: 26px;
+}
+
+.ft-none {
+  padding: 8px 6px;
+}
+
+/* ------------------------------------------------------------------ queue overview */
+
+.dov {
+  padding-top: 16px;
+}
+
+.qov {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.qov-h {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.dsheet.over .qov-h {
+  padding-right: 40px;
+}
+
+.qov-rates {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.qov-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.qov-tile {
+  min-width: 0;
+}
+
+.qov-tile.active {
+  border-color: var(--accent-line);
+}
+
+.qov-tile.active b {
+  color: var(--accent);
+}
+
+.qov-tile.completed b {
+  color: var(--good);
+}
+
+.qov-tile.bad {
+  background: var(--bad-soft);
+  border-color: transparent;
+}
+
+.qov-tile.bad b {
+  color: var(--bad);
+}
+
+.qov-hero {
+  padding: 14px 16px;
+}
+
+.qov-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qov-size {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.qov-hero .rw > b {
+  font: 700 14px/1 var(--f-display);
+}
+
+.qov-unknown {
+  margin-top: -6px;
+}
+
+.qov .srow {
+  padding: 4px 0;
+  border-top: 0;
+  min-height: 44px;
+}
+
+/* ------------------------------------------------------------------ action bar */
+
+.actbar {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--card-2);
+}
+
+.actbar .btn {
+  flex: 1 1 auto;
+  min-width: 44px;
+  justify-content: center;
+}
+
+/* The one thing to do keeps its whole label; Copy link gives way first. */
+.actbar .dprimary {
+  flex-shrink: 0;
+}
+
+.actbar .btn > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dremove:hover:not(:disabled) {
+  color: var(--bad);
+}
+
+.dsheet.phone .actbar {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+/* ------------------------------------------------------------------ player */
+
+.pl-h {
+  justify-content: space-between;
+}
+
+.pl-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pl-stage {
+  position: relative;
+  background: var(--canvas-2);
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+}
+
+.pl-video {
+  display: block;
+  width: 100%;
+  max-height: min(68dvh, 560px);
+  background: var(--canvas-2);
+}
+
+.pl-stage:fullscreen .pl-video {
+  max-height: 100dvh;
+  height: 100dvh;
+}
+
+.pl-ctrl {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 16px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ink);
+  box-shadow: var(--sh-card);
+}
+
+.pl-seek {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pl-seek input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.pl-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pl-buf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pl-buf .bar {
+  width: 80px;
+  flex: none;
+}
+
+.pl-buf .tiny {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.pl-cant-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pl-cant .pl-buf {
+  flex-wrap: wrap;
+}
+
+.pl-cant .pl-buf .tiny {
+  white-space: normal;
+}
+
+/* ------------------------------------------------------------------ touch: 44 px targets */
+
+@media (pointer: coarse) {
+  .dsheet .btn,
+  .dsheet .chip,
+  .pl-ctrl .ibtn,
+  .pl-acts .btn,
+  .pl-h .btn {
+    min-height: 44px;
+  }
+  .dsheet .ibtn,
+  .pl-ctrl .ibtn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .ft-check {
+    width: 44px;
+    height: 44px;
+  }
+  .ft-toggle {
+    min-height: 44px;
+  }
+  .dtabs .seg > button {
+    height: 44px;
+  }
+  .dsheet .btn {
+    min-width: 44px;
+  }
+  /* 44 px inside the 1 px border. */
+  .dsheet .field.sm {
+    height: 46px;
+  }
+}
+
+/* ------------------------------------------------------------------ phone */
+
+@media (max-width: 600px) {
+  .dsheet .btn,
+  .dsheet .chip,
+  .pl-ctrl .ibtn,
+  .pl-acts .btn,
+  .pl-h .btn {
+    min-height: 44px;
+  }
+  .dsheet .ibtn,
+  .pl-ctrl .ibtn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .dtabs .seg > button {
+    height: 44px;
+  }
+  .dsheet .btn {
+    min-width: 44px;
+  }
+  /* 44 px inside the 1 px border. */
+  .dsheet .field.sm {
+    height: 46px;
+  }
+  .ft-check {
+    width: 44px;
+    height: 44px;
+  }
+  .ft-toggle {
+    min-height: 44px;
+  }
+  .ft-row {
+    grid-template-columns: auto auto minmax(0, 1fr) 72px 44px;
+    column-gap: 6px;
+    padding: 0 0 0 calc(var(--depth) * 12px);
+  }
+  .ft-single {
+    grid-template-columns: auto auto minmax(0, 1fr) 44px;
+  }
+  .ft-save-gap {
+    width: 44px;
+  }
+  .dtbl {
+    font-size: 11.5px;
+  }
+  .pl-ctrl {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    padding: 6px 8px;
+  }
+  .pl-row .pl-buf .tiny {
+    display: none;
+  }
+  .pl-buf .bar {
+    width: 56px;
+  }
+}

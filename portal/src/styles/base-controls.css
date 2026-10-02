@@ -1,0 +1,506 @@
+/*
+ * Studio primitives, continued from base.css: chips, pills and badges, fields, toggles, checks and
+ * radios, and the segmented control. Imported straight after base.css.
+ */
+
+/* ------------------------------------------------------------------ chips, pills, badges */
+
+.chip {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 99px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  font-weight: 600;
+  font-size: 12.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  flex: none;
+  transition:
+    background-color 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+button.chip:hover:not(.on):not(:disabled) {
+  border-color: var(--line-2);
+  color: var(--ink);
+}
+
+.chip .n {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip.on,
+.chip[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--canvas);
+}
+
+.chip.on .n,
+.chip[aria-pressed='true'] .n {
+  color: var(--canvas);
+  opacity: 0.75;
+}
+
+.chip.bad .n {
+  color: var(--bad);
+}
+
+.chip.on.bad .n {
+  color: var(--canvas);
+}
+
+.chip.sm {
+  height: 24px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+
+.chip .ic {
+  width: 14px;
+  height: 14px;
+}
+
+.badge {
+  font: 600 10px/1 var(--f-mono);
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--seg-bg);
+  color: var(--ink-2);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex: none;
+}
+
+.badge.glass {
+  background: var(--glass);
+  color: var(--ink);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 650;
+  background: var(--seg-bg);
+  color: var(--ink-2);
+  white-space: nowrap;
+  flex: none;
+}
+
+.pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.pill.nodot::before {
+  display: none;
+}
+
+.pill.acc {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.pill.good {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.pill.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.pill.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.pill.up {
+  background: var(--up-soft);
+  color: var(--up);
+}
+
+.pill.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.tag::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.kbd {
+  font: 500 11px/1 var(--f-mono);
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  background: var(--card);
+  color: var(--ink-2);
+  white-space: nowrap;
+  display: inline-block;
+}
+
+/* ------------------------------------------------------------------ fields */
+
+.field {
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--field);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  min-width: 0;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+
+.field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.field > input,
+.field > select,
+.field > textarea {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  outline: none;
+}
+
+.field > input::placeholder,
+.field > textarea::placeholder {
+  color: var(--ink-3);
+}
+
+.field .unit {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-size: 12px;
+  flex: none;
+}
+
+.field.area {
+  height: auto;
+  align-items: stretch;
+  padding: 10px 12px;
+}
+
+.field.area > textarea {
+  resize: vertical;
+  min-height: 110px;
+  font-family: var(--f-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.field.sm {
+  height: 30px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+.field.invalid {
+  border-color: var(--bad);
+}
+
+.field.invalid:focus-within {
+  box-shadow: 0 0 0 3px var(--bad-soft);
+}
+
+/* A native <select> styled as a field; the chevron is drawn by the wrapper's icon. */
+.select {
+  position: relative;
+  padding: 0;
+}
+
+.select > select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0 32px 0 12px;
+  cursor: pointer;
+}
+
+.select > .ic {
+  position: absolute;
+  right: 10px;
+  pointer-events: none;
+  color: var(--ink-3);
+}
+
+.lbl {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+.help {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.err-text {
+  font-size: 11.5px;
+  color: var(--bad);
+}
+
+/* ------------------------------------------------------------------ toggles, checks, radios */
+
+.toggle {
+  display: inline-block;
+  width: 34px;
+  height: 20px;
+  border-radius: 99px;
+  background-color: var(--line-2);
+  position: relative;
+  flex: none;
+  transition: background-color 0.15s;
+}
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  transition: left 0.15s;
+}
+
+.toggle.on,
+[aria-checked='true'] > .toggle,
+.toggle[aria-checked='true'] {
+  background-color: var(--accent);
+}
+
+.toggle.on::after,
+[aria-checked='true'] > .toggle::after,
+.toggle[aria-checked='true']::after {
+  left: 16px;
+}
+
+button.toggle:disabled,
+[aria-disabled='true'] > .toggle {
+  opacity: 0.5;
+}
+
+.check {
+  display: inline-block;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  border: 1.5px solid var(--line-2);
+  background: var(--card);
+  flex: none;
+  position: relative;
+}
+
+.check.on,
+.check.part {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.check.on::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.check.part::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 6px;
+  height: 2px;
+  background: var(--accent-ink);
+  border-radius: 2px;
+}
+
+/* A real checkbox drawn as `.check`: the input stays for forms, labels and screen readers. */
+input.check {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  cursor: pointer;
+}
+
+input.check:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+input.check:checked::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+input.check:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+input.check:indeterminate::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 6px;
+  height: 2px;
+  background: var(--accent-ink);
+  border-radius: 2px;
+}
+
+input.check:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.radio,
+input.radio {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  display: inline-block;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-2);
+  background: var(--card);
+  flex: none;
+  transition: border-width 0.12s;
+}
+
+.radio.on,
+input.radio:checked {
+  border: 5px solid var(--accent);
+}
+
+/* ------------------------------------------------------------------ segmented control */
+
+.seg {
+  display: inline-flex;
+  background: var(--seg-bg);
+  padding: 3px;
+  border-radius: 11px;
+  gap: 2px;
+  flex: none;
+}
+
+.seg > button,
+.seg > b {
+  padding: 0 12px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.seg > button:hover:not(.on):not([aria-checked='true']):not(:disabled) {
+  color: var(--ink);
+}
+
+.seg > .on,
+.seg > [aria-checked='true'],
+.seg > [aria-selected='true'] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--sh-1);
+}
+
+.seg > button:disabled {
+  opacity: 0.5;
+}
+
+.seg .ic {
+  width: 14px;
+  height: 14px;
+}
+
+.seg.full {
+  display: flex;
+}
+
+.seg.full > button,
+.seg.full > b {
+  flex: 1;
+}
+
+.seg.sm {
+  padding: 2px;
+  border-radius: 9px;
+}
+
+.seg.sm > button,
+.seg.sm > b {
+  height: 22px;
+  font-size: 11.5px;
+  padding: 0 9px;
+}

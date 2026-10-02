@@ -61,8 +61,14 @@ src/
   styles/
     fonts.css           the self-hosted faces
     themes.css          Studio Light and Dark tokens — every colour lives here
-    base.css            primitives (.btn, .chip, .pill, .seg, .art, .ring, .menu, .sheet…)
-    shell.css library.css detail.css dialogs.css pages.css
+    base.css            primitives (.btn, .chip, .pill, .seg, .art, .ring, .menu, .sheet…), in
+    base-controls.css   four parts imported in this order
+    base-surfaces.css
+    base-layers.css
+    shell.css           the app frame
+    library.css library-table.css   chips, board · table, selection bar
+    detail.css detail-panes.css     the sheet, overview, network · files, queue, player
+    dialogs.css history.css settings.css palette.css
   fonts/                Latin-subset woff2 + licences (scripts/subset-fonts.sh)
   login/                the sign-in page's CSS and JS (no React)
   dev/                  fixture mode, dev server only

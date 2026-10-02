@@ -1,0 +1,400 @@
+/*
+ * Studio primitives, last part: menus, dialogs and sheets, the drop zone, empty states, touch
+ * targets, the chart wrapper, settings groups and the popover. The touch section overrides the
+ * sizes above it, so this file stays last of the base-*.css group.
+ */
+
+/* ------------------------------------------------------------------ menus */
+
+.menu {
+  position: fixed;
+  z-index: 80;
+  background: var(--card-raised);
+  border-radius: 13px;
+  box-shadow: var(--sh-float);
+  border: 1px solid var(--card-edge);
+  padding: 6px;
+  min-width: 220px;
+  max-width: min(340px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  font-size: 13px;
+  animation: studio-rise 0.12s ease-out;
+}
+
+.mi {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  min-height: 30px;
+  width: 100%;
+  border-radius: 8px;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--ink);
+}
+
+.mi .ic {
+  color: var(--ink-3);
+  width: 15px;
+  height: 15px;
+}
+
+.mi:hover:not([aria-disabled='true']),
+.mi:focus-visible {
+  background: var(--accent);
+  color: var(--accent-ink);
+  outline: none;
+}
+
+.mi:hover:not([aria-disabled='true']) .ic,
+.mi:focus-visible .ic,
+.mi:hover:not([aria-disabled='true']) .k,
+.mi:focus-visible .k,
+.mi:hover:not([aria-disabled='true']) .mdetail,
+.mi:focus-visible .mdetail {
+  color: var(--accent-ink);
+}
+
+.mi[aria-disabled='true'] {
+  opacity: 0.5;
+}
+
+.mi .t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  flex-direction: column;
+}
+
+.mi.two {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.mi .mdetail {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.mi .k {
+  margin-left: auto;
+  color: var(--ink-3);
+  font: 500 11px var(--f-mono);
+  padding-left: 16px;
+}
+
+.mi.dang,
+.mi.dang .ic {
+  color: var(--bad);
+}
+
+.mi.dang:hover:not([aria-disabled='true']),
+.mi.dang:focus-visible {
+  background: var(--bad);
+  color: var(--accent-ink);
+}
+
+.mi .ck {
+  width: 15px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  flex: none;
+}
+
+.menu .msep {
+  border-top: 1px solid var(--line);
+  margin: 5px 6px;
+}
+
+.menu .mh {
+  padding: 7px 10px 3px;
+}
+
+/* ------------------------------------------------------------------ dialogs and sheets */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  display: grid;
+  /* minmax(0, …): a sheet's percentage width must resolve against the viewport, not grow with
+     a long unbroken name and push the sheet past the screen edge. */
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  padding: 24px;
+  animation: studio-fade-in 0.15s ease-out;
+}
+
+.sheet {
+  background: var(--sheet);
+  border-radius: 22px;
+  box-shadow: var(--sh-float);
+  border: 1px solid var(--card-edge);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 0;
+}
+
+.scrim > .sheet {
+  width: min(560px, 100%);
+  max-height: min(860px, calc(100dvh - 48px));
+  animation: studio-rise 0.18s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.sheet-h {
+  padding: 18px 20px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+.sheet-b {
+  padding: 4px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.sheet-f {
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: var(--card-2);
+  flex: none;
+  flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------------ drop zone */
+
+.drop {
+  border: 2px dashed var(--accent-line);
+  border-radius: 16px;
+  background: var(--accent-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--accent);
+  padding: 22px;
+}
+
+/* ------------------------------------------------------------------ empty states */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 48px 20px;
+  color: var(--ink-2);
+}
+
+.empty .h2,
+.empty .h1 {
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------------ touch and phone */
+
+/* A finger, or a phone-sized window: every control is at least 44px to hit. Small chips and
+   buttons keep their look and grow an invisible hit area instead. */
+@media (pointer: coarse), (max-width: 600px) {
+  .btn,
+  .ibtn,
+  .ibtn.sm {
+    min-height: 44px;
+  }
+  .ibtn,
+  .ibtn.sm {
+    min-width: 44px;
+  }
+  .btn.sm,
+  .chip {
+    min-height: 36px;
+    position: relative;
+  }
+  .btn.sm::before,
+  .chip::before {
+    content: '';
+    position: absolute;
+    inset: -4px 0;
+  }
+  .mi {
+    min-height: 44px;
+  }
+  .seg > button {
+    min-height: 38px;
+  }
+  /* The switch keeps its size; its box grows to a finger-sized target around it. */
+  .toggle {
+    box-sizing: content-box;
+    border: 12px solid transparent;
+    margin: -12px;
+    background-clip: padding-box;
+  }
+}
+
+@media (max-width: 600px) {
+  /* iOS zooms into any focused field under 16px. */
+  .field,
+  .field > input,
+  .field > select,
+  .field > textarea {
+    font-size: 16px;
+  }
+  .scrim {
+    padding: 0;
+    place-items: end stretch;
+  }
+  .scrim > .sheet {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    border-radius: 22px 22px 0 0;
+    border-bottom: 0;
+    animation: studio-sheet-up 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .sheet-f {
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .bar.ind > i {
+    animation: none !important;
+    width: 100%;
+    opacity: 0.5;
+  }
+  .ring.spin .v {
+    animation: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ chart wrapper (SpeedChart) */
+
+.chart {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.chart-dot {
+  position: absolute;
+  right: -3.5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--card);
+  transform: translateY(-50%);
+}
+
+/* ------------------------------------------------------------------ settings groups and rows */
+
+.sgroup {
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: var(--sh-card);
+  border: 1px solid var(--card-edge);
+  min-width: 0;
+}
+
+.sgroup-h {
+  padding: 14px 18px 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.srow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  min-height: 52px;
+}
+
+.sgroup-h + .srow,
+.srow:first-child {
+  border-top: 0;
+}
+
+.srow .sl {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.srow .sl b {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.srow .sl span {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------------ popover */
+
+.pop-root {
+  position: relative;
+  display: inline-flex;
+}
+
+.pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 75;
+  width: min(360px, calc(100vw - 24px));
+  background: var(--card-raised);
+  border-radius: 16px;
+  box-shadow: var(--sh-float);
+  border: 1px solid var(--card-edge);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: studio-rise 0.14s ease-out;
+}
+
+.pop.above {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+.pop.end {
+  left: auto;
+  right: 0;
+}

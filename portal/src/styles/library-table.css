@@ -1,0 +1,506 @@
+/*
+ * The library, continued from library.css: the Table (`lt*`, `sortpick`), the floating selection
+ * bar (`bulkbar`/`bk-*`), and the library's touch and phone overrides, which stay last.
+ */
+
+/* ------------------------------------------------------------------ table */
+
+.lt-wrap {
+  container: lib-table / inline-size;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  border-radius: 18px;
+  box-shadow: var(--sh-card);
+  padding: 8px 8px 6px;
+}
+
+.lt-head,
+.lt-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px 196px 108px 92px 36px;
+  grid-template-areas: 'name size status speed added more';
+  align-items: center;
+  min-width: 0;
+}
+
+.lt-head {
+  border-bottom: 1px solid var(--line);
+  padding: 2px 0 4px;
+}
+
+.lt-c {
+  padding: 0 10px;
+  min-width: 0;
+}
+
+.lt-name {
+  grid-area: name;
+}
+
+.lt-size {
+  grid-area: size;
+  text-align: right;
+  justify-content: flex-end;
+}
+
+.lt-status {
+  grid-area: status;
+}
+
+.lt-speed {
+  grid-area: speed;
+  text-align: right;
+  justify-content: flex-end;
+}
+
+.lt-added {
+  grid-area: added;
+  text-align: right;
+  justify-content: flex-end;
+}
+
+.lt-more {
+  grid-area: more;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.lt-head .lt-c {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.lt-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--ink-3);
+  padding: 6px 4px;
+  margin: 0 -4px;
+  border-radius: 7px;
+  white-space: nowrap;
+}
+
+.lt-sort:hover,
+.lt-sort.on {
+  color: var(--ink);
+}
+
+.lt-sort .ic {
+  width: 12px;
+  height: 12px;
+}
+
+.lt-pair .lt-sort + .lt-sort {
+  margin-left: 6px;
+}
+
+.lt-row {
+  border-bottom: 1px solid var(--line);
+  min-height: 56px;
+}
+
+.lt-row:last-child {
+  border-bottom-color: transparent;
+}
+
+.lt-row:hover {
+  background: var(--hover);
+}
+
+.lt-row.sel {
+  background: var(--accent-soft);
+}
+
+.lt-row > .lt-c {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lt-row > .lt-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.lt-art {
+  position: relative;
+  flex: none;
+  display: grid;
+}
+
+/* The row's pause / resume / retry: drawn over the artwork while the pointer is on the row. */
+.lt-act {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--glass);
+  color: var(--ink);
+  opacity: 0;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition: opacity 0.12s;
+}
+
+.lt-row:hover .lt-act {
+  opacity: 1;
+}
+
+.lt-t {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
+.lt-nline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lt-nm {
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.lt-t > .bar {
+  max-width: 260px;
+}
+
+.lt-why {
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lt-nstat {
+  display: none;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.lt-ns-status,
+.lt-ns-speed {
+  display: none;
+}
+
+.lt-row > .lt-status .pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lt-row > .lt-speed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-size: 11.5px;
+}
+
+.lt-up {
+  font-size: 10.5px;
+}
+
+.lt-row > .lt-added {
+  color: var(--ink-3);
+}
+
+.lt-row .lt-more .ibtn {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.lt-row:hover .lt-more .ibtn,
+.lt-row.sel .lt-more .ibtn {
+  opacity: 1;
+}
+
+.lt-check {
+  flex: none;
+}
+
+/* Compact density: tighter rows, a smaller tile. */
+.lt.compact .lt-row {
+  min-height: 40px;
+}
+
+.lt.compact .lt-row > .lt-name {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.lt.compact .lt-art .art.s {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+}
+
+.lt.compact .lt-art .art.s .ic {
+  width: 14px;
+  height: 14px;
+}
+
+.lt.compact .lt-t {
+  gap: 3px;
+}
+
+/* Group by sections. */
+.lt-grp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 10px 6px;
+}
+
+.lt-group:first-child .lt-grp {
+  padding-top: 6px;
+}
+
+.lt-gn {
+  font: 600 11px var(--f-mono);
+  color: var(--ink-3);
+}
+
+/*
+ * Narrower containers drop columns, header and cells together: Added first, then Speed (which
+ * moves under the name), then Status (likewise). Container widths, not the viewport's, so the
+ * rail and the detail panel count.
+ */
+@container lib-table (max-width: 860px) {
+  .lt-head,
+  .lt-row {
+    grid-template-columns: minmax(0, 1fr) 80px 188px 104px 36px;
+    grid-template-areas: 'name size status speed more';
+  }
+  .lt-added {
+    display: none !important;
+  }
+}
+
+@container lib-table (max-width: 700px) {
+  .lt-head,
+  .lt-row {
+    grid-template-columns: minmax(0, 1fr) 76px 168px 36px;
+    grid-template-areas: 'name size status more';
+  }
+  .lt-speed {
+    display: none !important;
+  }
+  .lt-row .lt-nstat,
+  .lt-row .lt-ns-speed {
+    display: flex;
+  }
+}
+
+@container lib-table (max-width: 520px) {
+  .lt-head,
+  .lt-row {
+    grid-template-columns: minmax(0, 1fr) 72px 36px;
+    grid-template-areas: 'name size more';
+  }
+  .lt-status {
+    display: none !important;
+  }
+  .lt-row .lt-ns-status {
+    display: inline;
+  }
+}
+
+/* A phone: each row is a compact card, the columns folded into one meta line. */
+.lt-wrap:has(> .lt.phone) {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.lt.phone,
+.lt.phone .lt-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lt-row.lt-phone {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 10px 10px 12px;
+  min-height: 64px;
+  border: 1px solid var(--card-edge);
+  border-radius: 15px;
+  background: var(--card);
+  box-shadow: var(--sh-card);
+}
+
+.lt-row.lt-phone.sel {
+  box-shadow:
+    var(--sh-card),
+    0 0 0 2px var(--accent);
+  border-color: transparent;
+}
+
+.lt.phone .lt-grp {
+  padding: 8px 4px 0;
+}
+
+.lt-pmeta {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.lt-pmeta.badc {
+  color: var(--bad);
+}
+
+.lt-pbtn {
+  flex: none;
+}
+
+/* Reveal: pulse a just-added item once. After the cards' own entrance, so it wins. */
+.lib-list [role='option'][data-pulse] {
+  animation: studio-pulse 0.9s ease-out 2;
+}
+
+/* ------------------------------------------------------------------ selection bar */
+
+.lib-dock {
+  position: sticky;
+  bottom: 12px;
+  z-index: 6;
+  display: flex;
+  justify-content: center;
+  margin-top: auto;
+  pointer-events: none;
+}
+
+.bulkbar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  max-width: 100%;
+  padding: 6px 6px 6px 14px;
+  border-radius: 16px;
+  background: var(--card-raised);
+  border: 1px solid var(--card-edge);
+  box-shadow: var(--sh-float);
+  animation: studio-rise 0.16s ease-out;
+}
+
+.bk-count {
+  font-weight: 650;
+  font-size: 12.5px;
+  margin-right: 6px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.bulkbar .bk-remove {
+  color: var(--bad);
+}
+
+.bulkbar .sp {
+  min-width: 4px;
+}
+
+/* ------------------------------------------------------------------ touch and phone */
+
+@media (pointer: coarse), (max-width: 600px) {
+  .lib-board .bc-tools,
+  .lt-act {
+    display: none;
+  }
+  .lib-board .bc-act.ibtn.sm,
+  .lt-pbtn.ibtn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .lib-board .bc-row .btn.sm,
+  .lt-sort {
+    min-height: 44px;
+  }
+  .lt-row .lt-more .ibtn {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 600px) {
+  .lib {
+    gap: 12px;
+  }
+  .lib-chips {
+    flex-basis: 100%;
+  }
+  .lib-tools {
+    margin-left: 0;
+    width: 100%;
+  }
+  .lib-count {
+    margin-right: auto;
+  }
+  .lib-tools .pop-root > .chip,
+  .lib-tools .seg > button {
+    min-height: 44px;
+  }
+  .lib-tools .seg > button {
+    min-width: 44px;
+  }
+  .lib-board .dcard > .art.band {
+    height: 52px;
+  }
+  .lib-board .bc-tools {
+    display: none;
+  }
+  .lib-dock {
+    bottom: 8px;
+  }
+  .bulkbar {
+    width: 100%;
+  }
+  .bulkbar .btn.sm,
+  .bulkbar .ibtn.sm {
+    min-height: 44px;
+  }
+  .bulkbar .ibtn.sm {
+    min-width: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-board .bcard {
+    animation: none;
+  }
+}

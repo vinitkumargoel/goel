@@ -1,0 +1,277 @@
+/*
+ * The History page (.hist). Every rule is scoped under that root. Phone ≤ 600px, narrow ≤ 920px.
+ */
+
+/* ================================================================== history */
+
+.hist {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.hist-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.hist-title {
+  flex: 1 1 280px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hist-title .h1,
+.hist-title p {
+  margin: 0;
+}
+
+.hist-hacts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.hist-hacts .btn,
+.hist-bulk .btn,
+.hist .empty .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hist-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.hist-search {
+  flex: 0 1 360px;
+  min-width: 200px;
+}
+
+.hist-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.hist-bulk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  min-height: 48px;
+}
+
+.hist-all {
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hist-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  min-width: 0;
+}
+
+.hist-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hist-sum {
+  margin: 0 4px 2px;
+}
+
+.hist-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hist-gh {
+  margin: 0;
+  padding: 10px 4px 4px;
+}
+
+.hist-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hist-item {
+  background: var(--card);
+  border-radius: 15px;
+  box-shadow: var(--sh-card);
+  border: 1px solid var(--card-edge);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  transition:
+    box-shadow 0.12s,
+    border-color 0.12s;
+}
+
+.hist-item.on {
+  border-color: var(--accent-line);
+  box-shadow:
+    var(--sh-card),
+    0 0 0 2px var(--accent-soft);
+}
+
+.hist-check {
+  flex: none;
+}
+
+.hist-tx {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hist-nm {
+  font-weight: 650;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hist-mt {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hist-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hist-acts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.hist-acts .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hist-acts .ibtn {
+  text-decoration: none;
+  color: var(--ink-2);
+}
+
+.hist-acts .hist-del:hover:not(:disabled) {
+  color: var(--bad);
+}
+
+/* Actions show in place on the hovered or focused card; touch screens always show them. */
+@media (hover: hover) and (pointer: fine) and (min-width: 601px) {
+  .hist-item .hist-acts {
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .hist-item:hover .hist-acts,
+  .hist-item:focus-within .hist-acts,
+  .hist-item .hist-acts:has([aria-expanded='true']) {
+    opacity: 1;
+  }
+}
+
+.hist-side {
+  width: 280px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+}
+
+.hist-side h2 {
+  margin: 0;
+}
+
+.hist-big {
+  font: 750 34px/1 var(--f-display);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.hist-types {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hist .empty p {
+  margin: 0;
+}
+
+@media (max-width: 1100px) {
+  .hist-side {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .hist-search {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .hist-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    width: 100%;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .hist-chips .chip {
+    flex: none;
+  }
+  /* On a phone the card keeps its menu, which holds Re-add, Save, Copy and Remove. */
+  .hist-acts .hist-wide {
+    display: none;
+  }
+}

@@ -16,7 +16,7 @@ interface TableHeadProps {
 
 /**
  * The column headers. The `lt-*` column classes must match TableRow's cells, which share the grid
- * and the container-width rules in library.css, or a label loses its column.
+ * and the container-width rules in library-table.css, or a label loses its column.
  */
 export function TableHead({ sort, onSort }: TableHeadProps) {
   return (

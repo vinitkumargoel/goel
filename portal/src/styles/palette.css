@@ -1,0 +1,215 @@
+/*
+ * The command palette (.cpal) and the shortcuts sheet (.keys). Every rule is scoped under one of
+ * those roots. Phone ≤ 600px, narrow ≤ 920px.
+ */
+
+/* ================================================================== command palette */
+
+.scrim.cpal-scrim {
+  place-items: start center;
+  padding: 14px 16px 24px;
+}
+
+.cpal {
+  width: min(786px, 100%);
+  max-height: min(640px, calc(100dvh - 40px));
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-radius: 20px;
+  border: 1px solid var(--accent-line);
+  box-shadow:
+    var(--sh-float),
+    0 0 0 4px var(--accent-soft);
+  overflow: hidden;
+  animation: studio-rise 0.16s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.cpal-in {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 0 18px;
+  flex: none;
+}
+
+.cpal-field {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+  outline: none;
+}
+
+.cpal-field::placeholder {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+.cpal-esc {
+  border: 0;
+  background: none;
+  padding: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  flex: none;
+}
+
+.cpal-esc:hover .kbd {
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+
+.cpal-list {
+  border-top: 1px solid var(--line);
+  padding: 6px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  overscroll-behavior: contain;
+}
+
+.cpal-gh {
+  padding: 10px 10px 4px;
+}
+
+.cpal-list > [role='group']:first-of-type .cpal-gh {
+  padding-top: 6px;
+}
+
+.cpal-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 11px;
+  cursor: pointer;
+  min-height: 38px;
+  min-width: 0;
+}
+
+.cpal-opt.on {
+  background: var(--accent-soft);
+}
+
+.cpal-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cpal-label b {
+  font-weight: 700;
+}
+
+.cpal-keys {
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+}
+
+.cpal-empty {
+  padding: 18px 12px;
+  text-align: center;
+}
+
+.cpal-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  flex: none;
+  flex-wrap: wrap;
+}
+
+@media (pointer: coarse) {
+  .cpal-opt {
+    min-height: 44px;
+  }
+  .cpal-esc {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 600px) {
+  .scrim.cpal-scrim {
+    padding: 0;
+    place-items: start stretch;
+  }
+  .cpal {
+    width: 100%;
+    max-height: 100dvh;
+    border-radius: 0 0 22px 22px;
+    border-top: 0;
+    padding-top: env(safe-area-inset-top);
+    animation-name: studio-fade-in;
+  }
+  .cpal-foot,
+  .cpal-keys {
+    display: none;
+  }
+}
+
+/* ================================================================== shortcuts sheet */
+
+.keys-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 28px;
+}
+
+.keys-col h3 {
+  margin: 0 0 6px;
+}
+
+.keys-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.keys-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  min-height: 36px;
+}
+
+.keys-row:first-child {
+  border-top: 0;
+}
+
+.keys-row dt {
+  flex: none;
+  min-width: 112px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.keys-row dd {
+  margin: 0;
+  color: var(--ink-2);
+  min-width: 0;
+}
+
+.keys-plus {
+  padding: 0 1px;
+}
+
+@media (max-width: 600px) {
+  .keys-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

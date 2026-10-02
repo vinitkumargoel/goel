@@ -1,7 +1,7 @@
 /*
  * The add flow (Add download, its review step, the folder picker), the queue editors and the
  * confirmation. Every sheet is a ui/Modal (`.scrim > .sheet`), composed of `.sheet-h/-b/-f`;
- * base.css turns them into bottom sheets on a phone. Colours come from themes.css tokens only.
+ * base-layers.css turns them into bottom sheets on a phone. Colours come from themes.css tokens only.
  */
 
 /* ------------------------------------------------------------------ Add download */
