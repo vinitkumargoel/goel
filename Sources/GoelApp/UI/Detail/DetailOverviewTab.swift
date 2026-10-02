@@ -141,12 +141,8 @@ struct DetailOverviewFacts: View {
                 DetailFactRow(L10n.t("Headers"), value: L10n.t("%d custom", headers.count))
             }
             // Cookie STATE only — never the value, and never copyable.
-            if let cookieSource = task.cookieSource, cookieSource != .none {
-                DetailFactRow(L10n.t("Cookies"),
-                              value: task.cookieHeader.map {
-                                  L10n.t("%1$@ attached · %2$@", String(CookieHeader.count(in: $0)), cookieSource.displayName)
-                              } ?? L10n.t("Not loaded — attach them again"),
-                              tone: task.cookieHeader == nil ? .warn : nil)
+            if let cookies = task.cookieStateText {
+                DetailFactRow(L10n.t("Cookies"), value: cookies, tone: task.cookieHeader == nil ? .warn : nil)
             }
             DetailFactRow(L10n.t("Priority"), value: task.priority.title)
             if task.expectedChecksum != nil {

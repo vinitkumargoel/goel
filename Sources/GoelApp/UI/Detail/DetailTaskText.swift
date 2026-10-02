@@ -15,6 +15,28 @@ extension DownloadTask {
         return "~\(DownloadTask.etaString(eta))"
     }
 
+    /// The Cookies fact: how many cookies are attached and where they came from, or — after a
+    /// relaunch, since the values are never persisted — where to get them again. State only: the
+    /// cookie values themselves never reach the panel.
+    var cookieStateText: String? {
+        guard let source = cookieSource, source != .none else { return nil }
+        if let header = cookieHeader {
+            return L10n.t("%1$@ attached · %2$@", String(CookieHeader.count(in: header)), source.displayName)
+        }
+        return L10n.t("Not loaded — re-import from %@", Self.cookieOrigin(source))
+    }
+
+    /// Where cookies come from, worded to follow "re-import from" and short enough for the panel.
+    /// `displayName` is the picker's label ("From browser"), which would read "re-import from From
+    /// browser"; a manual header is the one copied from the browser's developer tools.
+    static func cookieOrigin(_ source: CookieSource) -> String {
+        switch source {
+        case .browser: return L10n.t("the browser")
+        case .manual: return L10n.t("DevTools")
+        case .none: return source.displayName
+        }
+    }
+
     var swarmSummary: (label: String, value: String) {
         if kind == .torrent {
             let seeds = seedCount.map { " · " + L10n.t("%d seeds", $0) } ?? ""

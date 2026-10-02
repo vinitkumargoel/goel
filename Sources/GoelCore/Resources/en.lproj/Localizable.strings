@@ -651,6 +651,7 @@
 "Detail panel height" = "Detail panel height";
 "Detail section" = "Detail section";
 "Details" = "Details";
+"DevTools" = "DevTools";
 "Diagnostics" = "Diagnostics";
 "Diagnostics are only ever sent by you, by hand, from Settings ▸ Diagnostics." = "Diagnostics are only ever sent by you, by hand, from Settings ▸ Diagnostics.";
 "Diagnostics copied — paste it into your bug report" = "Diagnostics copied — paste it into your bug report";
@@ -1302,7 +1303,7 @@
 "Not fetched yet." = "Not fetched yet.";
 "Not found — install it (brew install yt-dlp) to save videos from web pages." = "Not found — install it (brew install yt-dlp) to save videos from web pages.";
 "Not included" = "Not included";
-"Not loaded — attach them again" = "Not loaded — attach them again";
+"Not loaded — re-import from %@" = "Not loaded — re-import from %@";
 "Not progressing. ffmpeg may be stuck." = "Not progressing. ffmpeg may be stuck.";
 "Not provided" = "Not provided";
 "Not sorted" = "Not sorted";
@@ -2425,6 +2426,7 @@
 "starts in order" = "starts in order";
 "tag “%@”" = "tag “%@”";
 "terabytes" = "terabytes";
+"the browser" = "the browser";
 "the scanner couldn’t be started: %@" = "the scanner couldn’t be started: %@";
 "the scanner set in Settings can’t be run" = "the scanner set in Settings can’t be run";
 "the scanner stopped unexpectedly" = "the scanner stopped unexpectedly";
