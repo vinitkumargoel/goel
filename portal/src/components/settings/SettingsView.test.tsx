@@ -13,6 +13,9 @@ const api = vi.hoisted(() => ({
   // The schedule card has its own tests; here it stays loading, so it renders nothing.
   schedule: vi.fn(() => new Promise(() => {})),
   updateSchedule: vi.fn(),
+  // The server-settings cards have their own tests; here they stay loading and render nothing.
+  serverSettings: vi.fn(() => new Promise(() => {})),
+  updateServerSettings: vi.fn(),
 }))
 const boot = vi.hoisted(() => ({ host: 'mac' as 'mac' | 'linux', hostname: 'studio', readOnly: false, username: 'vinit' }))
 const theme = vi.hoisted(() => ({ applyTheme: vi.fn() }))
@@ -101,8 +104,8 @@ describe('SettingsView', () => {
     expect(screen.getByText('/etc/goel/config')).toBeInTheDocument()
     expect(screen.queryByText(en.settings.desktop.desc)).toBeNull()
     await screen.findByText(en.settings.network.interfaces)
-    // No scheduler on the Linux service: the card is not even asked for.
-    expect(api.schedule).not.toHaveBeenCalled()
+    // The Linux daemon runs the same scheduler as the desktop app, so the card is asked for there too.
+    expect(api.schedule).toHaveBeenCalled()
   })
 
   it('picks a theme from the tiles, persists it and says so', async () => {

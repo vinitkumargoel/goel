@@ -444,6 +444,50 @@
     "panel": {
       "name": "Hide the detail panel when nothing is selected",
       "desc": "Off, it shows the queue overview — combined speed, what’s left and when it will be done. Remembered in this browser."
+    },
+    "general": {
+      "title": "General",
+      "folder": "Default download folder",
+      "folderDesc": "Where new downloads are saved on the server.",
+      "choose": "Choose…",
+      "folderInvalid": "Enter an absolute path on the server, starting with /.",
+      "rule": "Folder rule",
+      "ruleDesc": "Choose the folder automatically, by type, by source, or always use the fixed one.",
+      "rules": {
+        "automatic": "Automatic",
+        "byType": "By type",
+        "bySource": "By source",
+        "fixed": "Fixed"
+      },
+      "exists": "When a file exists",
+      "existsDesc": "Keep both by renaming, or replace the old file.",
+      "reactions": {
+        "rename": "Rename",
+        "overwrite": "Overwrite"
+      },
+      "simultaneous": "Simultaneous downloads",
+      "simultaneousDesc": "How many run at once, in the active speed profile “{{profile}}”. The rest wait in the queue.",
+      "simultaneousInvalid": "Enter a whole number from {{min}} to {{max}}."
+    },
+    "bt": {
+      "title": "BitTorrent",
+      "encryption": "Encryption mode",
+      "encryptionDesc": "Protocol encryption for peer connections.",
+      "modes": {
+        "prefer": "Prefer",
+        "require": "Require",
+        "disable": "Disable"
+      },
+      "dht": "Enable DHT",
+      "dhtDesc": "Find peers without a tracker.",
+      "pex": "Enable PeX",
+      "pexDesc": "Exchange peers with other clients.",
+      "lpd": "Enable Local Peer Discovery",
+      "lpdDesc": "Find peers on the local network.",
+      "utp": "Enable µTP",
+      "utpDesc": "BitTorrent over UDP for better congestion control.",
+      "autoDelete": "Auto-delete .torrent when done",
+      "autoDeleteDesc": "Remove the source file after completion."
     }
   },
   "api": {

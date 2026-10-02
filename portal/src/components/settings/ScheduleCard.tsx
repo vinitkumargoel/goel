@@ -16,7 +16,7 @@ const dayKey = (day: number) => `schedule.days.${day}` as 'schedule.days.1'
 /**
  * Settings › Schedule: the one download window the Mac's scheduler runs, painted on a week × hour
  * grid in the colour of the profile it switches to. Edits collect in a draft and go to the server
- * on Save, like the other server cards. A server without a scheduler (404) shows nothing.
+ * on Save, like the other server cards. A server without a scheduler (404) shows nothing; the Linux daemon runs the same one.
  */
 export function ScheduleCard({
   canWrite,
@@ -49,7 +49,7 @@ export function ScheduleCard({
       })
       .catch((e: unknown) => {
         if (!live) return
-        // A daemon without a scheduler (the Linux service) answers 404: the card stays away.
+        // A server without a scheduler answers 404: the card stays away.
         setLoad(e instanceof ApiError && e.status === 404 ? { status: 'unsupported' } : { status: 'error' })
       })
     return () => {

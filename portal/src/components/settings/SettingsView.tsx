@@ -11,6 +11,7 @@ import { BandwidthCard } from './BandwidthCard'
 import { LanguageRow, NotifyRow } from './BrowserPrefsCard'
 import { NetworkCard } from './NetworkCard'
 import { ScheduleCard } from './ScheduleCard'
+import { ServerSettingsCards } from './ServerSettingsCards'
 import { Pill, SettingsCard } from './SettingsParts'
 import { ThemeTiles } from './ThemeTiles'
 
@@ -46,7 +47,8 @@ export function SettingsView({
   const [bandwidthDirty, setBandwidthDirty] = useState(false)
   const [networkDirty, setNetworkDirty] = useState(false)
   const [scheduleDirty, setScheduleDirty] = useState(false)
-  const dirty = bandwidthDirty || networkDirty || scheduleDirty
+  const [serverDirty, setServerDirty] = useState(false)
+  const dirty = bandwidthDirty || networkDirty || scheduleDirty || serverDirty
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange])
   // Unmounting drops the edits with the cards, so nothing is pending any more.
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
@@ -134,6 +136,7 @@ export function SettingsView({
           {bandwidth && (
             <BandwidthCard bandwidth={bandwidth} canWrite={canWrite} onToast={onToast} onDirty={setBandwidthDirty} />
           )}
+          <ServerSettingsCards canWrite={canWrite} onToast={onToast} onDirty={setServerDirty} />
           <NetworkCard canWrite={canWrite} onToast={onToast} onDirty={setNetworkDirty} />
           <SettingsCard
             title={t('settings.desktop.name')}
@@ -148,7 +151,8 @@ export function SettingsView({
               )}
             </p>
           </SettingsCard>
-          {!linux && <ScheduleCard canWrite={canWrite} onToast={onToast} onDirty={setScheduleDirty} />}
+          {/* The daemon runs the same scheduler as the desktop app; a server without one answers 404 and the card stays away. */}
+          <ScheduleCard canWrite={canWrite} onToast={onToast} onDirty={setScheduleDirty} />
         </div>
       </section>
     </div>
