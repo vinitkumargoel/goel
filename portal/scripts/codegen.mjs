@@ -71,7 +71,7 @@ const icon = (name) => {
   const b64 = readFileSync(join(pwaDir, name)).toString('base64')
   return b64.match(/.{1,76}/g).join('\n')
 }
-const icons = ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png'].map((name) => [name, icon(name)])
+const icons = ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'].map((name) => [name, icon(name)])
 
 // Text assets are also shipped pre-gzipped (level 9, deterministic: no mtime in the zlib header), so
 // the server never compresses per request and a Linux build needs no zlib. Served when the client

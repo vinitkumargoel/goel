@@ -369,6 +369,41 @@ final class RemoteControlRoutesTests: XCTestCase {
         }
     }
 
+    func testManifestIsInstallableShareableAndKnowsItsDarkCanvas() throws {
+        let out = str(try XCTUnwrap(RemoteRouter.staticAsset(path: "/manifest.webmanifest")))
+        let body = try XCTUnwrap(out.components(separatedBy: "\r\n\r\n").last)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
+        XCTAssertEqual(json["id"] as? String, "/")
+        XCTAssertFalse((json["description"] as? String ?? "").isEmpty)
+        let dark = try XCTUnwrap(json["color_scheme_dark"] as? [String: String])
+        XCTAssertEqual(dark["background_color"], RemoteRouter.darkCanvas)
+        XCTAssertEqual(json["background_color"] as? String, RemoteRouter.lightCanvas)
+
+        let share = try XCTUnwrap(json["share_target"] as? [String: Any])
+        XCTAssertEqual(share["method"] as? String, "GET")
+        XCTAssertEqual(share["action"] as? String, "/")
+        XCTAssertEqual((share["params"] as? [String: String])?["url"], "url")
+
+        let shortcuts = try XCTUnwrap(json["shortcuts"] as? [[String: Any]])
+        XCTAssertEqual(shortcuts.first?["url"] as? String, "/?add=1")
+
+        // Every icon the manifest names is servable; the maskable one is its own full-bleed file.
+        let icons = try XCTUnwrap(json["icons"] as? [[String: String]])
+        XCTAssertTrue(icons.contains { $0["purpose"] == "maskable" && $0["src"] == "/icons/icon-maskable-512.png" })
+        for icon in icons {
+            let src = try XCTUnwrap(icon["src"])
+            XCTAssertTrue(str(try XCTUnwrap(RemoteRouter.staticAsset(path: src))).hasPrefix("HTTP/1.1 200"), src)
+        }
+    }
+
+    func testOfflinePageUsesTheAppCanvasAndSpeaksGerman() {
+        let worker = PortalBundle.serviceWorker
+        XCTAssertTrue(worker.contains(RemoteRouter.lightCanvas))
+        XCTAssertTrue(worker.contains(RemoteRouter.darkCanvas))
+        XCTAssertTrue(worker.contains("navigator.language"))
+        XCTAssertTrue(worker.contains("Goel°-Server nicht erreichbar"))
+    }
+
     func testPageShellLinksTheManifestAndCarriesTheLanguage() {
         let page = RemoteRouter.page(config: .init(token: "secret", theme: "nord"))
         XCTAssertTrue(page.contains(#"rel="manifest""#))

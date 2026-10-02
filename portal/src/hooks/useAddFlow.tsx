@@ -5,6 +5,7 @@ import { clearDraft, loadDraft, type AddDraft } from '../lib/addDraft'
 import { loadAddPrefs } from '../lib/addPrefs'
 import { submitAdd, type AddSummary } from '../lib/addSubmit'
 import { api, failureMessage } from '../lib/api'
+import { parseLaunch } from '../lib/launchParams'
 import { summarizeLinks } from '../lib/links'
 import type { ToastOptions, ToastTone } from './useToasts'
 import { afterHistorySettles } from './useBackToClose'
@@ -47,6 +48,19 @@ export function useAddFlow({ canWrite, toast, refresh, onQueued, onReveal }: Dep
     setOpen(true)
     toast(t('toast.draftRestored'))
     // Once, at load: a later open starts from a clean dialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // The installed app's share target and "Add download" shortcut arrive as query parameters on the
+  // launch URL. Consumed once and stripped from the address, so a reload does not reopen the sheet.
+  useEffect(() => {
+    const launch = parseLaunch(window.location.search)
+    if (launch.rest === window.location.search) return
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${launch.rest}${window.location.hash}`)
+    if (!launch.open || !canWrite || loadDraft()) return
+    setPrefill(launch.links ? { url: launch.links, pasted: false } : null)
+    setOpen(true)
+    // Once, at load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
