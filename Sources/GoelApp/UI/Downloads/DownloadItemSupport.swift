@@ -93,7 +93,8 @@ struct DownloadItemBehaviour: ViewModifier {
     private var accessibilityValue: String {
         switch task.status {
         case .seeding: return A11y.sentence(task.accessibilityProgressValue, task.statusDetailText)
-        case .queued: return A11y.sentence(task.accessibilityProgressValue, task.statusCompactText(queueRank: queueRank))
+        case .queued: return A11y.sentence(task.accessibilityProgressValue,
+                                           task.statusCompactText(queueRank: queueRank))
         default: return task.accessibilityProgressValue
         }
     }

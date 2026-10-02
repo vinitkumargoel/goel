@@ -96,7 +96,8 @@ enum AddFlowSamples {
         """
 
     static func reviewItems(_ model: AppViewModel) -> [LinkReviewItem] {
-        let sizes: [Int64?] = [2_640_000_000, 4_700_000_000, 526_000_000, 141_000_000, 1_400_000_000, nil, nil, 8_400_000]
+        let sizes: [Int64?] = [2_640_000_000, 4_700_000_000, 526_000_000, 141_000_000, 1_400_000_000,
+                               nil, nil, 8_400_000]
         return model.reviewItems(for: reviewLines).enumerated().map { index, item in
             var copy = item
             copy.sizeRequested = true

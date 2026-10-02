@@ -10,7 +10,8 @@ enum DownloadsHeaderMenus {
     static func sortNodes(_ vm: AppViewModel) -> [DownloadMenuNode] {
         let keys: [DownloadMenuNode] = SortKey.allCases.map { key in
             let current = vm.sortKey == key
-            return .toggle(key.title, trailing: current ? (vm.sortAscending ? "↑" : "↓") : nil, isOn: current) { _ in
+            return .toggle(key.title, trailing: current ? (vm.sortAscending ? "↑" : "↓") : nil,
+                           isOn: current) { _ in
                 vm.toggleSort(key)
             }
         }
@@ -56,7 +57,8 @@ enum DownloadsHeaderMenus {
             }
         }
         let densities: [DownloadMenuNode] = ListDensity.allCases.map { option in
-            .choice(option.title, trailing: option == .compact ? "⌥⌘C" : nil, isOn: density.wrappedValue == option) {
+            .choice(option.title, trailing: option == .compact ? "⌥⌘C" : nil,
+                    isOn: density.wrappedValue == option) {
                 density.wrappedValue = option
             }
         }

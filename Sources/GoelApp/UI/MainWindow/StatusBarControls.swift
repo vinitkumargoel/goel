@@ -26,7 +26,8 @@ struct StatusSpeedLimitChip: View {
             .foregroundStyle(on ? Studio.Palette.warn : hovered ? Studio.Palette.ink : Studio.Palette.ink2)
             .padding(.horizontal, 9)
             .frame(minHeight: 24)
-            .background(Capsule().fill(on ? Studio.Palette.warnSoft : hovered ? Studio.Palette.well : Studio.Palette.card))
+            .background(Capsule().fill(on ? Studio.Palette.warnSoft
+                                          : hovered ? Studio.Palette.well : Studio.Palette.card))
             .overlay {
                 if !on { Capsule().strokeBorder(Studio.Palette.hairline, lineWidth: 1) }
             }

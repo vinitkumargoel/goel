@@ -67,14 +67,16 @@ struct MultipathSettingsPane: View {
             }
             .accessibilityElement(children: .combine)
             SettingRow(L10n.t("Enable multi-path downloads"),
-                       detail: L10n.t("Split large HTTP downloads across selected adapters using byte ranges. Default off."),
+                       detail: L10n.t("Split large HTTP downloads across selected adapters using byte ranges. "
+                           + "Default off."),
                        isOn: setting(vm, \.aggregationEnabled))
         }
     }
 
     private func statusDetail() -> String {
         if !enabled {
-            return L10n.t("Turn on multi-path below, then select at least two adapters with independent internet paths.")
+            return L10n.t("Turn on multi-path below, then select at least two adapters with independent internet "
+                + "paths.")
         }
         if let reason = inactiveReason {
             return L10n.t(reason.rawValue)
@@ -88,7 +90,8 @@ struct MultipathSettingsPane: View {
 
     private var adaptersCard: some View {
         SettingsCard(title: L10n.t("Adapters"), symbol: "network",
-                     footer: L10n.t("Leave none selected to use every eligible adapter. Two NICs on the same home router usually will not double speed.")) {
+                     footer: L10n.t("Leave none selected to use every eligible adapter. Two NICs on the same home "
+                         + "router usually will not double speed.")) {
             Text(selectionCaption)
                 .studioFont(.small)
                 .foregroundStyle(Studio.Palette.ink3)
@@ -176,9 +179,11 @@ struct MultipathSettingsPane: View {
                 tipRow(icon: "wifi.exclamationmark",
                        text: L10n.t("Best with independent uplinks (e.g. home fiber + phone hotspot)."))
                 tipRow(icon: "list.bullet.rectangle",
-                       text: L10n.t("While downloading, open the Connections tab to see which adapter each segment uses."))
+                       text: L10n.t("While downloading, open the Connections tab to see which adapter each segment "
+                           + "uses."))
                 tipRow(icon: "lock.shield",
-                       text: L10n.t("Multi-path is blocked with a system/manual proxy, or when a VPN is up (unless allowed)."))
+                       text: L10n.t("Multi-path is blocked with a system/manual proxy, or when a VPN is up (unless "
+                           + "allowed)."))
             }
         }
     }
@@ -225,7 +230,8 @@ private struct AdapterCard: View {
         Button {
             guard !disabled else { return }
             if vm.settings.aggregationAdapterIds.isEmpty {
-                // Read here on the main actor: `update` takes a @Sendable closure, and touching main-actor state inside one is a toolchain error.
+                // Read here on the main actor: `update` takes a @Sendable closure, and touching main-actor
+                // state inside one is a toolchain error.
                 let ids = allAdapters.map(\.bsdName)
                 vm.update { $0.aggregationAdapterIds = ids }
             }

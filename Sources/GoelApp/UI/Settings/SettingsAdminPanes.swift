@@ -60,24 +60,28 @@ struct AuditLogSettingsPane: View {
 
     var body: some View {
         SettingsPane(title: L10n.t("Audit Log"),
-                     subtitle: L10n.t("An append-only record of downloads added, completed, and failed — written to a file on this Mac and nowhere else."),
+                     subtitle: L10n.t("An append-only record of downloads added, completed, and failed — written to "
+                                      + "a file on this Mac and nowhere else."),
                      managedKeys: [.auditLogEnabled, .auditLogDirectory, .auditLogRetentionDays,
                                    .auditLogKeepFiles, .auditLogMaxFileMegabytes]) {
             SettingsCard(title: L10n.t("Audit log"), symbol: "doc.text.magnifyingglass") {
                 SettingRow(L10n.t("Keep an audit log"),
-                           detail: L10n.t("Off by default. Nothing is recorded, and nothing is ever sent anywhere — Goel° has no telemetry.")) {
+                           detail: L10n.t("Off by default. Nothing is recorded, and nothing is ever sent anywhere — "
+                                          + "Goel° has no telemetry.")) {
                     SettingSwitch(isOn: setting(vm, \.auditLogEnabled))
                         .managed(.auditLogEnabled, vm.managedPolicy)
                 }
                 if vm.settings.auditLogEnabled {
                     SettingRow(L10n.t("Folder"),
-                               detail: L10n.t("Leave empty for Application Support/GoelDownloader/Audit. File names and hosts are recorded; URLs are reduced to their host."),
+                               detail: L10n.t("Leave empty for Application Support/GoelDownloader/Audit. File names "
+                                              + "and hosts are recorded; URLs are reduced to their host."),
                                isIndented: true) {
                         SettingsTextField(text: setting(vm, \.auditLogDirectory), width: 160, isMonospaced: true)
                             .managed(.auditLogDirectory, vm.managedPolicy)
                     }
                     SettingRow(L10n.t("Reveal in Finder"),
-                               detail: L10n.t("Turning the log off never deletes what is already written — that record is not Goel°’s to discard."),
+                               detail: L10n.t("Turning the log off never deletes what is already written — that "
+                                              + "record is not Goel°’s to discard."),
                                isIndented: true) {
                         Button(L10n.t("Show Audit Folder"), systemImage: "folder") { vm.revealAuditLogFolder() }
                             .buttonStyle(.studio(.secondary, size: .small))
@@ -86,7 +90,8 @@ struct AuditLogSettingsPane: View {
             }
             if vm.settings.auditLogEnabled {
                 SettingsCard(title: L10n.t("Rotation"), symbol: "arrow.triangle.2.circlepath") {
-                    SettingRow(L10n.t("Rotate at (MB)"), detail: L10n.t("The live file is rotated once it passes this size.")) {
+                    SettingRow(L10n.t("Rotate at (MB)"),
+                               detail: L10n.t("The live file is rotated once it passes this size.")) {
                         SettingsIntField(value: setting(vm, \.auditLogMaxFileMegabytes), unit: L10n.t("MB"))
                             .managed(.auditLogMaxFileMegabytes, vm.managedPolicy)
                     }
@@ -132,7 +137,8 @@ struct DiagnosticsSettingsPane: View {
                 }
                 SettingsCardBlock {
                     SettingsFootnote(text: L10n.t("Withheld from every report: %@.",
-                                                  DiagnosticsRedaction.withheldSettingsKeys.sorted().joined(separator: ", ")),
+                                                  DiagnosticsRedaction.withheldSettingsKeys.sorted()
+                                                      .joined(separator: ", ")),
                                      symbol: "eye.slash")
                 }
             }

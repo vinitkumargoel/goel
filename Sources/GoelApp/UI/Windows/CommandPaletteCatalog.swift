@@ -290,13 +290,15 @@ struct CommandPaletteCatalog {
     private var discoverCommands: [PaletteCommand] {
         [
             PaletteCommand(id: "find.mirrors", title: L10n.t("Mirrors & failover"),
-                           subtitle: L10n.t("Add sheet ▸ Mirrors — segments spread across alternate URLs and fail over"),
+                           subtitle: L10n.t("Add sheet ▸ Mirrors — segments spread "
+                               + "across alternate URLs and fail over"),
                            symbol: "arrow.triangle.branch", group: .discover,
                            keywords: ["mirror", "metalink", "failover", "alternate", "redundant"]) {
                 openAddWithAdvanced()
             },
             PaletteCommand(id: "find.checksum", title: L10n.t("Verify a checksum"),
-                           subtitle: L10n.t("Add sheet ▸ Checksum — MD5/SHA-1/SHA-256, checked when the download finishes"),
+                           subtitle: L10n.t("Add sheet ▸ Checksum — MD5/SHA-1/SHA-256, "
+                               + "checked when the download finishes"),
                            symbol: "checkmark.seal", group: .discover,
                            keywords: ["checksum", "hash", "sha256", "md5", "integrity", "verify"]) {
                 openAddWithAdvanced()
@@ -308,14 +310,16 @@ struct CommandPaletteCatalog {
                 openAddWithAdvanced()
             },
             PaletteCommand(id: "find.filePriority", title: L10n.t("Per-file priority in a torrent"),
-                           subtitle: L10n.t("Select a torrent, then the detail panel’s Files tab — skip, low, normal, high"),
+                           subtitle: L10n.t("Select a torrent, then the detail panel’s "
+                               + "Files tab — skip, low, normal, high"),
                            symbol: "list.bullet.indent", group: .discover,
                            keywords: ["priority", "files", "torrent", "skip", "select"]) {
                 vm.detailPanelVisible = true
                 vm.detailTab = .files
                 if let task = vm.selectedTask {
                     if !DetailTab.available(for: task).contains(.files) {
-                        vm.toastWarning(L10n.t("“%@” is a single file — per-file priority is for torrents and multi-file downloads", task.name))
+                        vm.toastWarning(L10n.t("“%@” is a single file — per-file priority is for "
+                            + "torrents and multi-file downloads", task.name))
                     }
                 } else {
                     vm.toastWarning(L10n.t("Select a torrent to set per-file priority"))

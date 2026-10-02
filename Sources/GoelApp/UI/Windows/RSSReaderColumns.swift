@@ -103,7 +103,9 @@ struct RSSArticleColumn: View {
                 LazyVStack(spacing: Studio.Space.xs) {
                     ForEach(items, id: \.key) { item in
                         RSSArticleRow(item: item,
-                                      matches: feed.map { RSSRuleMatcher.matches(title: item.title, feed: $0) } ?? false,
+                                      matches: feed.map {
+                                          RSSRuleMatcher.matches(title: item.title, feed: $0)
+                                      } ?? false,
                                       unread: !data.readKeys.contains(item.key),
                                       isSelected: data.selectedArticle == item.key,
                                       ruleName: feed?.displayName)

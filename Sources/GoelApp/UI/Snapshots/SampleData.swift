@@ -54,26 +54,32 @@ enum StudioSampleData {
 
         let debian = DownloadTask(
             id: ID.debian.uuid,
-            source: .magnet("magnet:?xt=urn:btih:9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b&dn=debian-12.6.0-amd64-DVD-1.iso"),
+            source: .magnet("magnet:?xt=urn:btih:9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
+                + "&dn=debian-12.6.0-amd64-DVD-1.iso"),
             name: "debian-12.6.0-amd64-DVD-1.iso",
             saveDirectory: "\(downloads)/Disc images",
             totalBytes: 3_900 * mb, bytesDownloaded: 3_900 * mb, bytesUploaded: 4_680 * mb,
             uploadSpeed: 1.8 * Double(mb),
             status: .seeding,
-            files: [TransferFile(id: 0, path: "debian-12.6.0-amd64-DVD-1.iso", length: 3_900 * mb, bytesCompleted: 3_900 * mb)],
+            files: [TransferFile(id: 0, path: "debian-12.6.0-amd64-DVD-1.iso", length: 3_900 * mb,
+                                 bytesCompleted: 3_900 * mb)],
             connectionCount: 12, addedAt: ago(300), completedAt: ago(120),
             seedCount: 44, infoHash: "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b",
-            trackers: [TorrentTracker(url: "udp://tracker.debian.org:6969/announce", seeds: 412, leeches: 18, status: .working, verified: true)],
+            trackers: [TorrentTracker(url: "udp://tracker.debian.org:6969/announce", seeds: 412, leeches: 18,
+                                      status: .working, verified: true)],
             seedRatioLimit: 2.0)
 
         let cosmosFiles = [
-            TransferFile(id: 0, path: "Cosmos.S01E04/Cosmos.S01E04.2160p.HDR.mkv", length: 16_800 * mb, bytesCompleted: 6_890 * mb, priority: .high),
+            TransferFile(id: 0, path: "Cosmos.S01E04/Cosmos.S01E04.2160p.HDR.mkv", length: 16_800 * mb,
+                         bytesCompleted: 6_890 * mb, priority: .high),
             TransferFile(id: 1, path: "Cosmos.S01E04/Subs/English.srt", length: 120_000, bytesCompleted: 120_000),
-            TransferFile(id: 2, path: "Cosmos.S01E04/Sample/sample.mkv", length: 200 * mb, bytesCompleted: 0, priority: .skip),
+            TransferFile(id: 2, path: "Cosmos.S01E04/Sample/sample.mkv", length: 200 * mb, bytesCompleted: 0,
+                         priority: .skip),
         ]
         let cosmos = DownloadTask(
             id: ID.cosmos.uuid,
-            source: .magnet("magnet:?xt=urn:btih:3c1f2e9d8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d&dn=Cosmos.S01E04.2160p.HDR.mkv"),
+            source: .magnet("magnet:?xt=urn:btih:3c1f2e9d8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d"
+                + "&dn=Cosmos.S01E04.2160p.HDR.mkv"),
             name: "Cosmos.S01E04.2160p.HDR.mkv",
             saveDirectory: "\(downloads)/Video",
             totalBytes: 17_000 * mb, bytesDownloaded: 6_970 * mb, bytesUploaded: 410 * mb,
@@ -81,8 +87,10 @@ enum StudioSampleData {
             status: .downloading, files: cosmosFiles, connectionCount: 38, addedAt: ago(9),
             seedCount: 31, infoHash: "3c1f2e9d8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d",
             trackers: [
-                TorrentTracker(url: "udp://tracker.opentrackr.org:1337/announce", seeds: 120, leeches: 40, status: .working, verified: true),
-                TorrentTracker(url: "udp://open.stealth.si:80/announce", tier: 1, message: "Connection timed out", status: .error),
+                TorrentTracker(url: "udp://tracker.opentrackr.org:1337/announce", seeds: 120, leeches: 40,
+                               status: .working, verified: true),
+                TorrentTracker(url: "udp://open.stealth.si:80/announce", tier: 1, message: "Connection timed out",
+                               status: .error),
             ],
             pieceAvailability: (0..<160).map { index in index % 7 == 0 ? 0.4 : (index < 66 ? 1 : 0) })
 

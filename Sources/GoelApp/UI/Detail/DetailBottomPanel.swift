@@ -132,7 +132,8 @@ struct DetailBottomPanel: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(L10n.t("Download %@", A11y.speed(speed.down)))
             if history.count > 1 {
-                StudioSparkline(values: history.map(\.down), secondary: history.contains { $0.up >= 1 } ? history.map(\.up) : nil,
+                StudioSparkline(values: history.map(\.down),
+                                secondary: history.contains { $0.up >= 1 } ? history.map(\.up) : nil,
                                 gridLines: 1, showsEndDot: true, accessibilityLabel: L10n.t("Recent throughput"))
                     .frame(height: 46)
                     .accessibilityValue(DetailThroughputChart.spokenSummary(history.map(\.down)))
@@ -237,24 +238,32 @@ private struct DetailIconActions: View {
         let name = task.compactDisplayName
         HStack(spacing: Studio.Space.xxs) {
             if task.status.isActive {
-                StudioIconButton("pause.fill", label: L10n.t("Pause %@", name), size: .small, isOn: true) { vm.pause(task.id) }
+                StudioIconButton("pause.fill", label: L10n.t("Pause %@", name), size: .small, isOn: true) {
+                    vm.pause(task.id)
+                }
             } else if task.status == .paused || task.status == .queued {
-                StudioIconButton("play.fill", label: L10n.t("Resume %@", name), size: .small, isOn: true) { vm.resume(task.id) }
+                StudioIconButton("play.fill", label: L10n.t("Resume %@", name), size: .small, isOn: true) {
+                    vm.resume(task.id)
+                }
             } else if task.status.isFailed {
-                StudioIconButton("arrow.clockwise", label: L10n.t("Retry %@", name), size: .small, isOn: true) { vm.retry(task.id) }
+                StudioIconButton("arrow.clockwise", label: L10n.t("Retry %@", name), size: .small, isOn: true) {
+                    vm.retry(task.id)
+                }
             } else if task.isFileMissing {
                 StudioIconButton("magnifyingglass", label: L10n.t("Locate %@", task.name), size: .small, isOn: true) {
                     vm.locateMissingFile(task)
                 }
             } else if task.status == .completed {
-                StudioIconButton("arrow.up.forward.app", label: L10n.t("Open %@", task.name), size: .small, isOn: true) {
+                StudioIconButton("arrow.up.forward.app", label: L10n.t("Open %@", task.name), size: .small,
+                                 isOn: true) {
                     vm.openFile(task)
                 }
             }
             StudioIconButton("folder", label: L10n.t("Show %@ in Finder", name), size: .small, bordered: true) {
                 vm.revealInFinder(task)
             }
-            StudioIconButton("doc.on.doc", label: L10n.t("Copy source link for %@", name), size: .small, bordered: true) {
+            StudioIconButton("doc.on.doc", label: L10n.t("Copy source link for %@", name), size: .small,
+                             bordered: true) {
                 vm.copyToPasteboard(task.sourceLocator)
             }
             DetailDockToggle()

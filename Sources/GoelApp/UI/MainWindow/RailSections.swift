@@ -202,7 +202,8 @@ struct RailMediaSection: View {
                     title: L10n.t("Converting"),
                     symbol: "arrow.left.arrow.right",
                     count: center.liveCount,
-                    help: center.isDockHidden ? L10n.t("Show the conversion cards") : L10n.t("Hide the conversion cards"),
+                    help: center.isDockHidden
+                        ? L10n.t("Show the conversion cards") : L10n.t("Hide the conversion cards"),
                     accessibilityValue: center.liveCount == 1
                         ? L10n.t("%d media job in progress", center.liveCount)
                         : L10n.t("%d media jobs in progress", center.liveCount),

@@ -29,7 +29,8 @@ struct RSSRuleSheet: View {
 
     var body: some View {
         StudioSheet(title: original == nil ? L10n.t("Add Feed") : L10n.t("Rule · %@", original?.displayName ?? ""),
-                    subtitle: original == nil ? L10n.t("Paste the feed’s address, then say what it should download.") : nil,
+                    subtitle: original == nil
+                        ? L10n.t("Paste the feed’s address, then say what it should download.") : nil,
                     symbol: "dot.radiowaves.up.forward", width: 470) {
             form
             RSSRulePreview(draft: draft, previewItems: previewItems)
@@ -181,7 +182,8 @@ private struct RSSRulePreview: View {
                     .padding(.vertical, Studio.Space.xs)
                 }
                 .frame(maxHeight: 120)
-                .background(Studio.Palette.well, in: RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous))
+                .background(Studio.Palette.well,
+                            in: RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous)
                     .strokeBorder(Studio.Palette.hairline, lineWidth: 1))
             }

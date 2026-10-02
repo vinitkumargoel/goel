@@ -158,7 +158,9 @@ struct DownloadMenuBuilder {
         }
         if task.status.hasData {
             let quickLook = self.quickLook
-            nodes.append(.button(L10n.t("Quick Look"), symbol: "eye") { quickLook(URL(fileURLWithPath: task.savePath)) })
+            nodes.append(.button(L10n.t("Quick Look"), symbol: "eye") {
+                quickLook(URL(fileURLWithPath: task.savePath))
+            })
         }
         if task.status == .completed, task.isMediaFile {
             nodes.append(DownloadMenuNode(title: "", kind: .media(task, vm)))
@@ -183,7 +185,9 @@ struct DownloadMenuBuilder {
             vm.setSequential($0, task: task.id)
         })
         nodes.append(.submenu(L10n.t("Upload Limit"), symbol: "arrow.up",
-                              limitChoices(current: task.uploadLimitBytesPerSec) { vm.setTaskUploadLimit($0, task: task.id) }))
+                              limitChoices(current: task.uploadLimitBytesPerSec) {
+                                  vm.setTaskUploadLimit($0, task: task.id)
+                              }))
         nodes.append(.submenu(L10n.t("Seed Until Ratio"), symbol: "leaf", seedRatioChoices()))
         if task.status.isActive || task.status == .seeding || task.status == .paused {
             nodes.append(.button(L10n.t("Force Recheck"), symbol: "checkmark.shield") { vm.forceRecheck(task.id) })
@@ -192,7 +196,9 @@ struct DownloadMenuBuilder {
             })
         }
         if case .magnet = task.source {
-            nodes.append(.button(L10n.t("Copy Magnet Link"), symbol: "link") { vm.copyToPasteboard(task.sourceLocator) })
+            nodes.append(.button(L10n.t("Copy Magnet Link"), symbol: "link") {
+                vm.copyToPasteboard(task.sourceLocator)
+            })
         }
         return nodes
     }
@@ -234,7 +240,9 @@ struct DownloadMenuBuilder {
     private var queueNodes: [DownloadMenuNode] {
         let id = task.id, vm = self.vm
         return [
-            .button(L10n.t("Move to Top"), symbol: "arrow.up.to.line") { vm.moveInQueue(vm.queueTargets(for: id), to: .top) },
+            .button(L10n.t("Move to Top"), symbol: "arrow.up.to.line") {
+                vm.moveInQueue(vm.queueTargets(for: id), to: .top)
+            },
             .button(L10n.t("Move to Bottom"), symbol: "arrow.down.to.line") {
                 vm.moveInQueue(vm.queueTargets(for: id), to: .bottom)
             },

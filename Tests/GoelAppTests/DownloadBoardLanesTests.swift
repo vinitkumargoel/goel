@@ -92,7 +92,8 @@ final class DownloadBoardLanesTests: XCTestCase {
         let d1 = task("d1", status: .downloading), d2 = task("d2", status: .downloading)
         let q1 = task("q1", status: .queued)
         let lanes = BoardLanes.statusLanes([d1, d2, q1], ranks: [:])
-        XCTAssertEqual(BoardLanes.laneNeighbor(in: lanes, from: d2.id, step: 1), q1.id, "clamped to the lane's last card")
+        XCTAssertEqual(BoardLanes.laneNeighbor(in: lanes, from: d2.id, step: 1), q1.id,
+                       "clamped to the lane's last card")
         XCTAssertEqual(BoardLanes.laneNeighbor(in: lanes, from: q1.id, step: -1), d1.id)
         XCTAssertEqual(BoardLanes.laneNeighbor(in: lanes, from: q1.id, step: 1), q1.id, "no lane further right")
         XCTAssertEqual(BoardLanes.laneNeighbor(in: lanes, from: nil, step: 1), d1.id)

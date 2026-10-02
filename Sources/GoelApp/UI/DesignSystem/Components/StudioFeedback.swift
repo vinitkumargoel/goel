@@ -66,7 +66,8 @@ struct StudioToastCard: View {
                 .font(StudioFonts.font(.ui, size: 14, weight: 700))
                 .foregroundStyle(tone.foreground)
                 .frame(width: 32, height: 32)
-                .background(tone.background, in: RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
+                .background(tone.background,
+                            in: RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
@@ -185,7 +186,8 @@ struct StudioSparkline: View {
     }
 
     /// `inset` keeps the last point (and the top) that far inside the canvas, for the end dot.
-    private static func points(_ values: [Double], in size: CGSize, top: Double, inset dotInset: CGFloat = 0) -> [CGPoint] {
+    private static func points(_ values: [Double], in size: CGSize, top: Double,
+                               inset dotInset: CGFloat = 0) -> [CGPoint] {
         let width = max(0, size.width - dotInset)
         guard values.count > 1 else {
             return values.map { CGPoint(x: width, y: size.height * (1 - CGFloat($0 / top))) }

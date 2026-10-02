@@ -230,7 +230,8 @@ struct DetailThroughputChart: View {
                         .frame(maxWidth: .infinity, minHeight: height)
                         .background {
                             RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous)
-                                .strokeBorder(Studio.Palette.hairlineStrong, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                                .strokeBorder(Studio.Palette.hairlineStrong,
+                                              style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                         }
                 }
             }

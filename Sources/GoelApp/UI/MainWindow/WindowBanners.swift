@@ -32,7 +32,8 @@ struct WindowBanners: View {
         guard let recovery = vm.databaseRecovery else { return }
         vm.requestConfirm(
             title: L10n.t("Move the broken database aside and start fresh?"),
-            message: L10n.t("Goel° couldn’t open %1$@ (%2$@). It will be renamed, not deleted, so nothing is lost; the next launch starts with an empty list.",
+            message: L10n.t("Goel° couldn’t open %1$@ (%2$@). It will be renamed, not deleted, so nothing is lost; "
+                + "the next launch starts with an empty list.",
                             (recovery.path as NSString).lastPathComponent, recovery.reason),
             confirmTitle: L10n.t("Move Aside")
         ) { vm.moveBrokenDatabaseAside() }

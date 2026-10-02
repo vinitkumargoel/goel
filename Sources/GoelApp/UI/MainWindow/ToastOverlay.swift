@@ -48,7 +48,8 @@ private struct ToastCard: View {
                 .font(StudioFonts.font(.ui, size: 14, weight: 700))
                 .foregroundStyle(tone.foreground)
                 .frame(width: 32, height: 32)
-                .background(tone.background, in: RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
+                .background(tone.background,
+                            in: RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(toast.message)

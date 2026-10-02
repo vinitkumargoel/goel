@@ -65,7 +65,8 @@ extension OnboardingItem where Leading == WindowsGlyphTile {
 struct OnboardingWelcomePane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Studio.Space.l) {
-            OnboardingBlurb(L10n.t("One queue for links, torrents, streams and your own servers. A minute of setup and it will catch downloads from your browser and clipboard by itself."))
+            OnboardingBlurb(L10n.t("One queue for links, torrents, streams and your own servers. A minute of setup and "
+                                   + "it will catch downloads from your browser and clipboard by itself."))
             VStack(alignment: .leading, spacing: Studio.Space.s) {
                 feature(.disc, L10n.t("HTTP, FTP and SFTP, split across several connections"))
                 feature(.magnet, L10n.t("BitTorrent and magnet links"))

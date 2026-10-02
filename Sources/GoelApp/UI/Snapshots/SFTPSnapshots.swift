@@ -193,7 +193,8 @@ enum SFTPSnapshots {
                     .studioSampleEnvironment(prepare(context))
             },
             StudioSnapshotEntry("sftp.namesheet", width: 400) { context in
-                SFTPNameSheet(request: SFTPNameRequest(kind: .newFolder, initialName: RemoteNameInput.defaultFolderName),
+                SFTPNameSheet(request: SFTPNameRequest(kind: .newFolder,
+                                                       initialName: RemoteNameInput.defaultFolderName),
                               onCancel: {}, onCommit: { _ in })
                     .studioSampleEnvironment(prepare(context))
             },

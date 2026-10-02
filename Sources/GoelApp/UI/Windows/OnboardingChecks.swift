@@ -22,7 +22,8 @@ struct OnboardingBrowserPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Studio.Space.ml) {
-            OnboardingBlurb(L10n.t("Goel° catches downloads from your browser — with the page’s sign-in cookies, so files behind a login still work."))
+            OnboardingBlurb(L10n.t("Goel° catches downloads from your browser — with the page’s "
+                + "sign-in cookies, so files behind a login still work."))
             picker
             if let choice {
                 steps(for: choice)
@@ -52,7 +53,8 @@ struct OnboardingBrowserPane: View {
         switch choice {
         case .safari:
             OnboardingItem(symbol: "safari", title: L10n.t("Turn on “Goel° Capture” in Safari"),
-                           detail: L10n.t("Safari finds the extension inside this app. Enable it and allow it on the sites you use.")) {
+                           detail: L10n.t("Safari finds the extension inside this app. "
+                               + "Enable it and allow it on the sites you use.")) {
                 Button(L10n.t("Open Safari Extensions")) {
                     SFSafariApplication.showPreferencesForExtension(
                         withIdentifier: BrowserStatusCards.safariExtensionID) { _ in }
@@ -61,7 +63,8 @@ struct OnboardingBrowserPane: View {
             }
         case .other:
             StudioNote(tone: .accent, symbol: "basket",
-                       message: L10n.t("No extension needed: drag links onto the Drop Basket (⇧⌘B), copy them with clipboard watching on, or use the bookmarklet in Settings ▸ Browser."))
+                       message: L10n.t("No extension needed: drag links onto the Drop Basket (⇧⌘B), copy them "
+                           + "with clipboard watching on, or use the bookmarklet in Settings ▸ Browser."))
         default:
             helperRows(choice)
         }
@@ -71,7 +74,8 @@ struct OnboardingBrowserPane: View {
     private func helperRows(_ choice: OnboardingBrowserChoice) -> some View {
         OnboardingItem(symbol: "app.connected.to.app.below.fill",
                        title: L10n.t("1. Install the messaging helper"),
-                       detail: helperResult ?? L10n.t("Lets the extension talk to Goel°. Writes files in your own Library — no admin password.")) {
+                       detail: helperResult ?? L10n.t("Lets the extension talk to Goel°. Writes files "
+                           + "in your own Library — no admin password.")) {
             Button(L10n.t("Install")) { helperResult = BrowserIntegrationService.installHostManifests() }
                 .buttonStyle(.studio(.primary, size: .small))
                 .accessibilityLabel(L10n.t("Install the browser messaging helper"))
@@ -125,11 +129,13 @@ struct OnboardingReadyPane: View {
                 .padding(.bottom, Studio.Space.xxs)
             check(ok: ytDlpFound, symbol: "film", title: L10n.t("yt-dlp"),
                   detail: ytDlpFound ? L10n.t("Found — video pages can be downloaded.")
-                                     : L10n.t("Not found — install it (brew install yt-dlp) to save videos from web pages."))
+                                     : L10n.t("Not found — install it (brew install "
+                                         + "yt-dlp) to save videos from web pages."))
             check(ok: ffmpegFound, symbol: "arrow.left.arrow.right", title: L10n.t("ffmpeg"),
                   detail: ffmpegFound ? L10n.t("Ready — used to merge and convert media.")
                                       : L10n.t("Missing — merging video and audio won’t work."))
-            OnboardingItem(title: L10n.t("Menu-bar icon"), detail: L10n.t("Speeds and quick controls from the menu bar."),
+            OnboardingItem(title: L10n.t("Menu-bar icon"),
+                           detail: L10n.t("Speeds and quick controls from the menu bar."),
                            leading: { WindowsGlyphTile(symbol: "menubar.rectangle") }) {
                 Toggle(isOn: onboardingSetting(vm, \.menuBarExtraEnabled)) { EmptyView() }
                     .toggleStyle(.studioSwitch)
@@ -157,7 +163,9 @@ struct OnboardingReadyPane: View {
                        detail: ok ? L10n.t("Allowed — you’ll hear when downloads finish or fail.")
                                   : L10n.t("Not allowed yet — Goel° can’t tell you when a download finishes."),
                        detailTone: ok || notifications == nil ? .neutral : .warn,
-                       leading: { WindowsGlyphTile(symbol: "bell", tone: ok || notifications == nil ? .accent : .warn) }) {
+                       leading: {
+                           WindowsGlyphTile(symbol: "bell", tone: ok || notifications == nil ? .accent : .warn)
+                       }) {
             switch notifications {
             case .allowed:
                 StudioPill(L10n.t("On"), tone: .good)

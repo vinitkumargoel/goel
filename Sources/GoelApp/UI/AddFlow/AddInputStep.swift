@@ -48,7 +48,8 @@ struct AddInputStep: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(L10n.t("Error. %@", error))
             } else {
-                AddHelpText(L10n.t("Paste several lines to add them all at once (batch). Patterns expand too: file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts.")
+                AddHelpText(L10n.t("Paste several lines to add them all at once (batch). Patterns expand too: "
+                                   + "file[01-20].zip or file.{iso,sig}. A single link is previewed before it starts.")
                             + " " + L10n.t("Press ⌘↩ to continue."))
             }
         }
@@ -156,7 +157,8 @@ struct AddResolvingStep: View {
                     .studioFont(.title3)
                     .foregroundStyle(Studio.Palette.ink)
                     .accessibilityAddTraits(.isHeader)
-                Text(L10n.t("Reading the file name and size. Magnet links ask peers for the file list, which can take a few seconds."))
+                Text(L10n.t("Reading the file name and size. Magnet links ask peers for the file list, which can take "
+                            + "a few seconds."))
                     .studioFont(.small)
                     .foregroundStyle(Studio.Palette.ink2)
                     .multilineTextAlignment(.center)
@@ -169,7 +171,8 @@ struct AddResolvingStep: View {
                         .buttonStyle(.studio(.primary))
                 }
                 .padding(.top, Studio.Space.xxs)
-                Text(L10n.t("Continue anyway adds it straight to the queue — the name and size fill in as it starts."))
+                Text(L10n.t("Continue anyway adds it straight to the queue — the name and size fill in "
+                            + "as it starts."))
                     .studioFont(.caption)
                     .foregroundStyle(Studio.Palette.ink3)
                     .multilineTextAlignment(.center)

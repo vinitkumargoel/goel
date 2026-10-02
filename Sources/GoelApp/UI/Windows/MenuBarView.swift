@@ -61,7 +61,8 @@ struct MenuBarPopover: View {
                 emptyState
             } else {
                 ScrollView {
-                    // Not a `LazyVStack`: asked for the zero height measured below it would build no rows and stay zero.
+                    // Not a `LazyVStack`: asked for the zero height measured below it would build no rows
+                    // and stay zero.
                     sections(attention: attention, queue: queue, transfers: transfers, jobs: jobs,
                              justFinished: justFinished)
                         .background(GeometryReader { geo in
@@ -204,7 +205,8 @@ struct MenuBarPopover: View {
                 .font(StudioFonts.font(.ui, size: 20, weight: 650))
                 .foregroundStyle(Studio.Palette.accent)
                 .frame(width: 48, height: 48)
-                .background(Studio.Palette.accentSoft, in: RoundedRectangle(cornerRadius: Studio.Radius.compactCard, style: .continuous))
+                .background(Studio.Palette.accentSoft,
+                            in: RoundedRectangle(cornerRadius: Studio.Radius.compactCard, style: .continuous))
                 .accessibilityHidden(true)
             Text(L10n.t("No active downloads"))
                 .studioFont(.title3)

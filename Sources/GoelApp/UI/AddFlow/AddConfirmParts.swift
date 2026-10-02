@@ -186,7 +186,8 @@ struct AddChecksumField: View {
             if !text.trimmingCharacters(in: .whitespaces).isEmpty {
                 if let parsed = Checksum.parse(text) {
                     AddStatusLine(symbol: "checkmark.seal.fill",
-                                  text: L10n.t("%@ — verified after the download finishes", parsed.algorithm.displayName),
+                                  text: L10n.t("%@ — verified after the download finishes",
+                                               parsed.algorithm.displayName),
                                   tone: .good)
                 } else {
                     AddStatusLine(symbol: "exclamationmark.triangle.fill",
@@ -206,7 +207,8 @@ struct AddMirrorsField: View {
         VStack(alignment: .leading, spacing: Studio.Space.xs) {
             AddTextArea(text: $text, placeholder: L10n.t("One per line"), height: 56,
                         style: .monoSmall, accessibilityLabel: L10n.t("Mirrors (optional, one per line)"))
-            AddHelpText(L10n.t("Alternative URLs for the same file — segments spread across them and fail over automatically."))
+            AddHelpText(L10n.t("Alternative URLs for the same file — segments "
+                + "spread across them and fail over automatically."))
         }
     }
 }

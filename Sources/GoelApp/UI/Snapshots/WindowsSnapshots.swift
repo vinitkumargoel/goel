@@ -81,7 +81,8 @@ enum WindowsSnapshots {
                 HistoryView(items: []).studioSampleEnvironment(context.model)
             },
             StudioSnapshotEntry("windows.history.nomatch", width: 720, height: 460) { context in
-                HistoryView(items: WindowsSampleData.historyItems, search: "zzqx").studioSampleEnvironment(context.model)
+                HistoryView(items: WindowsSampleData.historyItems, search: "zzqx")
+                    .studioSampleEnvironment(context.model)
             },
         ]
     }
@@ -100,7 +101,8 @@ enum WindowsSnapshots {
             StudioSnapshotEntry("windows.onboarding.browser", width: size.width, height: size.height) { context in
                 OnboardingView(step: .browser, browserChoice: .chrome).studioSampleEnvironment(context.model)
             },
-            StudioSnapshotEntry("windows.onboarding.browser.safari", width: size.width, height: size.height) { context in
+            StudioSnapshotEntry("windows.onboarding.browser.safari", width: size.width,
+                                height: size.height) { context in
                 OnboardingView(step: .browser, browserChoice: .safari).studioSampleEnvironment(context.model)
             },
             StudioSnapshotEntry("windows.onboarding.clipboard", width: size.width, height: size.height) { context in
@@ -121,7 +123,8 @@ enum WindowsSnapshots {
             },
             StudioSnapshotEntry("windows.rss.noselection", width: 1000, height: 520) { context in
                 var data = WindowsSampleData.rssData(selectArticle: false)
-                let _ = data.errors[WindowsSampleData.linuxFeed.id] = "Couldn’t load the feed — the server answered 503"
+                let _ = data.errors[WindowsSampleData.linuxFeed.id] =
+                    "Couldn’t load the feed — the server answered 503"
                 RSSReaderView(preview: data).studioSampleEnvironment(context.model)
             },
             StudioSnapshotEntry("windows.rss.empty", width: 1000, height: 480) { context in
@@ -227,7 +230,9 @@ enum WindowsSnapshots {
                     .studioSampleEnvironment(context.model)
             },
             StudioSnapshotEntry("windows.player.unplayable", width: 900, height: 420) { context in
-                InAppPlayerView(item: mkv, failure: L10n.t("This file’s video or audio track uses a codec macOS can’t decode."),
+                InAppPlayerView(item: mkv,
+                                failure: L10n.t("This file’s video or audio track uses a codec macOS "
+                                    + "can’t decode."),
                                 onClose: {})
                     .studioSampleEnvironment(context.model)
             },
@@ -237,7 +242,8 @@ enum WindowsSnapshots {
             StudioSnapshotEntry("windows.player.empty", width: 600, height: 360) { context in
                 PlayerWindow().studioSampleEnvironment(context.model)
             },
-            StudioSnapshotEntry("windows.basket", width: DropBasketView.width, height: DropBasketView.height) { context in
+            StudioSnapshotEntry("windows.basket", width: DropBasketView.width,
+                                height: DropBasketView.height) { context in
                 DropBasketView(vm: context.model).studioSampleEnvironment(context.model)
             },
             StudioSnapshotEntry("windows.basket.added", width: DropBasketView.width,

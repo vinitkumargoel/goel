@@ -8,7 +8,8 @@ struct SchedulerSettingsPane: View {
 
     var body: some View {
         SettingsPane(title: L10n.t("Scheduler"),
-                     subtitle: L10n.t("Download windows, scheduled profiles, and what happens when the queue finishes."),
+                     subtitle: L10n.t("Download windows, scheduled profiles, and "
+                         + "what happens when the queue finishes."),
                      fillsWidth: true) {
             VStack(alignment: .leading, spacing: Studio.Space.l) {
                 SettingsColumns(spacing: Studio.Space.l) {
@@ -47,7 +48,8 @@ struct SchedulerSettingsPane: View {
                 SettingRow(L10n.t("Start"), isIndented: true) {
                     SettingsSelect(selection: setting(vm, \.scheduleStartMinute), options: Self.timeOptions, width: 100)
                 }
-                SettingRow(L10n.t("End"), detail: L10n.t("An end before the start wraps past midnight."), isIndented: true) {
+                SettingRow(L10n.t("End"), detail: L10n.t("An end before the start wraps past midnight."),
+                           isIndented: true) {
                     SettingsSelect(selection: setting(vm, \.scheduleEndMinute), options: Self.timeOptions, width: 100)
                 }
                 SettingRow(L10n.t("Days"), isIndented: true) {
@@ -72,7 +74,8 @@ struct SchedulerSettingsPane: View {
     private var weeklyCard: some View {
         SettingsCard(title: L10n.t("Weekly profile schedule"), symbol: "calendar") {
             SettingRow(L10n.t("Switch profiles by the hour"),
-                       detail: L10n.t("Paint hours with a traffic profile. A manual change holds until the next painted hour."),
+                       detail: L10n.t("Paint hours with a traffic profile. A manual "
+                           + "change holds until the next painted hour."),
                        isOn: setting(vm, \.profileScheduleEnabled))
             if vm.settings.profileScheduleEnabled {
                 SettingsCardBlock {
@@ -164,7 +167,8 @@ struct RSSSettingsPane: View {
 
     var body: some View {
         SettingsPane(title: L10n.t("RSS Feeds"),
-                     subtitle: L10n.t("Watch feeds and queue new items automatically (podcasts, releases, torrent feeds).")) {
+                     subtitle: L10n.t("Watch feeds and queue new items automatically "
+                         + "(podcasts, releases, torrent feeds).")) {
             SettingsCard(title: L10n.t("Feeds"), symbol: "dot.radiowaves.up.forward") {
                 if vm.settings.rssFeeds.isEmpty {
                     SettingsCardBlock(showsDivider: false) {
@@ -209,7 +213,8 @@ struct RSSSettingsPane: View {
                     ], width: 120)
                 }
                 SettingRow(L10n.t("Rules and articles"),
-                           detail: L10n.t("Must contain / must not contain, episode ranges, folder and tag per feed — with matches highlighted live.")) {
+                           detail: L10n.t("Must contain / must not contain, episode ranges, folder "
+                               + "and tag per feed — with matches highlighted live.")) {
                     Button(L10n.t("Open RSS Reader")) {
                         vm.closeServerBrowser()
                         RSSReaderModel.shared.open()

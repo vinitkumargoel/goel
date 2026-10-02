@@ -104,7 +104,8 @@ private struct StudioButtonBody: View {
         case .secondary, .destructive:
             return pressed ? Studio.Palette.segment : hovered ? Studio.Palette.well : Studio.Palette.card
         case .soft:
-            return pressed ? Studio.Palette.accentLine : hovered ? Studio.Palette.accentLine.opacity(0.6) : Studio.Palette.accentSoft
+            return pressed ? Studio.Palette.accentLine
+                : hovered ? Studio.Palette.accentLine.opacity(0.6) : Studio.Palette.accentSoft
         case .ghost:
             return pressed ? Studio.Palette.track : hovered ? Studio.Palette.segment : .clear
         }
@@ -216,7 +217,8 @@ private struct StudioIconButtonBody: View {
                 } else if style.bordered {
                     shape.fill(hovered ? Studio.Palette.well : Studio.Palette.card).studioElevation(.raised)
                 } else {
-                    shape.fill(configuration.isPressed ? Studio.Palette.track : hovered ? Studio.Palette.segment : .clear)
+                    shape.fill(configuration.isPressed ? Studio.Palette.track
+                               : hovered ? Studio.Palette.segment : .clear)
                 }
             }
             .overlay {

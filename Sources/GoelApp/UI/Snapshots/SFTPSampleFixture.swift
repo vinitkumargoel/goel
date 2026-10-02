@@ -78,7 +78,8 @@ enum SFTPSampleFixture {
         let now = Date()
         var backup = SFTPTransfer(connectionID: nas.id, name: "project-backup-2026-07.tar.zst",
                                   direction: .download, isDirectory: false,
-                                  localURL: URL(fileURLWithPath: "\(downloads)/Archives/project-backup-2026-07.tar.zst"),
+                                  localURL: URL(fileURLWithPath:
+                                                    "\(downloads)/Archives/project-backup-2026-07.tar.zst"),
                                   remotePath: "\(path)/project-backup-2026-07.tar.zst", total: 2_300 * mb)
         backup.record(bytes: 1, now: now.addingTimeInterval(-240))
         backup.record(bytes: 1_794 * mb, now: now)
@@ -154,8 +155,10 @@ enum SFTPSampleFixture {
 
     static func conflictRequest() -> SFTPUploadConflictRequest {
         let items = [
-            SFTPUploadConflictRequest.Item(url: URL(fileURLWithPath: "\(downloads)/Q3-board-pack.pdf"), isDirectory: false),
-            SFTPUploadConflictRequest.Item(url: URL(fileURLWithPath: "\(downloads)/BigBuckBunny-1080p.mp4"), isDirectory: false),
+            SFTPUploadConflictRequest.Item(url: URL(fileURLWithPath: "\(downloads)/Q3-board-pack.pdf"),
+                                           isDirectory: false),
+            SFTPUploadConflictRequest.Item(url: URL(fileURLWithPath: "\(downloads)/BigBuckBunny-1080p.mp4"),
+                                           isDirectory: false),
             SFTPUploadConflictRequest.Item(url: URL(fileURLWithPath: "\(downloads)/scripts"), isDirectory: true),
         ]
         return SFTPUploadConflictRequest(connection: seedbox, remoteDir: "/home/vinit/done",

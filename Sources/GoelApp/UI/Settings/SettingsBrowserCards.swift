@@ -34,7 +34,8 @@ struct BrowserStatusCards: View {
             }
             if statuses.isEmpty {
                 StudioNote(tone: .neutral, symbol: "info.circle",
-                           message: L10n.t("No Chromium browser or Firefox profile found. Open your browser once, then come back."))
+                           message: L10n.t("No Chromium browser or Firefox profile found. "
+                               + "Open your browser once, then come back."))
             }
         }
         .task {

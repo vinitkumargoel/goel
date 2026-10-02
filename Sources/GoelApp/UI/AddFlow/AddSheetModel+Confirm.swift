@@ -206,7 +206,8 @@ extension AddSheetModel {
                 languages: langs, includeAuto: auto)
             switch outcome {
             case .downloaded(let n):
-                vm.toastSuccess(n == 1 ? L10n.t("Downloaded %d subtitle file", n) : L10n.t("Downloaded %d subtitle files", n))
+                vm.toastSuccess(n == 1 ? L10n.t("Downloaded %d subtitle file", n)
+                                       : L10n.t("Downloaded %d subtitle files", n))
             case .none:
                 break
             case .failed(let msg):

@@ -238,7 +238,9 @@ struct SFTPTransferListRow: View {
             if let eta = transfer.etaLabel { return L10n.t("%1$@ · %2$@", route, L10n.t("%@ left", eta)) }
             return transfer.speedLabel.isEmpty ? route : L10n.t("%1$@ · %2$@", route, transfer.speedLabel)
         case .finished:
-            return transfer.total > 0 ? L10n.t("%1$@ · %2$@", L10n.t("Done"), transfer.total.byteString) : L10n.t("Done")
+            return transfer.total > 0
+                ? L10n.t("%1$@ · %2$@", L10n.t("Done"), transfer.total.byteString)
+                : L10n.t("Done")
         case .cancelled:
             return L10n.t("Cancelled")
         default:

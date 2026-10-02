@@ -82,7 +82,8 @@ enum StudioFonts {
 
     private static func register(_ family: StudioFontFamily) -> CTFontDescriptor? {
         guard let url = ResourceBundles.app?.url(forResource: family.fileName, withExtension: "ttf")
-                ?? ResourceBundles.app?.url(forResource: family.fileName, withExtension: "ttf", subdirectory: "Fonts") else {
+                ?? ResourceBundles.app?.url(forResource: family.fileName, withExtension: "ttf",
+                                            subdirectory: "Fonts") else {
             GoelLog.app.error("Studio font missing from the app bundle", .detail(family.fileName))
             return nil
         }
@@ -104,15 +105,18 @@ enum StudioFonts {
 
     /// A Core Text font for `family` at `size` points and a CSS-style numeric `weight` (100…900).
     /// Returns nil when the family isn't registered; callers fall back to the system font.
-    static func ctFont(_ family: StudioFontFamily, size: CGFloat, weight: CGFloat, tabularNumbers: Bool = false) -> CTFont? {
+    static func ctFont(_ family: StudioFontFamily, size: CGFloat, weight: CGFloat,
+                       tabularNumbers: Bool = false) -> CTFont? {
         registerAll()
-        let key = CacheKey(family: family, size: (size * 4).rounded() / 4, weight: weight.rounded(), tabular: tabularNumbers)
+        let key = CacheKey(family: family, size: (size * 4).rounded() / 4, weight: weight.rounded(),
+                           tabular: tabularNumbers)
         lock.lock()
         defer { lock.unlock() }
         if let cached = cache[key] { return cached }
         guard let base = baseDescriptors[family] else { return nil }
         var variation: [NSNumber: NSNumber] = [
-            wghtAxis: NSNumber(value: Double(min(max(weight, family.weightRange.lowerBound), family.weightRange.upperBound))),
+            wghtAxis: NSNumber(value: Double(min(max(weight, family.weightRange.lowerBound),
+                                                 family.weightRange.upperBound))),
         ]
         if family == .display {
             variation[opszAxis] = NSNumber(value: Double(min(max(key.size, 12), 96)))
@@ -142,7 +146,8 @@ enum StudioFonts {
     }
 
     /// For AppKit-backed controls (an `NSTextField` omnibox, an attributed string).
-    static func nsFont(_ family: StudioFontFamily, size: CGFloat, weight: CGFloat, tabularNumbers: Bool = false) -> NSFont {
+    static func nsFont(_ family: StudioFontFamily, size: CGFloat, weight: CGFloat,
+                       tabularNumbers: Bool = false) -> NSFont {
         if let ct = ctFont(family, size: size, weight: weight, tabularNumbers: tabularNumbers) {
             return ct as NSFont
         }

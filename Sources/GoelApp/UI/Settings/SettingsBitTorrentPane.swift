@@ -18,9 +18,11 @@ struct BitTorrentSettingsPane: View {
         SettingsCard(title: L10n.t("Torrent files"), symbol: "doc.badge.arrow.up") {
             SettingRow(L10n.t("Default torrent client"), detail: L10n.t("Own magnet: links and .torrent files."),
                        isOn: setting(vm, \.btMakeDefaultClient))
-            SettingRow(L10n.t("Auto-delete .torrent when done"), detail: L10n.t("Remove the source file after completion."),
+            SettingRow(L10n.t("Auto-delete .torrent when done"),
+                       detail: L10n.t("Remove the source file after completion."),
                        isOn: setting(vm, \.btAutoDeleteTorrent))
-            SettingRow(L10n.t("Watch folder for .torrent files"), detail: L10n.t("Auto-add new torrents that appear in a folder."),
+            SettingRow(L10n.t("Watch folder for .torrent files"),
+                       detail: L10n.t("Auto-add new torrents that appear in a folder."),
                        isOn: setting(vm, \.btWatchFolderEnabled))
             // The watch is armed by `btWatchFolderPath`, not the switch above, and this chooser is its only writer.
             if vm.settings.btWatchFolderEnabled {
@@ -107,7 +109,9 @@ struct ExtraTrackersSettings: View {
                     }
                     if Self.isPlainHTTP(urlDraft) {
                         StudioNote(tone: .warn, symbol: "exclamationmark.triangle.fill",
-                                   message: L10n.t("This list is fetched over plain http — anyone on the network path can change which trackers your torrents announce to. Use https if the site offers it."))
+                                   message: L10n.t("This list is fetched over plain http — anyone on the network path "
+                                       + "can change which trackers your torrents announce to. Use https if the site "
+                                       + "offers it."))
                     }
                 }
                 .padding(.bottom, Studio.Space.m)

@@ -37,7 +37,8 @@ extension Studio {
         /// 52 pt cover / onboarding hero title.
         static let hero = TextStyle(family: .display, size: 52, weight: 750, trackingEm: -0.03)
         /// 46 pt progress read-out in the detail hero ("62%").
-        static let bigNumber = TextStyle(family: .display, size: 46, weight: 750, trackingEm: -0.05, tabularNumbers: true)
+        static let bigNumber = TextStyle(family: .display, size: 46, weight: 750, trackingEm: -0.05,
+                                         tabularNumbers: true)
         /// `.h1`: 30 pt window and empty-state titles.
         static let title1 = TextStyle(family: .display, size: 30, weight: 700, trackingEm: -0.03)
         /// `.h2`: 21 pt sheet titles.
@@ -49,7 +50,8 @@ extension Studio {
         /// Stat tiles ("4.1 GB").
         static let stat = TextStyle(family: .display, size: 24, weight: 700, trackingEm: -0.03, tabularNumbers: true)
         /// The percentage inside a 46 pt progress arc.
-        static let arcLabel = TextStyle(family: .display, size: 11.5, weight: 700, trackingEm: -0.02, tabularNumbers: true)
+        static let arcLabel = TextStyle(family: .display, size: 11.5, weight: 700, trackingEm: -0.02,
+                                        tabularNumbers: true)
         /// The wordmark ("Goel°").
         static let wordmark = TextStyle(family: .display, size: 18, weight: 750, trackingEm: -0.03)
 
@@ -115,7 +117,8 @@ private struct StudioScaledFont: ViewModifier {
 
     func body(content: Content) -> some View {
         let size = style.size * factor / 100
-        let font = StudioFonts.font(style.family, size: size, weight: style.weight, tabularNumbers: style.tabularNumbers)
+        let font = StudioFonts.font(style.family, size: size, weight: style.weight,
+                                    tabularNumbers: style.tabularNumbers)
         return content
             .font(font)
             .tracking(style.trackingEm * size)
@@ -130,7 +133,8 @@ extension View {
     }
 
     /// A one-off size or weight in a Studio family, still scaled with the text-size setting.
-    func studioFont(_ family: StudioFontFamily, size: CGFloat, weight: CGFloat = 400, tabularNumbers: Bool = false) -> some View {
+    func studioFont(_ family: StudioFontFamily, size: CGFloat, weight: CGFloat = 400,
+                    tabularNumbers: Bool = false) -> some View {
         modifier(StudioScaledFont(style: Studio.TextStyle(family: family, size: size, weight: weight,
                                                           tabularNumbers: tabularNumbers)))
     }

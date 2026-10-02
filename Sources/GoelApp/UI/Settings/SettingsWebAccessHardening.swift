@@ -74,20 +74,24 @@ struct WebAccessHardeningCard: View {
 
     @ViewBuilder private var hardeningRows: some View {
         SettingRow(L10n.t("Serve over HTTPS"),
-                   detail: L10n.t("Encrypt the portal with a PKCS#12 identity. If the identity can’t be loaded the server refuses to start rather than falling back to cleartext.")) {
+                   detail: L10n.t("Encrypt the portal with a PKCS#12 identity. If the identity can’t be loaded "
+                       + "the server refuses to start rather than falling back to cleartext.")) {
             SettingSwitch(isOn: setting(vm, \.remoteTLSEnabled))
                 .managed(.remoteTLSEnabled, vm.managedPolicy)
         }
         if vm.settings.remoteTLSEnabled {
             SettingRow(L10n.t("Identity (.p12) path"),
-                       detail: L10n.t("Its passphrase is read from the GOEL_PORTAL_TLS_PASSPHRASE environment variable — Goel° never stores it."),
+                       detail: L10n.t("Its passphrase is read from the GOEL_PORTAL_TLS_PASSPHRASE "
+                           + "environment variable — Goel° never stores it."),
                        isIndented: true) {
                 SettingsTextField(text: setting(vm, \.remoteTLSIdentityPath), width: 180, isMonospaced: true)
                     .managed(.remoteTLSIdentityPath, vm.managedPolicy)
             }
         }
         SettingRow(L10n.t("Extra host names"),
-                   detail: L10n.t("Extra host names (comma-separated), e.g. goel.home, mymac.tailnet.ts.net. The portal answers only to IP addresses, localhost and .local names unless a name is listed here.")) {
+                   detail: L10n.t("Extra host names (comma-separated), e.g. goel.home, mymac.tailnet.ts.net. The "
+                       + "portal answers only to IP addresses, localhost and .local names unless a name is listed "
+                       + "here.")) {
             StudioFocusedField(size: .small) { focus in
                 TextField("", text: allowedHostNamesBinding)
                     .textFieldStyle(.plain)
@@ -104,7 +108,8 @@ struct WebAccessHardeningCard: View {
             .managed(.remoteAllowedHostNames, vm.managedPolicy)
         }
         SettingRow(L10n.t("Failed sign-ins before backoff"),
-                   detail: L10n.t("Wrong passwords from one address are slowed exponentially. The delay is per-address, so one attacker can’t lock everybody else out.")) {
+                   detail: L10n.t("Wrong passwords from one address are slowed exponentially. The delay "
+                       + "is per-address, so one attacker can’t lock everybody else out.")) {
             SettingsIntField(value: setting(vm, \.remoteLoginMaxAttempts), width: 80)
         }
         SettingRow(L10n.t("Backoff (seconds)"),
@@ -121,7 +126,8 @@ struct WebAccessHardeningCard: View {
                 .accessibilityAddTraits(.isHeader)
         }
         SettingRow(L10n.t("Trust a proxy’s identity header"),
-                   detail: L10n.t("For an SSO reverse proxy that authenticates users itself. Only enable it behind such a proxy — otherwise anyone can set the header.")) {
+                   detail: L10n.t("For an SSO reverse proxy that authenticates users itself. Only enable "
+                       + "it behind such a proxy — otherwise anyone can set the header.")) {
             SettingSwitch(isOn: setting(vm, \.remoteTrustedHeaderAuthEnabled))
                 .managed(.remoteTrustedHeaderAuthEnabled, vm.managedPolicy)
         }
@@ -131,7 +137,8 @@ struct WebAccessHardeningCard: View {
                     .managed(.remoteTrustedHeaderName, vm.managedPolicy)
             }
             SettingRow(L10n.t("Trusted proxies"),
-                       detail: L10n.t("Comma-separated IPs/CIDRs. Checked against the kernel-supplied peer address. EMPTY MEANS TRUST NOBODY — the header is ignored until you list one."),
+                       detail: L10n.t("Comma-separated IPs/CIDRs. Checked against the kernel-supplied peer address. "
+                           + "EMPTY MEANS TRUST NOBODY — the header is ignored until you list one."),
                        isIndented: true) {
                 SettingsTextField(text: trustedProxiesBinding, width: 180, isMonospaced: true)
                     .managed(.remoteTrustedProxies, vm.managedPolicy)

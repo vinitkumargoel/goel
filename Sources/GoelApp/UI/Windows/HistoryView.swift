@@ -186,7 +186,8 @@ struct HistoryView: View {
                             ForEach(sections, id: \.section) { group in
                                 WindowsEyebrow(L10n.t("%1$@ · %2$@", group.section.title, String(group.items.count)))
                                     .padding(.horizontal, Studio.Space.xxs)
-                                    .padding(.top, group.section == sections.first?.section ? Studio.Space.xxs : Studio.Space.m)
+                                    .padding(.top, group.section == sections.first?.section
+                                             ? Studio.Space.xxs : Studio.Space.m)
                                     .padding(.bottom, Studio.Space.xxs)
                                 ForEach(group.items) { item in
                                     row(item, ordered: ordered)
@@ -283,7 +284,8 @@ struct HistoryView: View {
         }
     }
 
-    private func step(_ delta: Int, in ordered: [HistoryPresentation.Item], scroller: ScrollViewProxy) -> KeyPress.Result {
+    private func step(_ delta: Int, in ordered: [HistoryPresentation.Item],
+                      scroller: ScrollViewProxy) -> KeyPress.Result {
         guard !ordered.isEmpty else { return .ignored }
         let current = ordered.lastIndex { selection.contains($0.id) }
         let next = current.map { min(max($0 + delta, 0), ordered.count - 1) } ?? (delta > 0 ? 0 : ordered.count - 1)

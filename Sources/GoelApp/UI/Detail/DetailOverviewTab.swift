@@ -53,7 +53,8 @@ struct DetailProgressHero: View {
                     if speed.down >= 1 || task.status == .downloading {
                         DetailSpeedText(direction: .down, speed: speed.down)
                     }
-                    if speed.up >= 1 || (task.kind == .torrent && (task.status == .downloading || task.status == .seeding)) {
+                    if speed.up >= 1
+                        || (task.kind == .torrent && (task.status == .downloading || task.status == .seeding)) {
                         DetailSpeedText(direction: .up, speed: speed.up)
                     }
                     if let eta = task.estimatedTimeRemaining, eta > 0 {

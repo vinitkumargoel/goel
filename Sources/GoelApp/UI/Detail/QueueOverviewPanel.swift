@@ -208,7 +208,8 @@ private struct QueueCountTile: View {
             }
             .padding(Studio.Space.m)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(shape.fill(lit == .bad ? Studio.Palette.badSoft : hovered ? Studio.Palette.segment : Studio.Palette.well))
+            .background(shape.fill(lit == .bad ? Studio.Palette.badSoft
+                                   : hovered ? Studio.Palette.segment : Studio.Palette.well))
             .overlay(shape.strokeBorder(lit == .accent ? Studio.Palette.accentLine
                                         : lit == .bad ? Color.clear : Studio.Palette.hairline, lineWidth: 1))
             .contentShape(shape)

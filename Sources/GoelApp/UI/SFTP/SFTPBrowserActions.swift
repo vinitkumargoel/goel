@@ -82,7 +82,8 @@ extension SFTPBrowserView {
         }
         vm.requestConfirm(
             title: L10n.t("Delete %d items?", entries.count),
-            message: L10n.t("This permanently removes them from the server. Folders are removed with everything inside them."),
+            message: L10n.t("This permanently removes them from the server. Folders are removed with everything "
+                + "inside them."),
             confirmTitle: L10n.t("Delete"), destructive: true
         ) {
             Task {
@@ -172,7 +173,8 @@ extension SFTPBrowserView {
                 await MainActor.run { QuickLookPresenter.shared.present(tmp, ownedDirectory: dir) }
             } catch {
                 try? FileManager.default.removeItem(at: dir)
-                let message = cap.underLimit ? L10n.t("Couldn’t preview “%@”", entry.name) : L10n.t("Too large to preview")
+                let message = cap.underLimit
+                    ? L10n.t("Couldn’t preview “%@”", entry.name) : L10n.t("Too large to preview")
                 await MainActor.run { model.error = message }
             }
         }

@@ -21,18 +21,21 @@ enum MainWindowSnapshots {
             window("main.omnibox.clipboard") { model in
                 model.clipboardSuggestion = "https://releases.ubuntu.com/24.04.1/ubuntu-24.04.1-live-server-amd64.iso"
             },
-            window("main.nomatch", preview: MainWindowPreview(railExpanded: false, omniboxText: "host:archive.org mozart")) { model in
+            window("main.nomatch",
+                   preview: MainWindowPreview(railExpanded: false, omniboxText: "host:archive.org mozart")) { model in
                 model.filter = .type(.audio)
                 model.search = "host:archive.org mozart"
             },
             window("main.banners") { model in
-                model.persistenceWarning = "Couldn’t open the download database. Changes this session won’t be saved."
+                model.persistenceWarning =
+                    "Couldn’t open the download database. Changes this session won’t be saved."
                 model.serverStoreWarning = "The saved-servers file couldn’t be read."
             },
             window("main.empty", empty: true),
             window("main.empty.clipboard", preview: MainWindowPreview(
                 railExpanded: true,
-                clipboardLink: "https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/debian-12.7.0-arm64-netinst.iso"),
+                clipboardLink: "https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/"
+                    + "debian-12.7.0-arm64-netinst.iso"),
                    empty: true),
             // Search hidden under Customize: the omnibox folds to a magnifier...
             window("main.search.hidden", preview: MainWindowPreview(
@@ -74,7 +77,8 @@ enum MainWindowSnapshots {
     private static func window(_ name: String, width: CGFloat = 1280, height: CGFloat = 860,
                                preview: MainWindowPreview = MainWindowPreview(railExpanded: false),
                                empty: Bool = false,
-                               configure: @escaping @MainActor (AppViewModel) -> Void = { _ in }) -> StudioSnapshotEntry {
+                               configure: @escaping @MainActor (AppViewModel) -> Void = { _ in })
+        -> StudioSnapshotEntry {
         StudioSnapshotEntry(name, width: width, height: height) { context in
             let model = context.model
             prepare(model)

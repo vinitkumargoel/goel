@@ -71,7 +71,8 @@ extension SFTPBrowserView {
         .padding(.leading, Studio.Space.m)
         .padding(.trailing, Studio.Space.xs)
         .padding(.vertical, Studio.Space.xs)
-        .background(Studio.Palette.accentSoft, in: RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous))
+        .background(Studio.Palette.accentSoft,
+                    in: RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous))
     }
 
     // MARK: - Info sheet
@@ -113,7 +114,8 @@ extension SFTPBrowserView {
             if let space = volumeSpace, space.totalBytes > 0 {
                 Text(verbatim: "·").foregroundStyle(Studio.Palette.ink3)
                 Text(L10n.t("%@ free", space.freeBytes.byteString))
-                    .help(L10n.t("%1$@ of %2$@ used on this volume", space.usedBytes.byteString, space.totalBytes.byteString))
+                    .help(L10n.t("%1$@ of %2$@ used on this volume",
+                                 space.usedBytes.byteString, space.totalBytes.byteString))
             }
             Spacer(minLength: Studio.Space.s)
             if !selection.isEmpty {

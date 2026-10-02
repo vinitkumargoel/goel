@@ -44,7 +44,8 @@ extension SettingsView.Pane {
         switch self {
         case .general:
             return ["Appearance, startup, where files land, and sleep.",
-                    "Appearance", "Theme", "Light", "Dark", "Language", "Startup", "Launch at login", "Launch minimized", "Show in menu bar",
+                    "Appearance", "Theme", "Light", "Dark", "Language", "Startup", "Launch at login",
+                    "Launch minimized", "Show in menu bar",
                     "Default download folder", "Fixed folder", "When a file exists", "Clipboard capture",
                     "Power management", "Prevent sleep during active downloads",
                     "Allow sleep if downloads can resume later", "Allow sleep while seeding",
@@ -69,7 +70,8 @@ extension SettingsView.Pane {
                     "Connections", "Network awareness", "Pause on expensive networks",
                     "Pause in Low Data Mode"]
         case .aggregation:
-            return ["Multi-path HTTP downloads across network adapters", "Aggregation", "Enable multi-path downloads", "Adapters",
+            return ["Multi-path HTTP downloads across network adapters", "Aggregation",
+                    "Enable multi-path downloads", "Adapters",
                     "Options", "How it works", "Include expensive networks", "Allow paths outside VPN",
                     "Streams per adapter", "Check path diversity"]
         case .traffic:
@@ -79,7 +81,8 @@ extension SettingsView.Pane {
                     "Max metadata-resolution downloads", "Extra connections per download"]
         case .bittorrent:
             return ["Protocol, privacy, and watch-folder behavior.",
-                    "Torrent files", "Peers & privacy", "Extra trackers", "Default torrent client", "Auto-delete .torrent when done",
+                    "Torrent files", "Peers & privacy", "Extra trackers", "Default torrent client",
+                    "Auto-delete .torrent when done",
                     "Watch folder for .torrent files", "Watched folder",
                     "Start watched torrents without confirmation", "Encryption mode", "Enable DHT",
                     "Enable PeX", "Enable Local Peer Discovery", "Enable µTP",
@@ -108,13 +111,15 @@ extension SettingsView.Pane {
             return ["Run an external scanner on finished files. Optional, low priority on macOS.",
                     "Scan finished files", "Scanner", "Executable path", "Argument template"]
         case .browser:
-            return ["Browser Integration", "Your browsers", "Safari", "Chrome, Edge, Brave & Firefox", "1. Install the messaging helper",
+            return ["Browser Integration", "Your browsers", "Safari", "Chrome, Edge, Brave & Firefox",
+                    "1. Install the messaging helper",
                     "2. Load the extension", "3. Restart the browser", "4. Capture",
                     "1. Open Safari’s extensions", "2. Turn it on", "3. Capture", "What Safari can’t do",
                     "Help", "Full instructions", "Without the extension", "URL scheme", "Bookmarklet",
                     "Services menu", "Drop basket", "Site logins", "Host", "Username", "Password"]
         case .remote:
-            return ["Portal", "Enable web portal", "Port", "Access", "Theme & API", "Require sign-in", "Username", "Password",
+            return ["Portal", "Enable web portal", "Port", "Access", "Theme & API", "Require sign-in", "Username",
+                    "Password",
                     "Allow access from the network", "Read-only mode", "Session timeout", "Web theme",
                     "API token", "Open portal", "Hardening", "Serve over HTTPS", "Identity (.p12) path",
                     "Extra host names", "Failed sign-ins before backoff", "Backoff (seconds)",

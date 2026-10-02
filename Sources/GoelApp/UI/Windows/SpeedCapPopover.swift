@@ -107,7 +107,8 @@ extension AppViewModel {
             return
         }
         update { settings in
-            guard let index = settings.profiles.firstIndex(where: { $0.name == settings.selectedProfileName }) else { return }
+            guard let index = settings.profiles.firstIndex(where: { $0.name == settings.selectedProfileName })
+            else { return }
             settings.profiles[index].maxDownloadBytesPerSec = down
             settings.profiles[index].maxUploadBytesPerSec = up
             settings.speedLimitEnabled = true

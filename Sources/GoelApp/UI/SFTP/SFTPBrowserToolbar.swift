@@ -153,8 +153,9 @@ extension SFTPBrowserView {
 
     private var filterField: some View {
         HStack(spacing: Studio.Space.xs) {
-            StudioSearchField(text: $searchText, placeholder: toolbarWidth < 1040 ? L10n.t("Filter") : L10n.t("Filter this folder"), size: .small,
-                              onSubmit: openSoleSearchResult)
+            StudioSearchField(text: $searchText,
+                              placeholder: toolbarWidth < 1040 ? L10n.t("Filter") : L10n.t("Filter this folder"),
+                              size: .small, onSubmit: openSoleSearchResult)
                 .frame(width: toolbarWidth < 1040 ? 130 : 180)
                 .accessibilityLabel(L10n.t("Filter this folder"))
                 .accessibilityHint(L10n.t("Press return to open the only match."))
@@ -224,7 +225,8 @@ extension SFTPBrowserView {
             viewMenuOpen.toggle()
         }
         .accessibilityLabel(L10n.t("Sort and display options"))
-        .accessibilityValue("\(isGrid ? L10n.t("Grid") : L10n.t("List")), \(sortKey.title), \(sortAscending ? L10n.t("ascending") : L10n.t("descending"))")
+        .accessibilityValue("\(isGrid ? L10n.t("Grid") : L10n.t("List")), \(sortKey.title), "
+                            + "\(sortAscending ? L10n.t("ascending") : L10n.t("descending"))")
         .popover(isPresented: $viewMenuOpen, arrowEdge: .bottom) {
             SFTPViewOptionsMenu(isGrid: layoutBinding, sortKey: sortKey, sortAscending: sortAscending,
                                 showHidden: $showHidden, onSort: setSort,

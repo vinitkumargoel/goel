@@ -29,7 +29,8 @@ struct StudioSheet<Content: View, Footer: View>: View {
                         .font(StudioFonts.font(.ui, size: 16, weight: 650))
                         .foregroundStyle(Studio.Palette.accent)
                         .frame(width: 36, height: 36)
-                        .background(Studio.Palette.accentSoft, in: RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
+                        .background(Studio.Palette.accentSoft,
+                                    in: RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
                         .accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: 2) {
@@ -204,7 +205,8 @@ struct StudioMenuRow: View {
                 } else if let symbol {
                     Image(systemName: symbol)
                         .font(StudioFonts.font(.ui, size: 13, weight: 600))
-                        .foregroundStyle(hovered ? Studio.Palette.onAccent : isDestructive ? Studio.Palette.bad : Studio.Palette.ink3)
+                        .foregroundStyle(hovered ? Studio.Palette.onAccent
+                                         : isDestructive ? Studio.Palette.bad : Studio.Palette.ink3)
                         .frame(width: 15)
                 }
                 Text(title)
@@ -217,7 +219,8 @@ struct StudioMenuRow: View {
                         .foregroundStyle(hovered ? Studio.Palette.onAccent : Studio.Palette.ink3)
                 }
             }
-            .foregroundStyle(hovered ? Studio.Palette.onAccent : isDestructive ? Studio.Palette.bad : Studio.Palette.ink)
+            .foregroundStyle(hovered ? Studio.Palette.onAccent
+                             : isDestructive ? Studio.Palette.bad : Studio.Palette.ink)
             .padding(.horizontal, Studio.Space.sm)
             .frame(minHeight: 30)
             .background(hovered ? Studio.Palette.accent : .clear,

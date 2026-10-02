@@ -7,7 +7,8 @@ struct SpeedSettingsPane: View {
 
     var body: some View {
         SettingsPane(title: L10n.t("Speed & Connections"),
-                     subtitle: L10n.t("Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile."),
+                     subtitle: L10n.t("Three switchable profiles. The status-bar "
+                         + "snail toggles Unlimited vs the active profile."),
                      managedKeys: [.selectedProfileName, .maxDownloadBytesPerSec, .maxUploadBytesPerSec],
                      fillsWidth: true) {
             VStack(alignment: .leading, spacing: Studio.Space.l) {
@@ -33,7 +34,8 @@ struct SpeedSettingsPane: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: Studio.Space.ml, alignment: .top)],
                           alignment: .leading, spacing: Studio.Space.ml) {
                     // Deliberately not `.managed(…)`: a forced ceiling is a clamp, not an assignment.
-                    ProfileFieldTile(title: L10n.t("Max download speed"), label: L10n.t("Max download"), detail: L10n.t("0 = unlimited.")) {
+                    ProfileFieldTile(title: L10n.t("Max download speed"), label: L10n.t("Max download"),
+                                     detail: L10n.t("0 = unlimited.")) {
                         SettingsDoubleField(value: megabytesBinding(\.maxDownloadBytesPerSec), unit: L10n.t("MB/s"),
                                             width: nil)
                     }
@@ -42,7 +44,8 @@ struct SpeedSettingsPane: View {
                         SettingsDoubleField(value: megabytesBinding(\.maxUploadBytesPerSec), unit: L10n.t("MB/s"),
                                             width: nil)
                     }
-                    ProfileFieldTile(title: L10n.t("Max simultaneous downloads"), label: L10n.t("Simultaneous downloads"),
+                    ProfileFieldTile(title: L10n.t("Max simultaneous downloads"),
+                                     label: L10n.t("Simultaneous downloads"),
                                      detail: L10n.t("The rest wait in the queue.")) {
                         SettingsIntField(value: profileBinding(\.maxSimultaneousDownloads), width: nil)
                     }
@@ -58,12 +61,15 @@ struct SpeedSettingsPane: View {
                                      detail: L10n.t("Some servers block clients that open too many.")) {
                         SettingsIntField(value: profileBinding(\.maxConnectionsPerServer), width: nil)
                     }
-                    ProfileFieldTile(title: L10n.t("Max metadata-resolution downloads"), label: L10n.t("Metadata slots"),
+                    ProfileFieldTile(title: L10n.t("Max metadata-resolution downloads"),
+                                     label: L10n.t("Metadata slots"),
                                      detail: L10n.t("Concurrent “requesting info” magnets.")) {
                         SettingsIntField(value: profileBinding(\.maxMetadataResolutions), width: nil)
                     }
-                    ProfileFieldTile(title: L10n.t("Extra connections per download"), label: L10n.t("Extra connections"),
-                                     detail: L10n.t("Split one file across more connections when the server allows it.")) {
+                    ProfileFieldTile(title: L10n.t("Extra connections per download"),
+                                     label: L10n.t("Extra connections"),
+                                     detail: L10n.t("Split one file across more connections "
+                                         + "when the server allows it.")) {
                         HStack {
                             SettingSwitch(isOn: profileBinding(\.enableExtraConnections))
                             Spacer(minLength: 0)
@@ -80,14 +86,16 @@ struct SpeedSettingsPane: View {
             get: { vm.settings.selectedProfile[keyPath: keyPath] },
             set: { newValue in
                 vm.update { settings in
-                    guard let idx = settings.profiles.firstIndex(where: { $0.name == settings.selectedProfileName }) else { return }
+                    guard let idx = settings.profiles.firstIndex(where: { $0.name == settings.selectedProfileName })
+                    else { return }
                     settings.profiles[idx][keyPath: keyPath] = newValue
                 }
             }
         )
     }
 
-    /// Clamped to 1 TB/s only because `Int64(Double)` traps on overflow; the real ceiling is `TrafficProfile.validated()`.
+    /// Clamped to 1 TB/s only because `Int64(Double)` traps on overflow; the real ceiling is
+    /// `TrafficProfile.validated()`.
     private func megabytesBinding(_ keyPath: WritableKeyPath<TrafficProfile, Int64>) -> Binding<Double> {
         Binding(
             get: { Double(vm.settings.selectedProfile[keyPath: keyPath]) / 1_048_576 },
@@ -95,7 +103,8 @@ struct SpeedSettingsPane: View {
                 let mb = mbPerSec.isFinite ? min(max(0, mbPerSec), 1_048_576) : 0
                 let bytes = Int64(mb * 1_048_576)
                 vm.update { settings in
-                    guard let idx = settings.profiles.firstIndex(where: { $0.name == settings.selectedProfileName }) else { return }
+                    guard let idx = settings.profiles.firstIndex(where: { $0.name == settings.selectedProfileName })
+                    else { return }
                     settings.profiles[idx][keyPath: keyPath] = bytes
                 }
             }
@@ -163,8 +172,10 @@ private struct ProfileCard: View {
     }
 
     private var speedLine: String {
-        let down = profile.isDownloadUnlimited ? L10n.t("Unlimited") : profile.maxDownloadBytesPerSec.byteString + "/s"
-        let up = profile.maxUploadBytesPerSec <= 0 ? L10n.t("Unlimited") : profile.maxUploadBytesPerSec.byteString + "/s"
+        let down = profile.isDownloadUnlimited
+            ? L10n.t("Unlimited") : profile.maxDownloadBytesPerSec.byteString + "/s"
+        let up = profile.maxUploadBytesPerSec <= 0
+            ? L10n.t("Unlimited") : profile.maxUploadBytesPerSec.byteString + "/s"
         return "↓ \(down) · ↑ \(up)"
     }
 

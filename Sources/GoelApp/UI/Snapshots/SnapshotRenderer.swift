@@ -18,7 +18,8 @@ enum StudioSnapshotCommand {
     static func runIfRequested(_ arguments: [String]) -> Int32? {
         guard let flag = arguments.firstIndex(of: "--studio-snapshots") else { return nil }
         guard flag + 1 < arguments.count, !arguments[flag + 1].hasPrefix("--") else {
-            FileHandle.standardError.write(Data("usage: GoelDownloader --studio-snapshots <outdir> [--only <prefix>] [--scale 1|2]\n".utf8))
+            let usage = "usage: GoelDownloader --studio-snapshots <outdir> [--only <prefix>] [--scale 1|2]\n"
+            FileHandle.standardError.write(Data(usage.utf8))
             return 64
         }
         let outDir = URL(fileURLWithPath: (arguments[flag + 1] as NSString).expandingTildeInPath, isDirectory: true)
@@ -39,7 +40,8 @@ enum StudioSnapshotCommand {
         do {
             try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
         } catch {
-            FileHandle.standardError.write(Data("error: can't create \(outDir.path): \(error.localizedDescription)\n".utf8))
+            let message = "error: can't create \(outDir.path): \(error.localizedDescription)\n"
+            FileHandle.standardError.write(Data(message.utf8))
             return 73
         }
         let entries = StudioSnapshotRegistry.all.filter { only == nil || $0.name.hasPrefix(only!) }

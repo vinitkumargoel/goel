@@ -91,7 +91,8 @@ struct PlaylistChecklistView: View {
             Text(L10n.t("%d selected", selected.count))
                 .studioFont(.small)
                 .foregroundStyle(Studio.Palette.ink2)
-                .accessibilityLabel(L10n.t("%1$@ of %2$@ items selected", String(selected.count), String(expansion.items.count)))
+                .accessibilityLabel(L10n.t("%1$@ of %2$@ items selected", String(selected.count),
+                                           String(expansion.items.count)))
         }
     }
 

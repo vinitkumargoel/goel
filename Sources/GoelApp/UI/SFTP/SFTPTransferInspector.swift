@@ -245,7 +245,8 @@ struct SFTPTransferInspector: View {
     private var facts: some View {
         Grid(alignment: .leading, horizontalSpacing: Studio.Space.m, verticalSpacing: 7) {
             factRow(L10n.t("Server"), serverValue)
-            factRow(L10n.t("Login"), L10n.t("%1$@ · %2$@", connection.credentialKey, SFTPAuthLabel.label(for: connection)))
+            factRow(L10n.t("Login"),
+                    L10n.t("%1$@ · %2$@", connection.credentialKey, SFTPAuthLabel.label(for: connection)))
             if let os = vm.serverMeta[connection.id]?.os {
                 factRow(L10n.t("System"), A11y.sentence(os.label, volumeLabel))
             } else if let volumeLabel {
@@ -341,7 +342,9 @@ struct SFTPTransferInspector: View {
     private var moreMenu: some View {
         Menu {
             Button(L10n.t("Copy Remote Path")) { copy(transfer.remotePath) }
-            Button(L10n.t("Copy sftp:// Link")) { copy(SFTPBrowserListing.sftpLink(connection, remotePath: transfer.remotePath)) }
+            Button(L10n.t("Copy sftp:// Link")) {
+                copy(SFTPBrowserListing.sftpLink(connection, remotePath: transfer.remotePath))
+            }
             if let localURL = transfer.localURL {
                 Button(L10n.t("Copy Local Path")) { copy(localURL.path) }
             }

@@ -212,11 +212,13 @@ struct StudioMagnetShape: Shape {
         path.move(to: p(5, 4))
         path.addLine(to: p(9.5, 4))
         path.addLine(to: p(9.5, 11))
-        path.addArc(center: p(12, 11), radius: 2.5 * s, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: true)
+        path.addArc(center: p(12, 11), radius: 2.5 * s, startAngle: .degrees(180), endAngle: .degrees(0),
+                    clockwise: true)
         path.addLine(to: p(14.5, 4))
         path.addLine(to: p(19, 4))
         path.addLine(to: p(19, 11))
-        path.addArc(center: p(12, 11), radius: 7 * s, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+        path.addArc(center: p(12, 11), radius: 7 * s, startAngle: .degrees(0), endAngle: .degrees(180),
+                    clockwise: false)
         path.closeSubpath()
         // M5 8h4.5 M14.5 8H19
         path.move(to: p(5, 8))
@@ -271,7 +273,8 @@ private struct StudioArtworkPattern: View {
                 let reach = hypot(size.width, size.height)
                 var r: CGFloat = 5.75
                 while r < reach {
-                    context.stroke(Path(ellipseIn: CGRect(x: corner.x - r, y: corner.y - r, width: r * 2, height: r * 2)),
+                    context.stroke(Path(ellipseIn: CGRect(x: corner.x - r, y: corner.y - r,
+                                                          width: r * 2, height: r * 2)),
                                    with: ink, lineWidth: 1.5)
                     r += 6.5
                 }
@@ -280,7 +283,8 @@ private struct StudioArtworkPattern: View {
                 let reach = hypot(size.width, size.height) / 2
                 var r: CGFloat = 5.5
                 while r < reach {
-                    context.stroke(Path(ellipseIn: CGRect(x: centre.x - r, y: centre.y - r, width: r * 2, height: r * 2)),
+                    context.stroke(Path(ellipseIn: CGRect(x: centre.x - r, y: centre.y - r,
+                                                          width: r * 2, height: r * 2)),
                                    with: ink, lineWidth: 1)
                     r += 6
                 }

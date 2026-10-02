@@ -84,7 +84,8 @@ struct CreateTorrentView: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel(L10n.t("Source file or folder"))
         } else {
-            WindowsCompactCard(isSelected: dropTargeted, padding: EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)) {
+            WindowsCompactCard(isSelected: dropTargeted,
+                               padding: EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)) {
                 StudioFileArtwork(kind: summary?.isFolder == false ? .other : .folder, size: .l)
                 VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     Text((sourcePath as NSString).lastPathComponent)
@@ -127,7 +128,8 @@ struct CreateTorrentView: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: Studio.Space.m) {
-            WindowsLabeledField(label: L10n.t("Trackers"), help: L10n.t("One per line. Leave empty for a trackerless torrent (DHT).")) {
+            WindowsLabeledField(label: L10n.t("Trackers"),
+                                help: L10n.t("One per line. Leave empty for a trackerless torrent (DHT).")) {
                 TextEditor(text: $trackers)
                     .studioFont(.monoBody)
                     .foregroundStyle(Studio.Palette.ink)
@@ -140,7 +142,8 @@ struct CreateTorrentView: View {
                     .accessibilityLabel(L10n.t("Tracker URLs, one per line"))
             }
             WindowsLabeledField(label: L10n.t("Web seeds")) {
-                textField(L10n.t("Optional — https:// mirrors"), text: $webSeeds, mono: true, label: L10n.t("Web seeds"))
+                textField(L10n.t("Optional — https:// mirrors"), text: $webSeeds, mono: true,
+                          label: L10n.t("Web seeds"))
             }
             HStack(alignment: .top, spacing: Studio.Space.m) {
                 WindowsLabeledField(label: L10n.t("Piece size")) { pieceSizeMenu }

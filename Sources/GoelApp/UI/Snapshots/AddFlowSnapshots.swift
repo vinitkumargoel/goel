@@ -54,7 +54,8 @@ enum AddFlowSnapshots {
         [
             confirm("add.confirm", preview: AddFlowSamples.isoPreview),
             confirm("add.confirm.duplicate", preview: AddFlowSamples.duplicatePreview),
-            confirm("add.confirm.advanced", preview: AddFlowSamples.isoPreview, captured: AddFlowSamples.cookies) { flow in
+            confirm("add.confirm.advanced", preview: AddFlowSamples.isoPreview,
+                    captured: AddFlowSamples.cookies) { flow in
                 flow.checksumText = "c2e6f4dc37ac944e2ed507f87c6188dd4f7ac0dc6f6a39bdbd8b12a5a2b23f1b"
                 flow.mirrorsText = "https://mirror.example.org/ubuntu/24.04.1/ubuntu-24.04.1-live-server-amd64.iso"
                 flow.cookieSource = .browser
@@ -109,8 +110,9 @@ enum AddFlowSnapshots {
                     .studioSampleEnvironment(model)
             },
             entry("add.formats.failed", sheetWidth: 500) { model in
-                formatCard(MediaFormatPicker(pageURL: AddFlowSamples.pageURL,
-                                             seed: .failed("yt-dlp isn’t allowed to run: it is quarantined.")) { _ in })
+                formatCard(MediaFormatPicker(
+                    pageURL: AddFlowSamples.pageURL,
+                    seed: .failed("yt-dlp isn’t allowed to run: it is quarantined.")) { _ in })
                     .studioSampleEnvironment(model)
             },
             playlist("add.playlist", seed: .loaded(AddFlowSamples.playlist)),
@@ -149,7 +151,8 @@ enum AddFlowSnapshots {
                                 categoryFilter: .archive, totalFound: 640)),
             grabber("add.grabber.fetching", seed: .init(pageText: page, isFetching: true)),
             grabber("add.grabber.error.url",
-                    seed: .init(pageText: "blender.org/download", fetchError: L10n.t("Enter a full http(s) page URL."))),
+                    seed: .init(pageText: "blender.org/download",
+                                fetchError: L10n.t("Enter a full http(s) page URL."))),
             grabber("add.grabber.error.large",
                     seed: .init(pageText: page, fetchError: L10n.t("That page is too large to scan."))),
             grabber("add.grabber.error.none",
@@ -170,8 +173,10 @@ enum AddFlowSnapshots {
     // MARK: Builders
 
     /// The sheet floated on the canvas like the mockup's artboards: 22 pt corners, floating shadow.
-    private static func entry<Content: View>(_ name: String, sheetWidth: CGFloat, height: CGFloat? = nil,
-                                             @ViewBuilder _ content: @escaping (AppViewModel) -> Content) -> StudioSnapshotEntry {
+    private static func entry<Content: View>(
+        _ name: String, sheetWidth: CGFloat, height: CGFloat? = nil,
+        @ViewBuilder _ content: @escaping (AppViewModel) -> Content
+    ) -> StudioSnapshotEntry {
         StudioSnapshotEntry(name, width: sheetWidth + 48, height: height) { context in
             AddFlowSheetFrame { content(context.model) }
         }

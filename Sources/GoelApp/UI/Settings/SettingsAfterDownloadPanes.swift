@@ -22,7 +22,8 @@ struct ExtractScriptsSettingsPane: View {
                                isIndented: true) {
                         SettingsTextField(text: setting(vm, \.postDownloadScriptPath), width: 200, isMonospaced: true)
                     }
-                    SettingRow(L10n.t("Arguments"), detail: L10n.t("Passed to the script; %path% becomes the finished file."),
+                    SettingRow(L10n.t("Arguments"),
+                               detail: L10n.t("Passed to the script; %path% becomes the finished file."),
                                isIndented: true) {
                         SettingsTextField(text: setting(vm, \.postDownloadScriptArgs), width: 160, isMonospaced: true)
                     }
@@ -41,15 +42,18 @@ struct AntivirusSettingsPane: View {
         SettingsPane(title: L10n.t("Antivirus"),
                      subtitle: L10n.t("Run an external scanner on finished files. Optional, low priority on macOS.")) {
             SettingsCard(title: L10n.t("Scanner"), symbol: "shield") {
-                SettingRow(L10n.t("Scan finished files"), detail: L10n.t("Run the scanner on each file when it finishes."),
+                SettingRow(L10n.t("Scan finished files"),
+                           detail: L10n.t("Run the scanner on each file when it finishes."),
                            isOn: setting(vm, \.antivirusEnabled))
-                SettingRow(L10n.t("Scanner"), detail: L10n.t("Pick ClamAV for its defaults, or set the command yourself.")) {
+                SettingRow(L10n.t("Scanner"),
+                           detail: L10n.t("Pick ClamAV for its defaults, or set the command yourself.")) {
                     SettingsSelect(selection: setting(vm, \.antivirusScanner), options: [
                         SettingsOption("", L10n.t("Configure manually…")),
                         SettingsOption("ClamAV", "ClamAV"),
                     ], width: 170)
                 }
-                SettingRow(L10n.t("Executable path"), detail: L10n.t("Full path to the scanner, e.g. /opt/homebrew/bin/clamscan.")) {
+                SettingRow(L10n.t("Executable path"),
+                           detail: L10n.t("Full path to the scanner, e.g. /opt/homebrew/bin/clamscan.")) {
                     SettingsTextField(text: setting(vm, \.antivirusExecutablePath), width: 200, isMonospaced: true)
                 }
                 SettingRow(L10n.t("Argument template"), detail: L10n.t("%path% is replaced with the file.")) {
@@ -84,7 +88,8 @@ struct MediaToolsSettingsPane: View {
                            detail: L10n.t("Fetch subtitles alongside yt-dlp video downloads (requires yt-dlp)."),
                            isOn: setting(vm, \.subtitleDownloadEnabled))
                 if vm.settings.subtitleDownloadEnabled {
-                    SettingRow(L10n.t("Subtitle languages"), detail: L10n.t("Comma-separated codes, e.g. “en, es”."),
+                    SettingRow(L10n.t("Subtitle languages"),
+                               detail: L10n.t("Comma-separated codes, e.g. “en, es”."),
                                isIndented: true) {
                         SettingsTextField(text: setting(vm, \.subtitleLanguages), width: 130, isMonospaced: true)
                     }
@@ -95,13 +100,15 @@ struct MediaToolsSettingsPane: View {
             }
             SettingsCard(title: L10n.t("Conversions"), symbol: "arrow.left.arrow.right") {
                 SettingRow(L10n.t("ffmpeg path"),
-                           detail: L10n.t("Optional. Leave empty to use the copy included with Goel°. Enables Convert / Extract-audio on finished media.")) {
+                           detail: L10n.t("Optional. Leave empty to use the copy included with Goel°. Enables "
+                               + "Convert / Extract-audio on finished media.")) {
                     SettingsTextField(text: setting(vm, \.ffmpegPath), width: 180, isMonospaced: true)
                 }
                 SettingsCardBlock(showsDivider: false, verticalPadding: 0) {
                     SettingsFootnote(text: vm.ffmpegResolutionSummary,
                                      tone: vm.ffmpegUnavailableReason == nil ? .neutral : .warn,
-                                     symbol: vm.ffmpegUnavailableReason == nil ? "checkmark.circle" : "exclamationmark.triangle")
+                                     symbol: vm.ffmpegUnavailableReason == nil
+                                         ? "checkmark.circle" : "exclamationmark.triangle")
                 }
                 .padding(.bottom, Studio.Space.m)
                 SettingRow(L10n.t("Conversions at once"),

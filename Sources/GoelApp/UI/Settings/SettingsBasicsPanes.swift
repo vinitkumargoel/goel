@@ -125,7 +125,8 @@ struct NetworkSettingsPane: View {
     private var proxyCard: some View {
         SettingsCard(title: L10n.t("Proxy"), symbol: "network") {
             SettingRow(L10n.t("Proxy"),
-                       detail: L10n.t("Route traffic through a proxy server. Multi-path aggregation is disabled while a system or manual proxy is set.")) {
+                       detail: L10n.t("Route traffic through a proxy server. Multi-path aggregation is disabled "
+                           + "while a system or manual proxy is set.")) {
                 SettingsSelect(selection: setting(vm, \.proxyMode), options: [
                     SettingsOption("none", L10n.t("None")),
                     SettingsOption("system", L10n.t("System")),
@@ -167,7 +168,8 @@ struct NetworkSettingsPane: View {
                 SettingsDoubleField(value: setting(vm, \.retryInterval), unit: L10n.t("s"))
             }
             SettingRow(L10n.t("Auto-retry failed downloads"),
-                       detail: L10n.t("Automatically re-queue a failed download and try again, with an exponential backoff between attempts."),
+                       detail: L10n.t("Automatically re-queue a failed download and try again, with an exponential "
+                           + "backoff between attempts."),
                        isOn: setting(vm, \.autoRetryEnabled))
             if vm.settings.autoRetryEnabled {
                 SettingRow(L10n.t("Auto-retry attempts"),
@@ -182,7 +184,8 @@ struct NetworkSettingsPane: View {
             SettingRow(L10n.t("Cookie / auth handling"), detail: L10n.t("Reuse cookies for protected downloads."),
                        isOn: setting(vm, \.cookieAuthEnabled))
             SettingRow(L10n.t("Re-download when remote changes"),
-                       detail: L10n.t("Periodically re-check finished HTTP downloads and fetch again if the server’s file changed."),
+                       detail: L10n.t("Periodically re-check finished HTTP downloads and fetch again if the "
+                           + "server’s file changed."),
                        isOn: setting(vm, \.autoRedownloadOnRemoteChange))
         }
     }

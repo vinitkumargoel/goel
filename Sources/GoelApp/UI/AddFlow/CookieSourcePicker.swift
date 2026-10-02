@@ -73,7 +73,8 @@ struct CookieSourcePicker: View {
                     .accessibilityLabel(L10n.t("Cookie header"))
                     .accessibilityHint(L10n.t("Paste the Cookie request header from your browser’s developer tools."))
             }
-            AddHelpText(L10n.t("In your browser: DevTools ▸ Network ▸ the download request ▸ copy the Cookie request header."))
+            AddHelpText(L10n.t("In your browser: DevTools ▸ Network ▸ the download "
+                + "request ▸ copy the Cookie request header."))
         }
     }
 

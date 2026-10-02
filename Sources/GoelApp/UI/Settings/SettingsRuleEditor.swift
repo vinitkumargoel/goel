@@ -195,7 +195,8 @@ private struct RuleActionsEditor: View {
             }
             if rule.whenDone?.kind == .runScript {
                 StudioNote(tone: .warn, symbol: "exclamationmark.shield",
-                           message: L10n.t("This script runs unattended for every matching download, including ones added from your browser or the web portal."))
+                           message: L10n.t("This script runs unattended for every matching download, including ones "
+                                           + "added from your browser or the web portal."))
             }
         }
     }

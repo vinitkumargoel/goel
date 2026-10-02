@@ -89,7 +89,8 @@ struct WeeklyProfileGrid: View {
                 brushChip("")
             }
             .padding(3)
-            .background(Studio.Palette.segment, in: RoundedRectangle(cornerRadius: Studio.Radius.segment, style: .continuous))
+            .background(Studio.Palette.segment,
+                        in: RoundedRectangle(cornerRadius: Studio.Radius.segment, style: .continuous))
             Spacer(minLength: Studio.Space.s)
             Button(L10n.t("Clear All")) { commit(Array(repeating: "", count: ProfileSchedule.slotCount)) }
                 .buttonStyle(.studio(.ghost, size: .small))
@@ -188,7 +189,8 @@ struct WeeklyProfileGrid: View {
                 let style = style(for: cells[day * 24 + hour], in: names)
                 context.fill(path, with: .color(style.fill))
                 if let rim = style.rim {
-                    context.stroke(Path(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 4.5, style: .continuous),
+                    context.stroke(Path(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 4.5,
+                                        style: .continuous),
                                    with: .color(rim), lineWidth: 1)
                 }
             }

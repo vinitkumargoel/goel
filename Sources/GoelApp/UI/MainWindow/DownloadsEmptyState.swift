@@ -15,7 +15,8 @@ struct DownloadsEmptyState: View {
 
     @State private var clipboardLink: String?
 
-    private static let columns = Array(repeating: GridItem(.flexible(minimum: 150, maximum: 250), spacing: Studio.Space.ml),
+    private static let columns = Array(repeating: GridItem(.flexible(minimum: 150, maximum: 250),
+                                                           spacing: Studio.Space.ml),
                                        count: 3)
 
     var body: some View {
@@ -61,7 +62,8 @@ struct DownloadsEmptyState: View {
                 .font(StudioFonts.font(.ui, size: 15, weight: 650))
                 .foregroundStyle(Studio.Palette.accent)
                 .frame(width: 32, height: 32)
-                .background(Studio.Palette.accentSoft, in: RoundedRectangle(cornerRadius: Studio.Radius.artSmall, style: .continuous))
+                .background(Studio.Palette.accentSoft,
+                            in: RoundedRectangle(cornerRadius: Studio.Radius.artSmall, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(L10n.t("Link on your clipboard"))
@@ -99,7 +101,8 @@ struct DownloadsEmptyState: View {
                 detail: L10n.t("A floating target for dragged links and .torrent files"),
                 keys: "⇧⌘B",
                 a11yLabel: L10n.t("Show or hide the Drop Basket"),
-                a11yHint: L10n.t("Opens a small floating window that accepts dragged links and torrent files. Activating again closes it."),
+                a11yHint: L10n.t("Opens a small floating window that accepts dragged links and torrent files. "
+                                 + "Activating again closes it."),
                 action: { DropBasketController.shared.toggle() })
             EmptyStateWay(
                 symbol: "link.badge.plus",
@@ -121,7 +124,8 @@ struct DownloadsEmptyState: View {
             EmptyStateWay(
                 symbol: "iphone",
                 title: vm.settings.remoteAccessEnabled ? L10n.t("Remote portal") : L10n.t("Add from your phone"),
-                detail: vm.settings.remoteAccessEnabled ? L10n.t("Add from your phone") : L10n.t("Turn on Web Access in Settings"),
+                detail: vm.settings.remoteAccessEnabled
+                    ? L10n.t("Add from your phone") : L10n.t("Turn on Web Access in Settings"),
                 action: { showSettings(.remote) })
         }
     }

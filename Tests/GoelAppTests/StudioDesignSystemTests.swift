@@ -187,14 +187,17 @@ final class StudioDesignSystemTests: XCTestCase {
         XCTAssertTrue(model.runningEngineKinds.isEmpty, "the sample model must never start the engine")
         XCTAssertEqual(model.primarySelection, StudioSampleData.ID.ubuntu.uuid)
         let states = Set(model.tasks.map { StudioDownloadState(task: $0) })
-        XCTAssertTrue(states.isSuperset(of: [.downloading, .seeding, .requestingMetadata, .paused, .completed, .failed, .queued]))
+        XCTAssertTrue(states.isSuperset(of: [.downloading, .seeding, .requestingMetadata, .paused, .completed,
+                                             .failed, .queued]))
     }
     #endif
 }
 
-private func XCTAssertEqual(_ a: UInt32, _ b: UInt32, accuracy: UInt32, file: StaticString = #filePath, line: UInt = #line) {
+private func XCTAssertEqual(_ a: UInt32, _ b: UInt32, accuracy: UInt32,
+                            file: StaticString = #filePath, line: UInt = #line) {
     for shift: UInt32 in [16, 8, 0] {
         let x = Int((a >> shift) & 0xFF), y = Int((b >> shift) & 0xFF)
-        XCTAssertLessThanOrEqual(abs(x - y), Int(accuracy & 0xFF), String(format: "#%06X vs #%06X", a, b), file: file, line: line)
+        XCTAssertLessThanOrEqual(abs(x - y), Int(accuracy & 0xFF), String(format: "#%06X vs #%06X", a, b),
+                                 file: file, line: line)
     }
 }

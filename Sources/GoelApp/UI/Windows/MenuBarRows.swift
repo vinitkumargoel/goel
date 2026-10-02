@@ -239,7 +239,8 @@ struct MenuBarSFTPTransferRow: View {
                             StudioBadge(serverLabel)
                         }
                         StudioLinearProgress(fraction: transfer.state == .waiting ? nil : transfer.fraction,
-                                             tone: transfer.isPaused ? .paused : transfer.direction == .upload ? .upload : .accent,
+                                             tone: transfer.isPaused ? .paused
+                                                 : transfer.direction == .upload ? .upload : .accent,
                                              height: StudioLinearProgress.thinHeight)
                             .padding(.vertical, Studio.Space.hair)
                         Text(detailLine)

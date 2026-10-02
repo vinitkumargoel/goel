@@ -43,17 +43,20 @@ struct MultiSelectionActions: View {
     private func verbs(fullWidth: Bool) -> some View {
         let size: StudioButtonStyle.Size = compact ? .small : .regular
         if summary.canResume {
-            Button(compact ? L10n.t("Resume") : L10n.t("Resume %d", count), systemImage: "play.fill") { vm.resumeSelected() }
+            Button(compact ? L10n.t("Resume") : L10n.t("Resume %d", count),
+                   systemImage: "play.fill") { vm.resumeSelected() }
                 .buttonStyle(.studio(.primary, size: size, fullWidth: fullWidth))
                 .a11yButton(L10n.t("Resume %d Selected", count))
         }
         if summary.canPause {
-            Button(compact ? L10n.t("Pause") : L10n.t("Pause %d", count), systemImage: "pause.fill") { vm.pauseSelected() }
+            Button(compact ? L10n.t("Pause") : L10n.t("Pause %d", count),
+                   systemImage: "pause.fill") { vm.pauseSelected() }
                 .buttonStyle(.studio(summary.canResume ? .secondary : .primary, size: size, fullWidth: fullWidth))
                 .a11yButton(L10n.t("Pause %d Selected", count))
         }
         if summary.canRetry {
-            Button(compact ? L10n.t("Retry") : L10n.t("Retry %d", count), systemImage: "arrow.clockwise") { vm.retrySelected() }
+            Button(compact ? L10n.t("Retry") : L10n.t("Retry %d", count),
+                   systemImage: "arrow.clockwise") { vm.retrySelected() }
                 .buttonStyle(.studio(summary.canResume || summary.canPause ? .destructive : .primary,
                                      size: size, fullWidth: fullWidth))
                 .a11yButton(L10n.t("Retry %d Selected", count))

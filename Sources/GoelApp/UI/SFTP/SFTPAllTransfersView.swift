@@ -149,13 +149,21 @@ private struct SFTPAllTransfersRow: View {
     private var actions: some View {
         HStack(spacing: Studio.Space.hair) {
             if transfer.canPause {
-                StudioIconButton("pause.fill", label: L10n.t("Pause"), size: .small) { vm.pauseSFTPTransfer(transfer.id) }
+                StudioIconButton("pause.fill", label: L10n.t("Pause"), size: .small) {
+                    vm.pauseSFTPTransfer(transfer.id)
+                }
             } else if transfer.canResume {
-                StudioIconButton("play.fill", label: L10n.t("Resume"), size: .small) { vm.resumeSFTPTransfer(transfer.id) }
+                StudioIconButton("play.fill", label: L10n.t("Resume"), size: .small) {
+                    vm.resumeSFTPTransfer(transfer.id)
+                }
             } else if isFailed {
-                StudioIconButton("arrow.clockwise", label: L10n.t("Retry"), size: .small) { vm.retrySFTPTransfer(transfer.id) }
+                StudioIconButton("arrow.clockwise", label: L10n.t("Retry"), size: .small) {
+                    vm.retrySFTPTransfer(transfer.id)
+                }
             }
-            StudioIconButton("folder", label: L10n.t("Show on Server"), size: .small) { vm.revealSFTPTransfer(transfer) }
+            StudioIconButton("folder", label: L10n.t("Show on Server"), size: .small) {
+                vm.revealSFTPTransfer(transfer)
+            }
         }
     }
 

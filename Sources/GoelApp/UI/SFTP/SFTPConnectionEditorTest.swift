@@ -30,7 +30,8 @@ extension SFTPConnectionEditor {
                             .studioFont(.bodyStrong)
                             .foregroundStyle(Studio.Palette.ink)
                             .accessibilityAddTraits(.isHeader)
-                        Text(L10n.t("Goel° will trust whatever key %@ presents next. Only do this after a legitimate server rekey, then re-verify with Test.", pinnedEndpointHost))
+                        Text(L10n.t("Goel° will trust whatever key %@ presents next. Only do this after a "
+                            + "legitimate server rekey, then re-verify with Test.", pinnedEndpointHost))
                             .studioFont(.callout.weight(400))
                             .foregroundStyle(Studio.Palette.ink2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -48,16 +49,19 @@ extension SFTPConnectionEditor {
                 }
             }
             .padding(Studio.Space.m)
-            .background(Studio.Palette.badSoft, in: RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous))
+            .background(Studio.Palette.badSoft,
+                        in: RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous))
         } else {
             VStack(alignment: .leading, spacing: Studio.Space.xxs) {
                 Button(L10n.t("Reset pinned host key"), systemImage: "key.slash") {
                     confirmingHostKeyReset = true
                 }
                 .buttonStyle(.studio(.ghost, size: .small))
-                .help(L10n.t("Forget the saved SSH host-key fingerprint. Use this only after a legitimate server rekey, then re-verify with Test."))
+                .help(L10n.t("Forget the saved SSH host-key fingerprint. Use this only after a legitimate server "
+                    + "rekey, then re-verify with Test."))
                 if hostKeyReset {
-                    Text(L10n.t("Pinned key cleared — Goel° will ask you to confirm the key on the next connection."))
+                    Text(L10n.t("Pinned key cleared — Goel° will ask you to confirm the key on the next "
+                        + "connection."))
                         .studioFont(.caption)
                         .foregroundStyle(Studio.Palette.ink3)
                         .padding(.leading, Studio.Space.sm)
@@ -72,8 +76,9 @@ extension SFTPConnectionEditor {
 
     func resetPinnedHostKey() {
         guard HostKeyStore.shared.reset(host: pinnedEndpointHost, port: pinnedEndpointPort) else {
-            testResult = .failure(message: L10n.t("Goel° couldn’t clear the saved host key for %@.", pinnedEndpointHost),
-                                  detail: nil, retry: nil)
+            testResult = .failure(
+                message: L10n.t("Goel° couldn’t clear the saved host key for %@.", pinnedEndpointHost),
+                detail: nil, retry: nil)
             return
         }
         testResult = nil
@@ -121,7 +126,8 @@ extension SFTPConnectionEditor {
         let pw: String? = password.isEmpty ? nil : password
         let phrase: String? = keyPassphraseEdited ? keyPassphrase : nil
         Task {
-            // Explicit `password:` avoids re-pulling a stale secret; `credentialIdentity:` because secrets are keyed by user@host:port, which may have been edited.
+            // Explicit `password:` avoids re-pulling a stale secret; `credentialIdentity:` because secrets
+            // are keyed by user@host:port, which may have been edited.
             let client: SFTPClient
             switch SFTPSession.resolve(for: connection, password: pw, keyPassphrase: phrase,
                                        credentialIdentity: existing) {
@@ -166,7 +172,8 @@ extension SFTPConnectionEditor {
         guard outcome.didStore else {
             testResult = .failure(
                 message: outcome.isRetryable
-                    ? L10n.t("The server was saved, but Goel° wasn’t allowed to store the secret in your Keychain. Choose Allow when macOS asks, then try again.")
+                    ? L10n.t("The server was saved, but Goel° wasn’t allowed to store the secret in your Keychain. "
+                        + "Choose Allow when macOS asks, then try again.")
                     : L10n.t("The server was saved, but its secret couldn’t be written to your Keychain."),
                 detail: outcome.statusDetail,
                 retry: outcome.isRetryable ? .save : nil)
@@ -201,7 +208,8 @@ struct SFTPTestSuccessCard: View {
                     .textSelection(.enabled)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                    // Spelled out character by character: base64 read as words cannot be checked against `ssh-keygen -lf`.
+                    // Spelled out character by character: base64 read as words cannot be checked against
+                    // `ssh-keygen -lf`.
                     .accessibilityLabel(L10n.t("Host key SHA-256 fingerprint"))
                     .accessibilityValue(fingerprint.map { "\($0) " }.joined())
             }
@@ -209,7 +217,8 @@ struct SFTPTestSuccessCard: View {
         }
         .padding(.horizontal, Studio.Space.m)
         .padding(.vertical, Studio.Space.sm)
-        .background(Studio.Palette.accentSoft, in: RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous))
+        .background(Studio.Palette.accentSoft,
+                    in: RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.t("Connection test succeeded"))
     }
@@ -327,7 +336,8 @@ struct SFTPSSHConfigMenu: View {
             }
             .padding(.horizontal, Studio.Space.sm)
             .frame(height: 30)
-            .background(Studio.Palette.card, in: RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous))
+            .background(Studio.Palette.card,
+                        in: RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
                 .strokeBorder(Studio.Palette.hairlineStrong, lineWidth: 1))
             .contentShape(Rectangle())

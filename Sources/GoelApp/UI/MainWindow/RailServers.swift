@@ -249,7 +249,8 @@ struct RailServerMenu: View {
         Button(L10n.t("Remove"), role: .destructive) {
             vm.requestConfirm(
                 title: L10n.t("Remove “%@”?", server.label),
-                message: L10n.t("This deletes the saved connection and its Keychain password. Files on the server are not touched."),
+                message: L10n.t("This deletes the saved connection and its Keychain "
+                    + "password. Files on the server are not touched."),
                 confirmTitle: L10n.t("Remove"),
                 destructive: true
             ) { vm.removeServer(server.id) }

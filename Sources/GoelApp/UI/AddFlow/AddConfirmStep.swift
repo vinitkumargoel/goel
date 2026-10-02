@@ -97,7 +97,8 @@ struct AddConfirmStep: View {
                 Button(L10n.t("Continue anyway")) { model.start(preview) }
                     .buttonStyle(.studio(.ghost, size: .small))
                     .disabled(model.isResolvingMedia || model.allFilesDeselected(preview))
-                    .help(L10n.t("Continue anyway adds it straight to the queue — the name and size fill in as it starts."))
+                    .help(L10n.t("Continue anyway adds it straight to the queue — the name and size fill in as it "
+                                 + "starts."))
             }
         } else if let note = preview.note {
             StudioNote(tone: .info, symbol: "info.circle.fill", message: note)

@@ -63,7 +63,8 @@ struct RulesSettingsPane: View {
         StudioCard {
             StudioEmptyState(symbol: "line.3.horizontal.decrease.circle",
                              title: L10n.t("Sort downloads automatically"),
-                             message: L10n.t("No rules yet. A rule can send .dmg files to Installers, cap a slow site, or open videos when done.")) {
+                             message: L10n.t("No rules yet. A rule can send .dmg files to Installers, cap a slow "
+                                 + "site, or open videos when done.")) {
                 Button(L10n.t("Add Rule…"), systemImage: "plus") { editing = RuleEditorSheet.blankRule() }
                     .buttonStyle(.studio(.secondary, size: .small))
             }

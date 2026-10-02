@@ -45,7 +45,8 @@ struct RailRow<Trailing: View>: View {
                     .accessibilityHidden(true)
                 Text(title)
                     .studioFont(.bodyStrong)
-                    .foregroundStyle(isSelected ? Studio.Palette.ink : hovered ? Studio.Palette.ink : Studio.Palette.ink2)
+                    .foregroundStyle(isSelected ? Studio.Palette.ink
+                                     : hovered ? Studio.Palette.ink : Studio.Palette.ink2)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: Studio.Space.xs)

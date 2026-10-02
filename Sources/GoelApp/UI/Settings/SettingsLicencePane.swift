@@ -53,7 +53,8 @@ struct LicenceSettingsPane: View {
                         .studioFont(.ui, size: 18, weight: 600)
                         .foregroundStyle(Studio.Palette.good)
                         .frame(width: 36, height: 36)
-                        .background(Studio.Palette.goodSoft, in: RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
+                        .background(Studio.Palette.goodSoft,
+                                    in: RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(verbatim: "PolyForm Noncommercial 1.0.0")
@@ -110,9 +111,11 @@ struct LicenceSettingsPane: View {
                 if showsDetail {
                     VStack(alignment: .leading, spacing: Studio.Space.m) {
                         LicenceList(title: L10n.t("You need a commercial licence if"), tone: .warn, items: [
-                            L10n.t("You are a company, partnership or sole trader and Goel° is used for that business."),
+                            L10n.t("You are a company, partnership or sole trader and Goel° is used for that "
+                                + "business."),
                             L10n.t("You are a contractor or consultant using it in work you bill to a client."),
-                            L10n.t("You deploy it to a managed fleet — MDM, Jamf, Intune, a golden image, shared infrastructure."),
+                            L10n.t("You deploy it to a managed fleet — MDM, Jamf, Intune, a golden image, shared "
+                                + "infrastructure."),
                             L10n.t("You bundle, resell, host, or offer it as part of a product or service."),
                             L10n.t("You need a warranty, an indemnity, support, or a signed agreement to file."),
                         ])
@@ -120,7 +123,8 @@ struct LicenceSettingsPane: View {
                             L10n.t("You are an individual downloading for personal purposes."),
                             L10n.t("You are a student or researcher with no commercial application in view."),
                             L10n.t("You are a charity, school, university, or public research, safety or health body."),
-                            L10n.t("You are evaluating Goel° to decide whether to buy. Evaluation is not metered or reported."),
+                            L10n.t("You are evaluating Goel° to decide whether to buy. Evaluation is not metered or "
+                                + "reported."),
                         ])
                         Text(L10n.t("Not sure which side you fall on? Ask. A one-line email costs nothing and the "
                              + "answer is usually “you’re fine”."))
@@ -196,7 +200,8 @@ struct LicenceSettingsPane: View {
                     .onChange(of: holder) { _, new in LicenseNotes.holder = new }
             }
             SettingRow(L10n.t("Licence reference"),
-                       detail: L10n.t("Whatever your invoice or agreement calls it. Free text — no format is expected.")) {
+                       detail: L10n.t("Whatever your invoice or agreement calls it. Free text — no format is "
+                           + "expected.")) {
                 SettingsTextField(text: $reference, width: 180, isMonospaced: true,
                                   accessibilityName: L10n.t("Licence reference"))
                     .onChange(of: reference) { _, new in LicenseNotes.reference = new }

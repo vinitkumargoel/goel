@@ -48,10 +48,14 @@ enum GallerySection {
             GalleryGroup("Surfaces & ink") {
                 swatches([
                     ("canvas", Studio.Palette.canvas), ("rail", Studio.Palette.rail), ("card", Studio.Palette.card),
-                    ("well", Studio.Palette.well), ("cardRaised", Studio.Palette.cardRaised), ("sheet", Studio.Palette.sheet),
-                    ("cardEdge", Studio.Palette.cardEdge), ("field", Studio.Palette.field), ("segment", Studio.Palette.segment),
+                    ("well", Studio.Palette.well), ("cardRaised", Studio.Palette.cardRaised), ("sheet",
+                                                                                               Studio.Palette.sheet),
+                    ("cardEdge", Studio.Palette.cardEdge), ("field", Studio.Palette.field), ("segment",
+                                                                                             Studio.Palette.segment),
                     ("track", Studio.Palette.track), ("ink", Studio.Palette.ink), ("ink2", Studio.Palette.ink2),
-                    ("ink3", Studio.Palette.ink3), ("hairline", Studio.Palette.hairline), ("hairlineStrong", Studio.Palette.hairlineStrong),
+                    ("ink3", Studio.Palette.ink3), ("hairline",
+                                                    Studio.Palette.hairline), ("hairlineStrong",
+                                                                               Studio.Palette.hairlineStrong),
                 ])
             }
             GalleryGroup("Accent & semantic") {
@@ -60,18 +64,23 @@ enum GallerySection {
                     ("onAccent", Studio.Palette.onAccent), ("accentSoft", Studio.Palette.accentSoft),
                     ("accentLine", Studio.Palette.accentLine), ("focusRing", Studio.Palette.focusRing),
                     ("good", Studio.Palette.good), ("goodSoft", Studio.Palette.goodSoft), ("warn", Studio.Palette.warn),
-                    ("warnSoft", Studio.Palette.warnSoft), ("bad", Studio.Palette.bad), ("badSoft", Studio.Palette.badSoft),
-                    ("info", Studio.Palette.info), ("infoSoft", Studio.Palette.infoSoft), ("upload", Studio.Palette.upload),
-                    ("uploadSoft", Studio.Palette.uploadSoft), ("scrim", Studio.Palette.scrim), ("glass", Studio.Palette.glass),
+                    ("warnSoft", Studio.Palette.warnSoft), ("bad", Studio.Palette.bad), ("badSoft",
+                                                                                         Studio.Palette.badSoft),
+                    ("info", Studio.Palette.info), ("infoSoft", Studio.Palette.infoSoft), ("upload",
+                                                                                           Studio.Palette.upload),
+                    ("uploadSoft", Studio.Palette.uploadSoft), ("scrim", Studio.Palette.scrim), ("glass",
+                                                                                                 Studio.Palette.glass),
                 ])
             }
             GalleryGroup("File-type tints (fill · deep · ink · soft)") {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Studio.Space.m), count: 5), alignment: .leading, spacing: Studio.Space.m) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Studio.Space.m), count: 5),
+                          alignment: .leading, spacing: Studio.Space.m) {
                     ForEach(StudioArtKind.allCases, id: \.self) { kind in
                         let tint = kind.tint
                         VStack(alignment: .leading, spacing: Studio.Space.xs) {
                             HStack(spacing: Studio.Space.xxs) {
-                                ForEach(Array([tint.fill, tint.fillDeep, tint.ink, tint.soft].enumerated()), id: \.offset) { _, color in
+                                ForEach(Array([tint.fill, tint.fillDeep, tint.ink, tint.soft].enumerated()),
+                                        id: \.offset) { _, color in
                                     RoundedRectangle(cornerRadius: Studio.Radius.badge).fill(color).frame(height: 28)
                                 }
                             }
@@ -84,28 +93,41 @@ enum GallerySection {
                 GalleryGroup("Spacing") {
                     VStack(alignment: .leading, spacing: Studio.Space.xs) {
                         ForEach([("hair", Studio.Space.hair), ("xxs", Studio.Space.xxs), ("xs", Studio.Space.xs),
-                                 ("s", Studio.Space.s), ("sm", Studio.Space.sm), ("m", Studio.Space.m), ("ml", Studio.Space.ml),
+                                 ("s", Studio.Space.s), ("sm", Studio.Space.sm), ("m",
+                                                                                  Studio.Space.m), ("ml",
+                                                                                                    Studio.Space.ml),
                                  ("l", Studio.Space.l), ("xl", Studio.Space.xl), ("gutter", Studio.Space.gutter),
                                  ("xxl", Studio.Space.xxl), ("xxxl", Studio.Space.xxxl)], id: \.0) { name, value in
                             HStack(spacing: Studio.Space.s) {
-                                Text(verbatim: "\(name) \(Int(value))").studioFont(.monoSmall).foregroundStyle(Studio.Palette.ink2)
+                                Text(verbatim: "\(name) \(Int(value))")
+                                    .studioFont(.monoSmall)
+                                    .foregroundStyle(Studio.Palette.ink2)
                                     .frame(width: 80, alignment: .leading)
-                                RoundedRectangle(cornerRadius: 2).fill(Studio.Palette.accent).frame(width: value * 4, height: 8)
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Studio.Palette.accent)
+                                    .frame(width: value * 4, height: 8)
                             }
                         }
                     }
                 }
                 GalleryGroup("Radii") {
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(70), spacing: Studio.Space.sm), count: 4), spacing: Studio.Space.sm) {
-                        ForEach([("badge", Studio.Radius.badge), ("small", Studio.Radius.small), ("control", Studio.Radius.control),
-                                 ("well", Studio.Radius.well), ("tile", Studio.Radius.tile), ("card", Studio.Radius.card),
-                                 ("boardCard", Studio.Radius.boardCard), ("sheet", Studio.Radius.sheet)], id: \.0) { name, value in
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(70), spacing: Studio.Space.sm), count: 4),
+                              spacing: Studio.Space.sm) {
+                        ForEach([("badge", Studio.Radius.badge), ("small", Studio.Radius.small),
+                                 ("control", Studio.Radius.control),
+                                 ("well", Studio.Radius.well), ("tile", Studio.Radius.tile), ("card",
+                                                                                              Studio.Radius.card),
+                                 ("boardCard",
+                                  Studio.Radius.boardCard), ("sheet", Studio.Radius.sheet)], id: \.0) { name, value in
                             VStack(spacing: Studio.Space.xxs) {
                                 RoundedRectangle(cornerRadius: value, style: .continuous)
                                     .fill(Studio.Palette.card)
-                                    .overlay(RoundedRectangle(cornerRadius: value, style: .continuous).strokeBorder(Studio.Palette.hairlineStrong))
+                                    .overlay(RoundedRectangle(cornerRadius: value, style: .continuous)
+                                        .strokeBorder(Studio.Palette.hairlineStrong))
                                     .frame(width: 60, height: 44)
-                                Text(verbatim: "\(name) \(Int(value))").studioFont(.tiny).foregroundStyle(Studio.Palette.ink3)
+                                Text(verbatim: "\(name) \(Int(value))")
+                                    .studioFont(.tiny)
+                                    .foregroundStyle(Studio.Palette.ink3)
                             }
                         }
                     }
@@ -127,12 +149,14 @@ enum GallerySection {
     }
 
     private static func swatches(_ items: [(String, Color)]) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Studio.Space.sm), count: 9), alignment: .leading, spacing: Studio.Space.sm) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Studio.Space.sm), count: 9),
+                  alignment: .leading, spacing: Studio.Space.sm) {
             ForEach(items, id: \.0) { name, color in
                 VStack(alignment: .leading, spacing: 5) {
                     RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous)
                         .fill(color)
-                        .overlay(RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous).strokeBorder(Studio.Palette.cardEdge))
+                        .overlay(RoundedRectangle(cornerRadius: Studio.Radius.well,
+                                                  style: .continuous).strokeBorder(Studio.Palette.cardEdge))
                         .frame(height: 44)
                     Text(verbatim: name).studioFont(.tiny).foregroundStyle(Studio.Palette.ink2)
                 }
@@ -148,7 +172,8 @@ enum GallerySection {
                 VStack(alignment: .leading, spacing: Studio.Space.sm) {
                     ForEach(Studio.TextStyle.catalog, id: \.name) { entry in
                         HStack(alignment: .firstTextBaseline, spacing: Studio.Space.l) {
-                            Text(verbatim: "\(entry.name) · \(entry.style.size.formatted()) / \(Int(entry.style.weight))")
+                            Text(verbatim: "\(entry.name) · \(entry.style.size.formatted()) / "
+                                 + "\(Int(entry.style.weight))")
                                 .studioFont(.monoSmall)
                                 .foregroundStyle(Studio.Palette.ink3)
                                 .frame(width: 190, alignment: .leading)
@@ -179,7 +204,8 @@ enum GallerySection {
             }
             GalleryGroup("Tabular numbers") {
                 VStack(alignment: .leading, spacing: Studio.Space.hair) {
-                    ForEach(["↓ 12.0 MB/s · 2.9 of 4.7 GB", "↓ 111.1 MB/s · 1.1 of 1.1 GB", "↑ 640 KB/s · 3m left"], id: \.self) { line in
+                    ForEach(["↓ 12.0 MB/s · 2.9 of 4.7 GB", "↓ 111.1 MB/s · 1.1 of 1.1 GB",
+                             "↑ 640 KB/s · 3m left"], id: \.self) { line in
                         Text(verbatim: line).studioFont(.mono)
                     }
                     Text(verbatim: "1111 — 8888 (display, tabular)").studioFont(.stat)
@@ -304,11 +330,13 @@ enum GallerySection {
         GalleryPage(title: "Controls", subtitle: "Buttons, chips, segments, fields") {
             GalleryGroup("Buttons") {
                 VStack(alignment: .leading, spacing: Studio.Space.sm) {
-                    ForEach(Array([StudioButtonStyle.Size.small, .regular, .large].enumerated()), id: \.offset) { _, size in
+                    ForEach(Array([StudioButtonStyle.Size.small, .regular, .large].enumerated()),
+                            id: \.offset) { _, size in
                         HStack(spacing: Studio.Space.s) {
                             Button("Pause", systemImage: "pause") {}.buttonStyle(.studio(.primary, size: size))
                             Button("Folder", systemImage: "folder") {}.buttonStyle(.studio(.secondary, size: size))
-                            Button("Retry in 0:12", systemImage: "arrow.clockwise") {}.buttonStyle(.studio(.soft, size: size))
+                            Button("Retry in 0:12", systemImage: "arrow.clockwise") {}
+                                .buttonStyle(.studio(.soft, size: size))
                             Button("Options…") {}.buttonStyle(.studio(.ghost, size: size))
                             Button("Remove", systemImage: "trash") {}.buttonStyle(.studio(.destructive, size: size))
                             Button("Delete files") {}.buttonStyle(.studio(.destructivePrimary, size: size))
@@ -321,7 +349,8 @@ enum GallerySection {
                         StudioIconButton("folder", label: "Show in Finder", bordered: true) {}
                         StudioIconButton("sidebar.left", label: "Toggle Sidebar", isOn: true) {}
                         StudioIconButton("ellipsis", label: "More", size: .small) {}
-                        Button("Pill", systemImage: "line.3.horizontal.decrease") {}.buttonStyle(StudioPillButtonStyle())
+                        Button("Pill", systemImage: "line.3.horizontal.decrease") {}
+                            .buttonStyle(StudioPillButtonStyle())
                         Button("Pill on") {}.buttonStyle(StudioPillButtonStyle(isOn: true))
                     }
                     HStack(spacing: Studio.Space.s) {
@@ -350,7 +379,9 @@ enum GallerySection {
                         StudioSegment("list", title: "List", symbol: "list.bullet"),
                     ])
                     StudioSegmentedControl(selection: .constant("m"), segments: [
-                        StudioSegment("l", title: "Low"), StudioSegment("m", title: "Medium"), StudioSegment("h", title: "High"),
+                        StudioSegment("l", title: "Low"), StudioSegment("m",
+                                                                        title: "Medium"), StudioSegment("h",
+                                                                                                        title: "High"),
                     ], size: .small)
                     StudioTabBar(selection: .constant("overview"), tabs: [
                         StudioSegment("overview", title: "Overview"),
@@ -366,7 +397,9 @@ enum GallerySection {
                         StudioOmniboxSuggestion {
                             StudioFileArtwork(kind: .disc, size: .s)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(verbatim: "Copied link detected").studioFont(.eyebrow).foregroundStyle(Studio.Palette.accent)
+                                Text(verbatim: "Copied link detected")
+                                    .studioFont(.eyebrow)
+                                    .foregroundStyle(Studio.Palette.accent)
                                 Text(verbatim: "releases.ubuntu.com/24.04.1/ubuntu-24.04.1-live-server-amd64.iso")
                                     .studioFont(.body).foregroundStyle(Studio.Palette.ink).lineLimit(1)
                             }
@@ -382,8 +415,12 @@ enum GallerySection {
                     HStack(spacing: Studio.Space.m) {
                         StudioSearchField(text: .constant(""), placeholder: "Search history").frame(width: 240)
                         StudioSearchField(text: .constant("ubuntu"), size: .small).frame(width: 200)
-                        TextField("Folder name", text: .constant("Disc images")).textFieldStyle(.studio).frame(width: 220)
-                        TextField("Small field", text: .constant("")).textFieldStyle(.studio(size: .small)).frame(width: 160)
+                        TextField("Folder name", text: .constant("Disc images"))
+                            .textFieldStyle(.studio)
+                            .frame(width: 220)
+                        TextField("Small field", text: .constant(""))
+                            .textFieldStyle(.studio(size: .small))
+                            .frame(width: 160)
                     }
                 }
             }
@@ -396,8 +433,10 @@ enum GallerySection {
         GalleryPage(title: "Surfaces", subtitle: "Cards, forms, sheets, popovers, feedback, charts") {
             HStack(alignment: .top, spacing: Studio.Space.ml) {
                 VStack(alignment: .leading, spacing: Studio.Space.l) {
-                    StudioFormCard(title: "Downloads", symbol: "arrow.down.circle", footer: "Applies to new downloads.") {
-                        StudioToggleRow("Start downloads automatically", subtitle: "New links start as soon as they are added", isOn: .constant(true))
+                    StudioFormCard(title: "Downloads", symbol: "arrow.down.circle",
+                                   footer: "Applies to new downloads.") {
+                        StudioToggleRow("Start downloads automatically",
+                                        subtitle: "New links start as soon as they are added", isOn: .constant(true))
                         StudioToggleRow("Ask where to save each file", isOn: .constant(false))
                         StudioToggleRow("Only on Wi-Fi", isIndented: true, isOn: .constant(false))
                         StudioFormRow("Download folder", subtitle: "~/Downloads") {
@@ -409,7 +448,9 @@ enum GallerySection {
                             StudioSectionHeader("Queue", detail: "last 60 s")
                             HStack(alignment: .firstTextBaseline, spacing: Studio.Space.xs) {
                                 Text(verbatim: "4.1 GB").studioFont(.title2.size(28).weight(700))
-                                Text(verbatim: "left · done ≈ 21:16").studioFont(.small).foregroundStyle(Studio.Palette.ink2)
+                                Text(verbatim: "left · done ≈ 21:16")
+                                    .studioFont(.small)
+                                    .foregroundStyle(Studio.Palette.ink2)
                             }
                             StudioSparkline(values: sparkValues).frame(height: 44)
                             Toggle("Include seeding", isOn: .constant(true)).toggleStyle(.studioCheckbox)
@@ -420,16 +461,21 @@ enum GallerySection {
                         StudioStatTile(value: "412", caption: "Files")
                     }
                     StudioWell {
-                        Text(verbatim: "A well for grouped facts.").studioFont(.small).foregroundStyle(Studio.Palette.ink2)
+                        Text(verbatim: "A well for grouped facts.")
+                            .studioFont(.small)
+                            .foregroundStyle(Studio.Palette.ink2)
                     }
                 }
                 .frame(width: 380)
                 VStack(alignment: .leading, spacing: Studio.Space.l) {
-                    StudioSheet(title: "Remove 3 downloads?", subtitle: "4.1 GB on disk", symbol: "trash", onClose: {}, width: 380) {
-                        StudioNote(tone: .warn, symbol: "exclamationmark.triangle", message: "Files that are still downloading will be discarded.")
+                    StudioSheet(title: "Remove 3 downloads?", subtitle: "4.1 GB on disk", symbol: "trash", onClose: {},
+                                width: 380) {
+                        StudioNote(tone: .warn, symbol: "exclamationmark.triangle",
+                                   message: "Files that are still downloading will be discarded.")
                         Toggle("Also delete the files", isOn: .constant(true)).toggleStyle(.studioCheckbox)
                     } footer: {
-                        StudioSheetFooter(onCancel: {}, primaryTitle: "Remove", primaryRole: .destructive, showsShortcutHint: true) {}
+                        StudioSheetFooter(onCancel: {}, primaryTitle: "Remove", primaryRole: .destructive,
+                                          showsShortcutHint: true) {}
                     }
                     .studioSurface(.sheet, radius: Studio.Radius.sheet, elevation: .floating)
                     StudioPopover(title: "Speed limit", subtitle: "Applies to every download") {
@@ -456,13 +502,16 @@ enum GallerySection {
                         .frame(width: 380)
                     StudioToastCard(tone: .accent, symbol: "trash", title: "Removed 2 downloads",
                                     actionTitle: "Undo", onAction: {}, onDismiss: {})
-                    StudioToastCard(tone: .bad, symbol: "exclamationmark.triangle", title: "Fedora-Workstation-40.iso failed",
+                    StudioToastCard(tone: .bad, symbol: "exclamationmark.triangle",
+                                    title: "Fedora-Workstation-40.iso failed",
                                     message: "FTP server closed the connection", onDismiss: {})
                     StudioNote(tone: .accent, symbol: "info.circle", message: "Accent note: a tip next to a setting.")
-                    StudioNote(tone: .bad, symbol: "exclamationmark.octagon", message: "Bad note: what went wrong, in plain words.")
+                    StudioNote(tone: .bad, symbol: "exclamationmark.octagon",
+                               message: "Bad note: what went wrong, in plain words.")
                     StudioNote(symbol: "lightbulb", message: "Neutral note.")
                     StudioCard {
-                        StudioEmptyState(symbol: "tray", title: "Nothing matches", message: "The Failed filter is hiding 10 downloads.") {
+                        StudioEmptyState(symbol: "tray", title: "Nothing matches",
+                                         message: "The Failed filter is hiding 10 downloads.") {
                             Button("Clear filter") {}.buttonStyle(.studio(.primary))
                         }
                     }
@@ -477,10 +526,12 @@ enum GallerySection {
     // MARK: Navigation & composition
 
     static func navigation(model: AppViewModel) -> some View {
-        GalleryPage(title: "Navigation & composition", subtitle: "Rail, lanes, wordmark — and components combined on sample data") {
+        GalleryPage(title: "Navigation & composition",
+                    subtitle: "Rail, lanes, wordmark — and components combined on sample data") {
             HStack(alignment: .top, spacing: 26) {
                 VStack(spacing: Studio.Space.xxs) {
-                    StudioRailItem(symbol: "rectangle.3.group", title: "Downloads", badge: 4, isSelected: true, shortcut: "⌘1") {}
+                    StudioRailItem(symbol: "rectangle.3.group", title: "Downloads", badge: 4, isSelected: true,
+                                   shortcut: "⌘1") {}
                     StudioRailItem(symbol: "clock.arrow.circlepath", title: "History") {}
                     StudioRailItem(symbol: "server.rack", title: "Servers") {}
                     StudioRailItem(symbol: "dot.radiowaves.up.forward", title: "Feeds", badge: 6) {}
@@ -495,7 +546,8 @@ enum GallerySection {
                 .overlay(alignment: .trailing) { Rectangle().fill(Studio.Palette.hairline).frame(width: 1) }
 
                 VStack(spacing: Studio.Space.hair) {
-                    StudioRailItem(symbol: "rectangle.3.group", title: "Downloads", count: 11, isSelected: true, isExpanded: true) {}
+                    StudioRailItem(symbol: "rectangle.3.group", title: "Downloads", count: 11, isSelected: true,
+                                   isExpanded: true) {}
                     StudioRailItem(symbol: "clock.arrow.circlepath", title: "History", count: 248, isExpanded: true) {}
                     StudioRailItem(symbol: "server.rack", title: "Servers", count: 3, isExpanded: true) {}
                     StudioRailSeparator(isExpanded: true)
@@ -546,7 +598,8 @@ private struct GallerySampleLane: View {
                             .studioFont(.small).foregroundStyle(Studio.Palette.ink3)
                             .padding(.trailing, 52)
                         HStack {
-                            Text(verbatim: "↓ " + task.downloadSpeed.speedString).foregroundStyle(Studio.Palette.accent)
+                            Text(verbatim: "↓ " + task.downloadSpeed.speedString)
+                                .foregroundStyle(Studio.Palette.accent)
                             Spacer()
                             Text(task.statusCompactText())
                         }
@@ -590,13 +643,17 @@ private struct GalleryCompactCard: View {
                 } else {
                     HStack(spacing: Studio.Space.xs) {
                         StudioStatusChip(state: state)
-                        Text(task.compactSizeLine).studioFont(.caption).foregroundStyle(Studio.Palette.ink3).lineLimit(1)
+                        Text(task.compactSizeLine)
+                            .studioFont(.caption)
+                            .foregroundStyle(Studio.Palette.ink3)
+                            .lineLimit(1)
                     }
                 }
                 if state == .requestingMetadata {
                     StudioLinearProgress(fraction: nil, height: StudioLinearProgress.thinHeight)
                 } else if state == .paused || state == .seeding {
-                    StudioLinearProgress(fraction: state == .seeding ? task.seedRatioProgress ?? 0.6 : task.fractionCompleted,
+                    StudioLinearProgress(fraction: state == .seeding
+                                             ? task.seedRatioProgress ?? 0.6 : task.fractionCompleted,
                                          tone: StudioProgressTone(task: task), height: StudioLinearProgress.thinHeight)
                 }
             }

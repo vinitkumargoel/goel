@@ -135,7 +135,8 @@ struct LinkGrabberSheet: View {
                           text: L10n.t("Found %1$d links on %2$@", totalFound, pageHost),
                           tone: .good)
         } else {
-            AddHelpText(L10n.t("Goel° lists every file the page links to, sorted by type. Nothing is downloaded until you review it."))
+            AddHelpText(L10n.t("Goel° lists every file the page links to, sorted by type. Nothing is downloaded until "
+                               + "you review it."))
         }
     }
 

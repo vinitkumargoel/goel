@@ -29,7 +29,8 @@ struct StudioColorToken: Sendable {
         }
     }
 
-    func opacity(_ light: Double, _ dark: Double, highContrast: (light: Double, dark: Double)? = nil) -> StudioColorToken {
+    func opacity(_ light: Double, _ dark: Double,
+                 highContrast: (light: Double, dark: Double)? = nil) -> StudioColorToken {
         StudioColorToken(self.light.opacity(light), self.dark.opacity(dark),
                    highContrast: (lightHighContrast.opacity(highContrast?.light ?? light),
                                   darkHighContrast.opacity(highContrast?.dark ?? dark)))
@@ -248,7 +249,8 @@ extension Studio {
                                       highContrast: (s.light.1.lighter(-0.12), s.dark.1.lighter(-0.08)))
                 let deepLight = s.light.1
                 let baseDark = s.dark.0
-                let ink = StudioColorToken(C(0.46, max(deepLight.c, 0.04), deepLight.h), C(0.82, max(baseDark.c, 0.03), baseDark.h),
+                let ink = StudioColorToken(C(0.46, max(deepLight.c, 0.04), deepLight.h),
+                                           C(0.82, max(baseDark.c, 0.03), baseDark.h),
                                      highContrast: (C(0.36, max(deepLight.c, 0.04), deepLight.h),
                                                     C(0.90, max(baseDark.c, 0.03), baseDark.h)))
                 let soft = StudioColorToken(s.light.0.opacity(0.22), s.dark.0.opacity(0.24))

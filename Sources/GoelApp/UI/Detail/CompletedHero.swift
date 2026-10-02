@@ -24,7 +24,8 @@ struct CompletedHero: View {
         VStack(alignment: .leading, spacing: Studio.Space.m) {
             preview
             VStack(alignment: .leading, spacing: Studio.Space.xxs) {
-                Text(CompletionSummary.finishedLine(bytes: CompletionSummary.size(of: task), completedAt: task.completedAt))
+                Text(CompletionSummary.finishedLine(bytes: CompletionSummary.size(of: task),
+                                                    completedAt: task.completedAt))
                     .studioFont(.small)
                     .foregroundStyle(Studio.Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -101,7 +102,8 @@ struct CompletedHero: View {
                     .a11yButton(L10n.t("Show %@ in Finder", task.name))
                 CompletedHeroMoreMenu(task: task, vm: vm)
                     .frame(width: 30, height: 27)
-                    .background(Studio.Palette.card, in: RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous))
+                    .background(Studio.Palette.card,
+                                in: RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
                         .strokeBorder(Studio.Palette.hairlineStrong, lineWidth: 1))
             }

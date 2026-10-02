@@ -20,7 +20,8 @@ struct SFTPInfoPanel: View {
 
     @State private var mode: UInt32 = 0
     @State private var octalText = ""
-    /// Set once the fetched mode is adopted, so re-renders mid-edit don't snap the checkboxes back to the server's value.
+    /// Set once the fetched mode is adopted, so re-renders mid-edit don't snap the checkboxes back to the
+    /// server's value.
     @State private var adoptedMode = false
 
     static let width: CGFloat = 320
@@ -157,7 +158,8 @@ struct SFTPInfoPanel: View {
                 permissionRow(L10n.t("Everyone"), read: 0o004, write: 0o002, execute: 0o001)
             }
             octalRow(info)
-            // Typed octal is adopted only on submit, so a half-typed "6" can't briefly strip every permission bit off the checkboxes.
+            // Typed octal is adopted only on submit, so a half-typed "6" can't briefly strip every permission
+            // bit off the checkboxes.
             if SFTPPermissions.parse(octal: octalText) == nil && !octalText.isEmpty {
                 Text(L10n.t("Enter three or four digits, 0–7."))
                     .studioFont(.caption)

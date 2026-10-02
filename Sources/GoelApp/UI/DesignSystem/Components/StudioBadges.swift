@@ -161,7 +161,8 @@ struct StudioBadge: View {
             .lineLimit(1)
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
-            .foregroundStyle(style == .plain ? Studio.Palette.ink2 : style == .accent ? Studio.Palette.accent : Studio.Palette.ink)
+            .foregroundStyle(style == .plain ? Studio.Palette.ink2
+                             : style == .accent ? Studio.Palette.accent : Studio.Palette.ink)
             .background {
                 switch style {
                 case .plain:

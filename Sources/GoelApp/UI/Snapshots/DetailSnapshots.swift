@@ -60,7 +60,8 @@ enum DetailSnapshots {
                     .studioSampleEnvironment(StudioSampleData.makeViewModel(selecting: .cosmos))
             },
             StudioSnapshotEntry("detail.sheet.tracker-edit", width: 470) { _ in
-                TrackerEditSheet(mode: .edit("udp://open.stealth.si:80/announce"), taskID: StudioSampleData.ID.cosmos.uuid)
+                TrackerEditSheet(mode: .edit("udp://open.stealth.si:80/announce"),
+                                 taskID: StudioSampleData.ID.cosmos.uuid)
                     .studioSampleEnvironment(StudioSampleData.makeViewModel(selecting: .cosmos))
             },
         ]

@@ -41,7 +41,8 @@ struct UpdateLinkSheet: View {
         RecoverySheet(
             symbol: "link",
             title: L10n.t("Update Link"),
-            subtitle: L10n.t("Paste the new address for “%@”. The download keeps its name and the part already on disk.", task.name),
+            subtitle: L10n.t("Paste the new address for “%@”. The download keeps "
+                + "its name and the part already on disk.", task.name),
             confirmTitle: task.status.isFailed ? L10n.t("Update & Retry") : L10n.t("Update"),
             confirmSymbol: task.status.isFailed ? "arrow.clockwise" : nil,
             confirmDisabled: link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working,
@@ -59,7 +60,9 @@ struct UpdateLinkSheet: View {
                     .onSubmit(submit)
             }
             StudioNote(tone: .accent, symbol: "info.circle",
-                       message: L10n.t("Goel° resumes only if the new link serves the same file — same size and the same ETag or Last-Modified date. Otherwise it starts again from the beginning, so a changed file is never mixed with the old bytes."))
+                       message: L10n.t("Goel° resumes only if the new link serves the same file — same size and the "
+                           + "same ETag or Last-Modified date. Otherwise it starts again from the beginning, so a "
+                           + "changed file is never mixed with the old bytes."))
             if let problem {
                 StudioNote(tone: .bad, symbol: "exclamationmark.triangle.fill", message: problem)
                     .accessibilityAddTraits(.isStaticText)
@@ -99,7 +102,8 @@ struct AttachCookiesSheet: View {
         RecoverySheet(
             symbol: "person.badge.key",
             title: L10n.t("Attach Cookies"),
-            subtitle: L10n.t("The server refused “%1$@” without a login. Attach the cookies your browser sends to %2$@.",
+            subtitle: L10n.t("The server refused “%1$@” without a login. "
+                + "Attach the cookies your browser sends to %2$@.",
                              task.name, task.sourceHost ?? "—"),
             confirmTitle: task.status.isFailed ? L10n.t("Attach & Retry") : L10n.t("Attach"),
             confirmDisabled: picker.sanitizedCookieHeader == nil,
@@ -132,7 +136,8 @@ struct ChangeFolderSheet: View {
         RecoverySheet(
             symbol: "folder",
             title: L10n.t("Change Folder"),
-            subtitle: L10n.t("Move “%@” to a folder with more room. The part already downloaded moves with it.", task.name),
+            subtitle: L10n.t("Move “%@” to a folder with more room. The part "
+                + "already downloaded moves with it.", task.name),
             confirmTitle: L10n.t("Move & Retry"),
             confirmDisabled: chosen == nil,
             onConfirm: submit
@@ -154,8 +159,8 @@ struct ChangeFolderSheet: View {
                 }
                 Spacer(minLength: 0)
                 Button(chosen == nil ? L10n.t("Choose Folder…") : L10n.t("Choose Another…"), systemImage: "folder") {
-                    if let url = FilePicker.chooseDirectory(prompt: L10n.t("Choose"),
-                                                            message: L10n.t("Choose where “%@” should go.", task.name)) {
+                    let message = L10n.t("Choose where “%@” should go.", task.name)
+                    if let url = FilePicker.chooseDirectory(prompt: L10n.t("Choose"), message: message) {
                         chosen = url.path
                     }
                 }

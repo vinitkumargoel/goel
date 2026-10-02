@@ -81,7 +81,8 @@ struct TorrentSourceSummary: Equatable, Sendable {
         var bytes: Int64 = 0
         for case let url as URL in walker {
             if Task.isCancelled { return nil }
-            guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
+            guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true
+            else { continue }
             count += 1
             bytes += Int64(values.fileSize ?? 0)
         }

@@ -23,7 +23,8 @@ struct WebAccessSettingsPane: View {
 
     var body: some View {
         SettingsPane(title: L10n.t("Web Access"),
-                     subtitle: L10n.t("Run the full download manager in a browser — add, stream, and manage everything from your phone or another Mac."),
+                     subtitle: L10n.t("Run the full download manager in a browser — add, stream, and manage "
+                                      + "everything from your phone or another Mac."),
                      managedKeys: Self.managedKeys, fillsWidth: true) {
             VStack(alignment: .leading, spacing: Studio.Space.l) {
                 SettingsColumns(spacing: Studio.Space.l) {
@@ -128,7 +129,8 @@ struct WebAccessSettingsPane: View {
     private var accessCard: some View {
         SettingsCard(title: L10n.t("Access"), symbol: "person.badge.key") {
             SettingRow(L10n.t("Require sign-in"),
-                       detail: L10n.t("Prompt for a username and password (recommended). Off = open access — only safe on localhost.")) {
+                       detail: L10n.t("Prompt for a username and password (recommended). Off = open access — only "
+                                      + "safe on localhost.")) {
                 SettingSwitch(isOn: setting(vm, \.remoteRequireAuth))
                     .managed(.remoteRequireAuth, vm.managedPolicy)
             }
@@ -174,7 +176,8 @@ struct WebAccessSettingsPane: View {
     private var lookCard: some View {
         SettingsCard(title: L10n.t("Theme & API"), symbol: "paintpalette") {
             SettingRow(L10n.t("Web theme"),
-                       detail: L10n.t("What the portal shows until someone picks a theme in their browser. Separate from this app’s appearance.")) {
+                       detail: L10n.t("What the portal shows until someone picks a theme in their browser. Separate "
+                                      + "from this app’s appearance.")) {
                 SettingsSelect(selection: $vm.remoteTheme,
                                options: RemotePortalTheme.allCases.map { SettingsOption($0, $0.title) },
                                width: 140, accessibilityName: L10n.t("Web portal theme"))
@@ -194,7 +197,8 @@ struct WebAccessSettingsPane: View {
                     .textSelection(.enabled)
                     .padding(.horizontal, Studio.Space.sm)
                     .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-                    .background(Studio.Palette.well, in: RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous))
+                    .background(Studio.Palette.well,
+                                in: RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous))
                     .accessibilityLabel(L10n.t("API token"))
                     .accessibilityValue(vm.settings.remoteToken.map { "\($0) " }.joined())
             }
@@ -205,7 +209,8 @@ struct WebAccessSettingsPane: View {
     private func confirmRegenerate() {
         vm.settingsConfirm(
             title: L10n.t("Regenerate the API token?"),
-            message: L10n.t("Existing portal links and the paired browser extension stop working until you copy the new token to them."),
+            message: L10n.t("Existing portal links and the paired browser extension stop working until you copy the "
+                            + "new token to them."),
             confirmTitle: L10n.t("Regenerate"),
             destructive: true
         ) {

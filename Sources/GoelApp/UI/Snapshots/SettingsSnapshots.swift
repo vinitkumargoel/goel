@@ -194,8 +194,10 @@ enum SettingsSnapshotModel {
     ]
 
     static let ruleHistory: [AutoSortCandidate] = [
-        ("ubuntu-24.04.1-desktop-amd64.iso", "https://releases.ubuntu.com/24.04/ubuntu-24.04.1-desktop-amd64.iso", 6_114_656_256),
-        ("debian-12.6.0-amd64-DVD-1.iso", "https://cdimage.debian.org/debian-cd/debian-12.6.0-amd64-DVD-1.iso", 3_994_091_520),
+        ("ubuntu-24.04.1-desktop-amd64.iso", "https://releases.ubuntu.com/24.04/ubuntu-24.04.1-desktop-amd64.iso",
+         6_114_656_256),
+        ("debian-12.6.0-amd64-DVD-1.iso", "https://cdimage.debian.org/debian-cd/debian-12.6.0-amd64-DVD-1.iso",
+         3_994_091_520),
         ("Cosmos.Laundromat.2015.1080p.mkv", "magnet:?xt=urn:btih:cosmos", 17_000_000_000),
         ("Q3-board-pack.pdf", "https://files.company.com/q3/Q3-board-pack.pdf", 8_200_000),
         ("Figma-124.dmg", "https://desktop.figma.com/mac/Figma-124.dmg", 210_000_000),

@@ -52,7 +52,8 @@ enum OnboardingBrowserChoice: String, CaseIterable, Identifiable {
     var loadHint: String {
         switch self {
         case .firefox:
-            return L10n.t("about:debugging → This Firefox → Load Temporary Add-on → the folder’s manifest.json.")
+            return L10n.t("about:debugging → This Firefox → Load Temporary Add-on → "
+                + "the folder’s manifest.json.")
         case .safari, .other:
             return ""
         default:

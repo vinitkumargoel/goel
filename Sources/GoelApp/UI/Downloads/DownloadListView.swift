@@ -60,7 +60,8 @@ struct DownloadsContent: View {
             .environment(\.quickLookAction, QuickLookAction(item: $quickLookItem))
             .accessibilityElement(children: .contain)
             .accessibilityLabel(L10n.t("Download queue"))
-            .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, shift with an arrow to extend the selection, command A to select all, space to preview, return to open."))
+            .accessibilityHint(L10n.t("Use the up and down arrow keys to move through downloads, shift with an "
+                + "arrow to extend the selection, command A to select all, space to preview, return to open."))
     }
 
     /// The keyboard target. It sits behind the content rather than wrapping it: a focusable
