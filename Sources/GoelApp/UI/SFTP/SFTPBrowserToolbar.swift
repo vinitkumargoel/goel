@@ -36,7 +36,7 @@ extension SFTPBrowserView {
             viewMenuButton
         }
         .padding(.horizontal, Studio.Space.l)
-        .frame(height: 50)
+        .frame(minHeight: 50)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { toolbarWidth = $0 }
         .background(Studio.Palette.well)
         .overlay(alignment: .bottom) { StudioDivider() }

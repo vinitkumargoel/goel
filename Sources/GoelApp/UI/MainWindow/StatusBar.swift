@@ -35,7 +35,8 @@ struct StatusBar: View {
         }
         .padding(.leading, Studio.Space.l)
         .padding(.trailing, Studio.Space.ml)
-        .frame(height: 40)
+        // A floor, not a height: larger text grows the bar instead of clipping it.
+        .frame(minHeight: 40)
         .frame(maxWidth: .infinity)
         .background(Studio.Palette.well)
         .overlay(alignment: .top) { StudioDivider() }

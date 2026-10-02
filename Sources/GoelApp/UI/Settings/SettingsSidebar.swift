@@ -120,7 +120,7 @@ private struct SettingsSidebarRow: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, Studio.Space.sm)
-            .frame(height: 30)
+            .frame(minHeight: 30)
             .background {
                 if isSelected {
                     shape.fill(Studio.Palette.card).studioElevation(.card)

@@ -47,7 +47,8 @@ struct ConfirmDialogView: View {
 
                 footer
             }
-            .frame(width: 400)
+            // Widens with the text size, so large text wraps less instead of running long.
+            .modifier(ConfirmDialogWidth())
             .studioSurface(.sheet, radius: Studio.Radius.sheet, elevation: .floating)
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
@@ -105,6 +106,15 @@ struct ConfirmDialogView: View {
     private func confirm() {
         request.onConfirm()
         dismiss()
+    }
+}
+
+/// 400 pt at the default text size, scaled with the text-size setting.
+private struct ConfirmDialogWidth: ViewModifier {
+    @ScaledMetric(relativeTo: .body) private var width: CGFloat = 400
+
+    func body(content: Content) -> some View {
+        content.frame(width: width)
     }
 }
 
