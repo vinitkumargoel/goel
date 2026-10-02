@@ -1,0 +1,134 @@
+import SwiftUI
+import GoelCore
+
+/// The window's top row: the omnibox, then live ↓/↑ totals, the optional toolbar items, Add (⌘N),
+/// the inspector toggle and the Customize menu. Sort, Filter and Select belong to the content
+/// header now (Downloads area), so they are not here.
+struct HeaderBar: View {
+    @EnvironmentObject private var vm: AppViewModel
+    @Binding var omniboxText: String
+    var omniboxFocus: FocusState<Bool>.Binding
+    /// Off on the first-run screen, which centres its own omnibox.
+    var showsOmnibox = true
+
+    @AppStorage(ToolbarSlot.storageKey) private var slotsRaw = ""
+    @State private var showsCustomize = false
+    /// The live totals give way first when the window narrows, so the omnibox keeps its room.
+    @State private var isWide = true
+
+    private var slots: Set<ToolbarSlot> { ToolbarSlot.decode(slotsRaw) }
+
+    static let omniboxMaxWidth: CGFloat = 820
+    static let inputHeight: CGFloat = 58
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Studio.Space.ml) {
+            if showsOmnibox {
+                MainOmnibox(text: $omniboxText, isFocused: omniboxFocus)
+                    .frame(maxWidth: Self.omniboxMaxWidth)
+                    .layoutPriority(1)
+            }
+            Spacer(minLength: 0)
+            controls
+                .frame(height: Self.inputHeight)
+        }
+        .padding(.horizontal, Studio.Space.gutter)
+        .padding(.top, Studio.Space.l)
+        .padding(.bottom, Studio.Space.sm)
+        .contextMenu { HeaderCustomizeMenu(raw: $slotsRaw) }
+        .onGeometryChange(for: Bool.self) { $0.size.width >= 940 } action: { isWide = $0 }
+    }
+
+    private var controls: some View {
+        HStack(spacing: Studio.Space.s) {
+            if isWide {
+                HeaderSpeedTotals()
+                    .padding(.trailing, Studio.Space.xxs)
+            }
+            HeaderToolbarItems(slots: slots)
+            Button(L10n.t("Add"), systemImage: "plus") { vm.isAddSheetPresented = true }
+                .buttonStyle(.studio(.primary))
+                // ⌘N lives in File ▸ Add Download…; binding it here too made the shortcut ambiguous.
+                .help(ShortcutHint.help(L10n.t("Add download"), "⌘N"))
+                .accessibilityLabel(L10n.t("Add download"))
+            if slots.contains(.inspector) {
+                // ⌘I is bound once, in View ▸ Toggle Detail Panel; the palette advertises the same key.
+                StudioIconButton("sidebar.right", label: L10n.t("Toggle detail panel"),
+                                 bordered: true, isOn: vm.detailPanelVisible, shortcutHint: "⌘I") {
+                    vm.detailPanelVisible.toggle()
+                }
+                .accessibilityLabel(L10n.t("Detail panel"))
+                .accessibilityValue(vm.detailPanelVisible ? L10n.t("Shown") : L10n.t("Hidden"))
+            }
+            StudioIconButton("ellipsis", label: L10n.t("Customize Toolbar"), bordered: true) {
+                showsCustomize.toggle()
+            }
+            .popover(isPresented: $showsCustomize, arrowEdge: .bottom) {
+                HeaderCustomizePopover(raw: $slotsRaw)
+            }
+        }
+        .fixedSize()
+    }
+}
+
+/// The header's live totals, observing only the telemetry so a speed tick redraws just this.
+struct HeaderSpeedTotals: View {
+    @EnvironmentObject private var telemetry: TelemetryStore
+
+    var body: some View {
+        let speed = telemetry.displayedCombinedSpeed
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(verbatim: "↓ \(speed.down.speedString)")
+                .foregroundStyle(Studio.Palette.accent)
+            Text(verbatim: "↑ \(speed.up.speedString)")
+                .foregroundStyle(Studio.Palette.upload)
+        }
+        .studioFont(.monoSmall.weight(600))
+        .lineLimit(1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.t("Total download speed"))
+        .accessibilityValue(A11y.sentence(A11y.speed(speed.down),
+                                          L10n.t("upload %@", A11y.speed(speed.up))))
+    }
+}
+
+/// Right-click on the header: one checkable item per optional button (native menu).
+struct HeaderCustomizeMenu: View {
+    @Binding var raw: String
+
+    var body: some View {
+        Section(L10n.t("Show in Toolbar")) {
+            ForEach(HeaderCustomizePopover.customizable) { slot in
+                Toggle(slot.title, isOn: Binding(
+                    get: { ToolbarSlot.decode(raw).contains(slot) },
+                    set: { _ in raw = ToolbarSlot.toggling(slot, in: raw) }))
+            }
+        }
+        Divider()
+        Button(L10n.t("Reset Toolbar")) { raw = "" }
+    }
+}
+
+/// The ⋯ button's popover: the same choices as the right-click menu, in Studio chrome.
+struct HeaderCustomizePopover: View {
+    @Binding var raw: String
+
+    /// The omnibox always searches now, so "Search" is no longer optional.
+    static var customizable: [ToolbarSlot] { ToolbarSlot.allCases.filter { $0 != .search } }
+
+    var body: some View {
+        StudioPopover(title: L10n.t("Show in Toolbar"), width: 240) {
+            VStack(alignment: .leading, spacing: Studio.Space.s) {
+                ForEach(Self.customizable) { slot in
+                    Toggle(slot.title, isOn: Binding(
+                        get: { ToolbarSlot.decode(raw).contains(slot) },
+                        set: { _ in raw = ToolbarSlot.toggling(slot, in: raw) }))
+                        .toggleStyle(.studioCheckbox)
+                }
+                StudioDivider()
+                Button(L10n.t("Reset Toolbar")) { raw = "" }
+                    .buttonStyle(.studio(.ghost, size: .small))
+            }
+        }
+    }
+}

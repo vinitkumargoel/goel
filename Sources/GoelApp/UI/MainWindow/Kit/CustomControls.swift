@@ -1,6 +1,10 @@
 import SwiftUI
 import GoelCore
 
+/// Shared controls other areas still use: `Dropdown` (AddFlow, Settings) and `ActionMenu` (Detail).
+/// Moved unchanged from the old Views folder; the toolbar label and confirm dialog went with the
+/// old toolbar (the confirm dialog is now `ConfirmDialogView` in this folder).
+
 struct Dropdown<Value: Hashable>: View {
     enum Item {
         case option(Value, String)
@@ -209,151 +213,5 @@ private struct ActionMenuRow: View {
     private var hoverFill: Color {
         guard hovering else { return .clear }
         return item.isDestructive ? Theme.red.opacity(0.14) : Theme.accent.opacity(0.14)
-    }
-}
-
-struct ToolbarMenuLabel: View {
-    let title: String
-    let systemImage: String
-    let active: Bool
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: systemImage).scaledFont(size: Theme.TextSize.body)
-            Text(title).scaledFont(size: Theme.TextSize.body)
-            Image(systemName: "chevron.down")
-                .scaledFont(size: 9, weight: .semibold)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 28)
-        .background((active || hovering ? Color.primary.opacity(0.09) : Color.primary.opacity(0.05)),
-                    in: RoundedRectangle(cornerRadius: Theme.Radius.control))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control).stroke(Theme.hairline))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .a11yGroup(label: title,
-                   hint: L10n.t("Activate to open the %@ menu.", L10n.midSentence(title)))
-        .accessibilityAddTraits(.isButton)
-    }
-}
-
-struct ConfirmDialogView: View {
-    let request: AppViewModel.ConfirmRequest
-    let dismiss: () -> Void
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.28)
-                .ignoresSafeArea()
-                .onTapGesture(perform: dismiss)
-                .a11yDecorative()
-
-            VStack(spacing: 14) {
-                Image(systemName: request.isDestructive ? "trash.circle.fill" : "questionmark.circle.fill")
-                    .scaledFont(size: 34)
-                    .foregroundStyle(request.isDestructive ? Theme.red : Theme.accent)
-                    .a11yDecorative()
-
-                VStack(spacing: 7) {
-                    Text(request.title)
-                        .scaledFont(size: Theme.TextSize.title, weight: .semibold)
-                        .multilineTextAlignment(.center)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(request.message)
-                        .scaledFont(size: Theme.TextSize.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack(spacing: 10) {
-                    if request.isDestructive {
-                        // Return must never confirm a destructive action: a stray keypress would
-                        // throw away files. Cancel takes Return, Escape still cancels, and the
-                        // destructive button needs a deliberate click (or VoiceOver press).
-                        DialogButton(title: L10n.t("Cancel"), kind: .normal, isDefault: true, action: dismiss)
-                            .keyboardShortcut(.defaultAction)
-                        DialogButton(title: request.confirmTitle, kind: .destructive, action: confirm)
-                    } else {
-                        DialogButton(title: L10n.t("Cancel"), kind: .normal, action: dismiss)
-                            .keyboardShortcut(.cancelAction)
-                        DialogButton(title: request.confirmTitle, kind: .primary, action: confirm)
-                            .keyboardShortcut(.defaultAction)
-                    }
-                }
-                .padding(.top, 2)
-                .background {
-                    // Escape for the destructive layout, where Cancel already holds Return.
-                    if request.isDestructive {
-                        Button("", action: dismiss)
-                            .keyboardShortcut(.cancelAction)
-                            .opacity(0)
-                            .frame(width: 0, height: 0)
-                            .accessibilityHidden(true)
-                    }
-                }
-            }
-            .padding(22)
-            .frame(width: 360)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.sheet))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.sheet).stroke(Theme.hairline))
-            .shadow(radius: 30, y: 12)
-            .accessibilityElement(children: .contain)
-            .accessibilityAddTraits(.isModal)
-            .accessibilityLabel(request.title)
-        }
-    }
-
-    private func confirm() {
-        request.onConfirm()
-        dismiss()
-    }
-}
-
-private struct DialogButton: View {
-    enum Kind { case normal, primary, destructive }
-    let title: String
-    let kind: Kind
-    /// Draws the Return-key ring, so the keyboard default is visible when it is not the tinted button.
-    var isDefault: Bool = false
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .scaledFont(size: Theme.TextSize.body, weight: kind == .normal ? .regular : .semibold)
-                .foregroundStyle(foreground)
-                .padding(.horizontal, 18)
-                .frame(height: 30)
-                .background(background, in: RoundedRectangle(cornerRadius: Theme.Radius.control))
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control)
-                    .stroke(isDefault ? Theme.accent : (kind == .normal ? Theme.hairline : .clear),
-                            lineWidth: isDefault ? 2 : 1))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityLabel(kind == .destructive ? L10n.t("%@, destructive", title) : title)
-        .accessibilityAddTraits(.isButton)
-    }
-
-    /// Derived from the fill, not hard-coded white: accent and red are light in three of the four themes, where white measured 2.0–2.8:1.
-    private var foreground: Color {
-        switch kind {
-        case .normal: return .primary
-        case .primary: return Theme.onAccent
-        case .destructive: return Theme.onRed
-        }
-    }
-
-    private var background: Color {
-        switch kind {
-        case .normal: return Color.primary.opacity(hovering ? 0.10 : 0.05)
-        case .primary: return hovering ? Theme.accentPress : Theme.accent
-        case .destructive: return Theme.red.opacity(hovering ? 0.85 : 1)
-        }
     }
 }
