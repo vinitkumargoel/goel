@@ -98,6 +98,26 @@ Fixes from a full-codebase audit, grouped by area.
   A local or vendored ffmpeg needs a SHA-256 digest. A tag-only, approval-gated
   `release.yml` skeleton builds, signs and notarizes release artifacts once secrets exist.
 
+### Changed
+
+- **The Mac app has a new look: Studio.** Every window was redrawn from scratch — the main
+  window (an icon rail, an omnibox for links, magnets and search, and a Board of lanes —
+  Downloading, Up next, Needs you, Done — beside the List), the detail sheet, the add flow,
+  Settings, the SFTP browser, history, the menu bar extra, onboarding and the smaller
+  windows. Downloads are cards with file-type artwork and progress arcs; the detail panel
+  floats as a sheet beside the board, which reflows to make room for it; long file names
+  wrap at their dots, dashes and underscores instead of mid-word. Keyboard shortcuts,
+  menus, VoiceOver labels and every feature are unchanged.
+- **Appearance is now System, Light or Dark.** It replaces the Frost Light, Frost Dark,
+  Dracula and Nord palettes (Settings → General, or ⇧⌘T to flip it). Your stored choice
+  migrates on first launch — Frost Light becomes Light; Frost Dark, Dracula and Nord become
+  Dark — and fresh installs follow the Mac. Increase Contrast is honoured in both. The web
+  portal keeps its own four themes (Settings → Web Access).
+- **Bundled fonts.** The app ships Bricolage Grotesque (display), Figtree (interface) and
+  Spline Sans Mono (speeds, sizes and other figures) as variable fonts under the SIL Open
+  Font License; the licences are in the app bundle. All text still follows the system text
+  size, and the system font stands in if a font fails to load.
+
 ### Added
 
 - **`goel <url>` downloads and waits — the CLI is now a curl replacement.** Give `goel` a
