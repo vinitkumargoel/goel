@@ -270,6 +270,8 @@ struct GoelCommands: Commands {
                 .disabled(!s.hasSelection)
             Button(L10n.t("Select Completed")) { viewModel.selectCompleted() }
                 .disabled(!s.hasCompletedVisible)
+            Button(L10n.t("Select Failed")) { viewModel.selectFailed() }
+                .disabled(!s.hasFailedVisible)
         }
         // Replacing, not appending: the standard group already has Edit ▸ Find ▸ Find… ⌘F, and two
         // items on one key equivalent is a coin toss. The queue's own search is the only find here.
@@ -280,10 +282,13 @@ struct GoelCommands: Commands {
         // Nothing here prints, and File ▸ Print… would otherwise share ⌘P with Pause Selected.
         CommandGroup(replacing: .printItem) {}
         CommandMenu(L10n.t("Downloads")) {
-            Button(L10n.t("Start All")) { viewModel.resumeAll() }
+            Button(L10n.t("Resume All")) { viewModel.resumeAll() }
                 .disabled(!s.hasResumable)
             Button(L10n.t("Pause All")) { viewModel.pauseAll() }
                 .disabled(!s.hasPausable)
+            Button(L10n.t("Retry Failed")) { viewModel.retryAllFailed() }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(!s.hasFailed)
             // Off the list only; the files stay, and the toast offers Undo like Remove from List.
             Button(L10n.t("Clear Completed")) { viewModel.clearCompleted() }
                 .disabled(!s.hasCompleted)
@@ -344,6 +349,9 @@ struct GoelCommands: Commands {
         Button(L10n.t("Resume Selected")) { viewModel.resumeSelected() }
             .keyboardShortcut("p", modifiers: [.command, .option])
             .disabled(!s.selectionCanResume)
+        Button(L10n.t("Retry Selected")) { viewModel.retrySelected() }
+            .keyboardShortcut("r", modifiers: [.command, .option])
+            .disabled(!s.selectionHasFailed)
         Button(L10n.t("Show in Finder")) {
             if let task = viewModel.selectedTasks.first(where: { $0.status.hasData }) {
                 viewModel.revealInFinder(task)

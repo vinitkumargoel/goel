@@ -106,11 +106,15 @@ struct StudioRailSeparator: View {
 /// A board lane's header (`.lane-h`): display title, count bubble, trailing note.
 ///
 ///     StudioLaneHeader(title: "Downloading", count: 4, detail: "↓ 43 MB/s", detailIsMono: true)
+///     StudioLaneHeader(title: "Needs you", count: 2, actionTitle: "Retry All") { retryAll() }
 struct StudioLaneHeader: View {
     let title: String
     var count: Int?
     var detail: String?
     var detailIsMono = false
+    /// An optional trailing button, e.g. "Retry All" on the "Needs you" lane.
+    var actionTitle: String?
+    var action: (() -> Void)?
 
     var body: some View {
         HStack(spacing: Studio.Space.s) {
@@ -134,10 +138,14 @@ struct StudioLaneHeader: View {
                     .foregroundStyle(Studio.Palette.ink3)
                     .lineLimit(1)
             }
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.studio(.ghost, size: .small))
+            }
         }
         .padding(.horizontal, Studio.Space.xxs)
         .padding(.bottom, 2)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: actionTitle == nil ? .combine : .contain)
     }
 }
 

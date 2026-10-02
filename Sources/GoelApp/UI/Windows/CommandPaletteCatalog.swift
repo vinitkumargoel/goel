@@ -43,7 +43,7 @@ struct CommandPaletteCatalog {
         if selected.contains(where: { $0.status.isFailed }) {
             list.append(PaletteCommand(id: "sel.retry", title: L10n.t("Retry Selected (%d)", count),
                                        subtitle: L10n.t("Try the failed ones again"),
-                                       symbol: "arrow.clockwise", group: .selection, shortcut: "⌘R",
+                                       symbol: "arrow.clockwise", group: .selection, shortcut: "⌥⌘R",
                                        keywords: ["retry", "again", "failed"]) { vm.retrySelected() })
         }
         if let first = selected.first(where: { $0.status.hasData }) {

@@ -30,12 +30,13 @@ enum DownloadsHeaderMenus {
 
     static func selectNodes(_ vm: AppViewModel) -> [DownloadMenuNode] {
         [
-            .button(L10n.t("Select all"), symbol: "checkmark.circle") { vm.selectAll() },
-            .button(L10n.t("Select none"), symbol: "circle") { vm.selectNone() },
-            .button(L10n.t("Select completed"), symbol: "checkmark.seal") { vm.selectCompleted() },
+            .button(L10n.t("Select All"), symbol: "checkmark.circle") { vm.selectAll() },
+            .button(L10n.t("Select None"), symbol: "circle") { vm.selectNone() },
+            .button(L10n.t("Select Completed"), symbol: "checkmark.seal") { vm.selectCompleted() },
+            .button(L10n.t("Select Failed"), symbol: "exclamationmark.triangle") { vm.selectFailed() },
             .divider,
             // Off the list, not off the disk; the toast that follows offers Undo.
-            .button(L10n.t("Clear completed"), symbol: "xmark.bin") { vm.clearCompleted() },
+            .button(L10n.t("Clear Completed"), symbol: "xmark.bin") { vm.clearCompleted() },
         ]
     }
 

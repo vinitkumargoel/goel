@@ -59,7 +59,8 @@ struct DownloadBoardView: View {
     private func laneView(_ lane: BoardLane) -> some View {
         LazyVStack(alignment: .leading, spacing: Studio.Space.cardGap) {
             StudioLaneHeader(title: lane.title, count: lane.tasks.count,
-                             detail: detail(for: lane), detailIsMono: lane.kind == .downloading || lane.kind == nil)
+                             detail: detail(for: lane), detailIsMono: lane.kind == .downloading || lane.kind == nil,
+                             actionTitle: lane.retryAllTitle, action: lane.retryAllTitle == nil ? nil : { vm.retryAllFailed() })
             ForEach(lane.tasks) { task in
                 HoverTracking(content: card(task))
                     .id(task.id)

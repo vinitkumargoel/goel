@@ -68,6 +68,10 @@ struct BoardLane: Identifiable, Equatable {
     let tasks: [DownloadTask]
     /// The group's total size, shown in a Group by lane's header.
     var totalBytes: Int64 { tasks.reduce(0) { $0 + ($1.totalBytes ?? 0) } }
+    /// "Retry All" on a "Needs you" lane that holds a failure; nil elsewhere.
+    var retryAllTitle: String? {
+        kind == .needsYou && tasks.contains { $0.status.isFailed } ? L10n.t("Retry All") : nil
+    }
 }
 
 enum BoardLanes {

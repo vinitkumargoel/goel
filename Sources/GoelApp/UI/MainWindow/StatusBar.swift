@@ -15,6 +15,7 @@ struct StatusBar: View {
             queueFinish
                 .layoutPriority(1)
             if !activeTransfers.isEmpty { StatusTransfersButton(count: activeTransfers.count) }
+            StatusFailedButton()
             selectionEcho
             Spacer(minLength: Studio.Space.s)
             StatusSpeedLimitChip()

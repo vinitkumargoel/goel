@@ -67,6 +67,17 @@ final class CommandStateTests: XCTestCase {
         XCTAssertFalse(snap([task(.downloading), task(.failed(.diskFull(needed: 100, available: 10)))]).hasCompleted)
     }
 
+    func testRetryCommandsLookForFailures() {
+        let none = snap([task(.downloading), task(.completed)])
+        XCTAssertFalse(none.hasFailed)
+        XCTAssertFalse(none.selectionHasFailed)
+        let failed = task(.failed(.diskFull(needed: 100, available: 10)))
+        XCTAssertTrue(snap([failed]).hasFailed)
+        let sel = CommandState.Snapshot.make(tasks: [failed, task(.paused)], visible: [failed], selection: [failed.id],
+                                             listVisible: true, autoShutdown: .none)
+        XCTAssertTrue(sel.selectionHasFailed)
+    }
+
     /// The toolbar and the menu bar read this one value, so they can't offer opposite actions.
     func testPauseAllModeIsSharedAndResumesOnlyWhenNothingRuns() {
         XCTAssertTrue(snap([task(.seeding)]).pauseAllPauses)
