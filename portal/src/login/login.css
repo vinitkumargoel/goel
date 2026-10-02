@@ -1,29 +1,270 @@
-*{box-sizing:border-box;margin:0;padding:0}
-body{min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg-app);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-.card{width:380px;max-width:100%;background:var(--bg-window);border:1px solid var(--border-strong);border-radius:18px;box-shadow:0 30px 70px rgba(0,0,0,.5);padding:34px 30px 26px}
-.brand{display:flex;flex-direction:column;align-items:center;gap:12px;margin-bottom:22px}
-.mk{width:60px;height:60px;border-radius:15px;box-shadow:0 10px 24px rgba(0,0,0,.35);overflow:hidden}
-.mk svg{width:100%;height:100%;display:block}
-h1{font-size:21px;font-weight:700}.sub{font-size:13px;color:var(--text-dim);margin-top:-6px}
-label{display:block;font-size:12px;font-weight:600;color:var(--text-dim);margin:0 0 6px}
-.fld{margin-bottom:14px}
-input{width:100%;height:42px;background:var(--bg-input);border:1px solid var(--border);border-radius:10px;padding:0 12px;font-size:14px;color:var(--text)}
-input:focus{border-color:var(--accent)}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-button{width:100%;height:42px;border:0;border-radius:10px;background:var(--accent);color:var(--on-accent);font-size:14px;font-weight:600;cursor:pointer;margin-top:6px}
-button:hover{background:var(--accent-press)}
-button:disabled{opacity:.6;cursor:progress}button:disabled:hover{background:var(--accent)}
-.err{background:var(--red-soft);color:var(--red);font-size:12.5px;border-radius:9px;padding:9px 11px;margin-bottom:14px;text-align:center}
-.foot{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);text-align:center;font-size:11.5px;color:var(--text-faint);line-height:1.6}
-.warn{color:var(--orange)}
-.pw{position:relative}
-.pw input{padding-right:46px}
-.pw input::-ms-reveal{display:none}
-button.eye{position:absolute;top:4px;right:4px;width:34px;height:34px;margin:0;padding:0;display:grid;place-items:center;border-radius:8px;background:transparent;color:var(--text-dim)}
-button.eye:hover{background:var(--bg-input);color:var(--text)}
-.eye svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.eye .i-hide,.eye[aria-pressed="true"] .i-show{display:none}
-.eye[aria-pressed="true"] .i-hide{display:block}
-.caps{margin-top:6px;font-size:12px;color:var(--orange)}
-.secure{color:var(--green)}
-[hidden]{display:none!important}
+/*
+ * The sign-in page, in Studio. codegen.mjs prepends the @font-face rules and styles/themes.css,
+ * so every colour here is a token and the server's data-theme (Studio or legacy) picks the palette.
+ * The markup is RemotePortalPage.loginPage: form.card > .brand, .err, .fld ×2, submit, .foot.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  /* minmax(0, …) so the card's 100% resolves against the viewport, not its own content. */
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  padding: 24px 16px;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% -10%, var(--accent-soft), transparent 70%),
+    var(--canvas);
+  color: var(--ink);
+  font: 400 14px/1.45 var(--f-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+.card {
+  width: min(400px, 100%);
+  background: var(--sheet);
+  border: 1px solid var(--card-edge);
+  border-radius: 22px;
+  box-shadow: var(--sh-float);
+  padding: 32px 28px 24px;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+/* The Studio logo tile: the server's SVG mark is replaced by the "g" with its degree ring. */
+.mk {
+  width: 64px;
+  height: 64px;
+  border-radius: 19px;
+  background: linear-gradient(150deg, var(--accent), var(--accent-2));
+  color: var(--accent-ink);
+  box-shadow: var(--sh-card);
+  display: grid;
+  place-items: center;
+  position: relative;
+  margin-bottom: 4px;
+}
+
+.mk svg {
+  display: none;
+}
+
+.mk::before {
+  content: 'g';
+  font: 800 38px/1 var(--f-display);
+  margin-top: -6px;
+}
+
+.mk::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 3px solid var(--accent-ink);
+  top: 10px;
+  right: 10px;
+}
+
+h1 {
+  font: 700 26px/1.1 var(--f-display);
+  letter-spacing: -0.03em;
+}
+
+.sub {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.fld {
+  margin-bottom: 14px;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink-2);
+  margin: 0 0 6px;
+}
+
+input {
+  width: 100%;
+  height: 44px;
+  background: var(--field);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 16px;
+  color: var(--ink);
+  outline: none;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+
+input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+input:focus-visible {
+  outline: none;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+button[type='submit'] {
+  width: 100%;
+  height: 46px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 15px;
+  font-weight: 650;
+  box-shadow: var(--sh-1);
+  transition: background-color 0.12s;
+}
+
+button[type='submit']:hover {
+  background: var(--accent-2);
+}
+
+button[type='submit']:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+button[type='submit']:disabled:hover {
+  background: var(--accent);
+}
+
+.err {
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.err:empty {
+  display: none;
+}
+
+.pw {
+  position: relative;
+}
+
+.pw input {
+  padding-right: 50px;
+}
+
+.pw input::-ms-reveal {
+  display: none;
+}
+
+button.eye {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--ink-3);
+}
+
+button.eye:hover {
+  background: var(--seg-bg);
+  color: var(--ink);
+}
+
+.eye svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eye .i-hide,
+.eye[aria-pressed='true'] .i-show {
+  display: none;
+}
+
+.eye[aria-pressed='true'] .i-hide {
+  display: block;
+}
+
+.caps {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.foot {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.6;
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.secure {
+  color: var(--good);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

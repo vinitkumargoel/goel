@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ConfirmRequest } from '../components/ConfirmDialog'
+import type { ConfirmRequest } from '../components/dialogs/ConfirmDialog'
 import { api, failureMessage, removeOnUnload } from '../lib/api'
 import { BULK_CONCURRENCY, runPool, summariseBulk } from '../lib/bulk'
 import { fmtSize } from '../lib/format'
@@ -165,9 +165,12 @@ export function useTaskActions({ refresh, toast, confirm, currentIds, lookup }: 
         })
         return
       }
+      // Name what is about to be deleted, with its size when the server knows it.
+      const task = lookup?.(id)
       confirm({
         title: t('confirm.removeDataTitle'),
         body: t('library.confirmRemoveWithData'),
+        items: task ? [{ name: task.name, bytes: task.totalBytes ?? task.doneBytes, kind: task.kind }] : undefined,
         confirmLabel: t('menu.removeWithData'),
         onConfirm: () => void remove([id], true),
       })

@@ -1,0 +1,28 @@
+/*
+ * The Studio faces, self-hosted: the portal is served offline by the app, and the CSP allows
+ * fonts from 'self' only. Subset to Latin by scripts/subset-fonts.sh (SIL OFL, see src/fonts/).
+ * codegen.mjs copies these rules into the sign-in page's stylesheet too.
+ */
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url('../fonts/bricolage-grotesque.woff2') format('woff2');
+  font-weight: 500 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Figtree';
+  src: url('../fonts/figtree.woff2') format('woff2');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Spline Sans Mono';
+  src: url('../fonts/spline-sans-mono.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}

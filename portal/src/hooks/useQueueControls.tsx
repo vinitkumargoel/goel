@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { QueueDialog, type QueueEdit } from '../components/QueueDialogs'
+import { QueueDialog, type QueueEdit } from '../components/dialogs/QueueDialogs'
 import { api, failureMessage } from '../lib/api'
 import { fmtSpeed } from '../lib/format'
 import type { QueuePlacement, TaskRow, TrackerEdit } from '../lib/types'

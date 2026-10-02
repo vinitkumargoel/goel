@@ -1,3 +1,5 @@
+// First: in dev with `?fixtures` it swaps in a fake daemon before anything reads the boot values.
+import './dev/install'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { I18nextProvider } from 'react-i18next'
@@ -5,11 +7,14 @@ import { App } from './App'
 import i18n from './i18n'
 import { registerServiceWorker, watchThemeColor } from './lib/pwa'
 import { applyTheme, initialTheme } from './lib/theme'
+import './styles/fonts.css'
 import './styles/themes.css'
-import './styles/portal.css'
-import './styles/features.css'
-import './styles/workflow.css'
-import './styles/controls.css'
+import './styles/base.css'
+import './styles/shell.css'
+import './styles/library.css'
+import './styles/detail.css'
+import './styles/dialogs.css'
+import './styles/pages.css'
 
 /** The QR deep link carries the API token in the URL; the server already exchanged it for a cookie, so drop it before it reaches a bookmark or screenshot. */
 try {

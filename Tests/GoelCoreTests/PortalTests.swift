@@ -276,6 +276,19 @@ final class PortalTests: XCTestCase {
         }
     }
 
+    /// The Studio faces ship in the bundle and must be servable same-origin: the CSP allows no other source.
+    func testPortalFontsAreServedFromAssetsAndAllowedByTheCSP() {
+        XCTAssertFalse(PortalBundle.fonts.isEmpty, "the portal's fonts must be in the bundle")
+        for name in PortalBundle.fonts.keys {
+            XCTAssertTrue(PortalBundle.css.contains(name), "\(name) must be referenced by the portal CSS")
+            XCTAssertTrue(PortalBundle.loginCSS.contains(name), "\(name) must be referenced by the sign-in CSS")
+            let head = String(decoding: RemoteRouter.staticAsset(path: "/assets/\(name)") ?? Data(), as: UTF8.self)
+            XCTAssertTrue(head.hasPrefix("HTTP/1.1 200"), "\(name) must be servable")
+            XCTAssertTrue(head.contains("Content-Type: font/woff2"))
+            XCTAssertTrue(head.contains("font-src 'self'"), "fonts must be allowed same-origin")
+        }
+    }
+
     /// The bundle is content-addressed: an unknown name must 404 rather than reach the filesystem.
     func testUnknownAssetIsNotFoundAndNeverTouchesTheFilesystem() {
         for path in ["/assets/nope.js", "/assets/../../etc/passwd", "/assets/"] {

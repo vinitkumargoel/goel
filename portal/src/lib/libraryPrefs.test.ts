@@ -10,8 +10,19 @@ describe('libraryPrefs', () => {
     expect(loadLibraryPrefs()).toEqual(DEFAULT_LIBRARY_PREFS)
     saveLibraryPref('group', 'host')
     saveLibraryPref('density', 'compact')
-    saveLibraryPref('layout', 'cards')
-    expect(loadLibraryPrefs()).toEqual({ group: 'host', density: 'compact', layout: 'cards' })
+    saveLibraryPref('layout', 'table')
+    expect(loadLibraryPrefs()).toEqual({ group: 'host', density: 'compact', layout: 'table' })
+  })
+
+  it('opens on the Board by default', () => {
+    expect(loadLibraryPrefs().layout).toBe('board')
+  })
+
+  it('reads the pre-Studio Cards view as the Board', () => {
+    localStorage.setItem('goel.library.view', 'cards')
+    expect(loadLibraryPrefs().layout).toBe('board')
+    localStorage.setItem('goel.library.view', 'table')
+    expect(loadLibraryPrefs().layout).toBe('table')
   })
 
   it('ignores values it does not know', () => {

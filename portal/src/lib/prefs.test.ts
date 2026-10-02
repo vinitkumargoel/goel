@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadPanelAutoHide, panelVisible, savePanelAutoHide } from './prefs'
+import { loadPanelAutoHide, loadRailExpanded, panelVisible, savePanelAutoHide, saveRailExpanded } from './prefs'
 
 /** The runtime's own `localStorage` is not reliably present under jsdom. */
 function memoryStorage(): Storage {
@@ -52,5 +52,27 @@ describe('panelVisible', () => {
   it('never opens a panel the user closed', () => {
     expect(panelVisible(false, false, true)).toBe(false)
     expect(panelVisible(false, true, true)).toBe(false)
+  })
+})
+
+describe('rail preference', () => {
+  beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()))
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('starts slim, then remembers being pinned open', () => {
+    expect(loadRailExpanded()).toBe(false)
+    saveRailExpanded(true)
+    expect(loadRailExpanded()).toBe(true)
+    saveRailExpanded(false)
+    expect(loadRailExpanded()).toBe(false)
+  })
+
+  it('falls back to slim when storage throws', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+    })
+    expect(loadRailExpanded()).toBe(false)
   })
 })

@@ -1,5 +1,5 @@
-import { eligibleFor } from '../components/BulkBar'
-import type { View } from '../components/Sidebar'
+import { eligibleFor } from '../lib/bulk'
+import type { RouteView as View } from '../lib/route'
 import type { Filter } from '../lib/filters'
 import type { SelectionAction } from '../lib/selection'
 import { filterForShortcut, type ShortcutId } from '../lib/shortcuts'

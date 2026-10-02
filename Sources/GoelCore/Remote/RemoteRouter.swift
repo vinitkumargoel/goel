@@ -236,9 +236,17 @@ public struct RemoteRouter: Sendable {
     static func staticAsset(path: String) -> Data? {
         guard path.hasPrefix(assetPrefix) else { return pwaAsset(path: path) }
         let name = String(path.dropFirst(assetPrefix.count))
-        guard let asset = PortalBundle.assets[name] else { return notFound() }
-        return response(status: "200 OK", type: asset.mime, body: Data(asset.body.utf8),
-                        extraHeaders: ["Cache-Control": "public, max-age=31536000, immutable"])
+        let immutable = ["Cache-Control": "public, max-age=31536000, immutable"]
+        if let asset = PortalBundle.assets[name] {
+            return response(status: "200 OK", type: asset.mime, body: Data(asset.body.utf8),
+                            extraHeaders: immutable)
+        }
+        // The portal's self-hosted fonts: content-hashed names, base64 in the generated bundle.
+        if let b64 = PortalBundle.fonts[name],
+           let body = Data(base64Encoded: b64, options: .ignoreUnknownCharacters) {
+            return response(status: "200 OK", type: "font/woff2", body: body, extraHeaders: immutable)
+        }
+        return notFound()
     }
 
     /// Auth order: session cookie, then open portal, then constant-time bearer/query token.
@@ -366,7 +374,7 @@ public struct RemoteRouter: Sendable {
         }
         // CSP: the portal renders download names, tracker hosts and errors that came from off-machine.
         head += "Content-Security-Policy: default-src 'none'; script-src 'self'; "
-        head += "style-src 'self'; img-src 'self' data:; media-src 'self'; "
+        head += "style-src 'self'; img-src 'self' data:; media-src 'self'; font-src 'self'; "
         head += "connect-src 'self'; manifest-src 'self'; worker-src 'self'; "
         head += "form-action 'self'; base-uri 'none'\r\n"
         head += "X-Content-Type-Options: nosniff\r\n"

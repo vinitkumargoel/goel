@@ -12,7 +12,7 @@ export interface BootConfig {
 }
 
 const FALLBACK: BootConfig = {
-  theme: 'frost-dark',
+  theme: 'auto',
   username: 'admin',
   readOnly: false,
   requireAuth: true,
