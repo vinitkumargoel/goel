@@ -78,7 +78,7 @@ struct DownloadSpeedCell: View {
     }
 }
 
-/// A non-sorting header label for an extra column.
+/// A non-sorting header label for an extra column (see ``ListColumn/sortKey``).
 struct ExtraColumnHeader: View {
     let column: ListColumn
     let width: CGFloat
@@ -165,7 +165,11 @@ struct DownloadTableHeader: View {
             if columns.showsStatus { sortable(.status, width: columns.status, alignment: .leading) }
             if columns.showsAdded { sortable(.added, width: columns.added, alignment: .trailing) }
             ForEach(columns.extras) { extra in
-                ExtraColumnHeader(column: extra, width: columns.width(of: extra))
+                if let key = extra.sortKey {
+                    sortable(key, width: columns.width(of: extra), alignment: extra.cellAlignment, title: extra.title)
+                } else {
+                    ExtraColumnHeader(column: extra, width: columns.width(of: extra))
+                }
             }
             if columns.showsSpeed {
                 // One column for both directions; it sorts by download speed. The Sort menu can
@@ -173,6 +177,11 @@ struct DownloadTableHeader: View {
                 sortable(.downloadSpeed, width: columns.speed, alignment: .trailing,
                          title: L10n.t("Speed"), alsoSortedBy: [.uploadSpeed])
             }
+            // Over the rows' action buttons; they need no heading.
+            Color.clear
+                .frame(width: columns.action, height: 1)
+                .padding(.horizontal, Studio.Space.xs)
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, Studio.Space.m)
         .frame(height: 32)

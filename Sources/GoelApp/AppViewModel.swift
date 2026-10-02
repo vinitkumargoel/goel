@@ -39,6 +39,11 @@ enum SortKey: String, CaseIterable, Identifiable {
     case added = "Added"
     case downloadSpeed = "Download speed"
     case uploadSpeed = "Upload speed"
+    case eta = "ETA"
+    case progress = "Progress"
+    case remaining = "Remaining"
+    case ratio = "Ratio"
+    case peers = "Peers"
     var id: String { rawValue }
 }
 
@@ -66,7 +71,9 @@ enum DetailTab: String, CaseIterable, Identifiable {
 @MainActor
 final class AppViewModel: ObservableObject {
 
-    @Published var tasks: [DownloadTask] = []
+    @Published var tasks: [DownloadTask] = [] { didSet { tasksRevision &+= 1 } }
+    /// Bumped on every change to `tasks`, so derived values can be memoised against it.
+    private(set) var tasksRevision = 0
     @Published private(set) var settings = AppSettings() {
         didSet {
             // Must land before the `@Published` change publishes, or the redraw reads the old language.
@@ -114,8 +121,21 @@ final class AppViewModel: ObservableObject {
     /// without moving the other.
     @Published var selectionAnchor: DownloadTask.ID?
 
-    @Published var filter: SidebarFilter = .all { didSet { recomputeVisible() } }
-    @Published var search: String = "" { didSet { recomputeVisible() } }
+    /// Status, type and tag, ANDed. Narrowing drops hidden rows from the selection, so the
+    /// detail panel never shows a download the list no longer does.
+    @Published var filters = DownloadFilters() {
+        didSet {
+            guard filters != oldValue else { return }
+            recomputeVisible()
+            pruneSelectionToVisible()
+        }
+    }
+    @Published var search: String = "" {
+        didSet {
+            recomputeVisible()
+            pruneSelectionToVisible()
+        }
+    }
     @Published var sortKey: SortKey = .status { didSet { recomputeVisible() } }
     @Published var sortAscending: Bool = true { didSet { recomputeVisible() } }
     /// Remembered across launches: grouping is a way of working, not a momentary view.
@@ -127,6 +147,9 @@ final class AppViewModel: ObservableObject {
     }
     /// `visibleTasks` split under the Group by headers; empty when not grouping.
     @Published private(set) var visibleSections: [ListSection] = []
+    /// The board's lanes for `visibleTasks`, rebuilt with them rather than in every board body
+    /// (which re-runs on each speed tick). Cards still read live speeds from `TelemetryStore`.
+    @Published private(set) var boardLanes: [BoardLane] = []
     /// Each row's 1-based place in the queue — the "#" column and "Queued · #3".
     @Published private(set) var queueRanks: [DownloadTask.ID: Int] = [:]
     /// The rows a queue drag is carrying, set when the grip starts the drag. Drop targets read it
@@ -547,7 +570,7 @@ final class AppViewModel: ObservableObject {
     func recomputeVisible() {
         let sorted = ListPresentation.visible(
             tasks: tasks,
-            filter: filter,
+            filters: filters,
             search: search,
             sortKey: sortKey,
             ascending: sortAscending
@@ -562,6 +585,8 @@ final class AppViewModel: ObservableObject {
         if sections != visibleSections { visibleSections = sections }
         let ranks = QueueOrder.ranks(tasks)
         if ranks != queueRanks { queueRanks = ranks }
+        let lanes = BoardLanes.make(visible: next, sections: sections, grouping: grouping, ranks: ranks)
+        if lanes != boardLanes { boardLanes = lanes }
         refreshCommandState()
     }
 
@@ -572,14 +597,43 @@ final class AppViewModel: ObservableObject {
     }
 
 
+    /// One filter on its own across every task: the rail's counts and badges.
     func count(for filter: SidebarFilter) -> Int {
         ListPresentation.count(tasks: tasks, filter: filter)
+    }
+
+    /// How many rows picking `filter` would show with the other axes kept: the header chips.
+    func facetCount(for filter: SidebarFilter) -> Int {
+        ListPresentation.count(tasks: tasks, filters: filters.setting(filter))
+    }
+
+    /// Rows every active filter lets through, before the search: an active filter chip's count.
+    var visibleCountIgnoringSearch: Int { ListPresentation.count(tasks: tasks, filters: filters) }
+
+    /// The single-filter view of `filters`, for callers that pick one filter at a time (the
+    /// rail, ⌘1…⌘9, the palette, the menu bar). Setting `.all` shows everything (every axis
+    /// cleared); any other value changes only its own axis.
+    var filter: SidebarFilter {
+        get { filters.primary }
+        set { filters = newValue == .all ? DownloadFilters() : filters.setting(newValue) }
+    }
+
+    func pruneSelectionToVisible() {
+        let kept = SelectionRange.pruned(selection: selection, primary: primarySelection,
+                                         anchor: selectionAnchor, visible: visibleTasks.map(\.id))
+        if kept.selection != selection { selection = kept.selection }
+        if kept.primary != primarySelection { primarySelection = kept.primary }
+        if kept.anchor != selectionAnchor { selectionAnchor = kept.anchor }
     }
 
     var selectedTask: DownloadTask? {
         guard let primarySelection else { return nil }
         return tasks.first { $0.id == primarySelection }
     }
+
+    /// The whole queue at the displayed speeds; shared, so the status bar and the board's queue
+    /// card don't each fold every task on every speed tick.
+    var queueOverview: QueueOverview { telemetry.queueOverview(for: tasks, revision: tasksRevision) }
 
     var totalDownloadSpeed: Double { tasks.reduce(0) { $0 + $1.downloadSpeed } }
     var totalUploadSpeed: Double { tasks.reduce(0) { $0 + $1.uploadSpeed } }

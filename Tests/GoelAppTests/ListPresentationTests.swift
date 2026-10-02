@@ -89,6 +89,48 @@ final class ListPresentationTests: XCTestCase {
         XCTAssertEqual(sorted.last?.name, "ubuntu.iso")
     }
 
+    private func moving(_ name: String, total: Int64?, done: Int64, speed: Double,
+                        status: DownloadStatus = .downloading) -> DownloadTask {
+        DownloadTask(source: .url(URL(string: "https://example.test/\(name)")!), name: name,
+                     saveDirectory: "/tmp", totalBytes: total, bytesDownloaded: done,
+                     downloadSpeed: speed, status: status)
+    }
+
+    /// ETA, Progress and Remaining sort the list; rows without an ETA or a size sort as "longest".
+    func testSortsByEtaProgressAndRemaining() {
+        let soon = moving("soon", total: 1_000, done: 900, speed: 100)      // 1 s, 90 %, 100 B
+        let later = moving("later", total: 10_000, done: 5_000, speed: 100) // 50 s, 50 %, 5000 B
+        let stalled = moving("stalled", total: 1_000, done: 200, speed: 0, status: .paused) // no ETA
+        let unknown = moving("unknown", total: nil, done: 0, speed: 0, status: .queued)
+        let list = [stalled, later, unknown, soon]
+        func order(_ key: SortKey, ascending: Bool = true) -> [String] {
+            ListPresentation.visible(tasks: list, filter: .all, search: "", sortKey: key, ascending: ascending)
+                .map(\.name)
+        }
+        XCTAssertEqual(Array(order(.eta).prefix(2)), ["soon", "later"])
+        XCTAssertEqual(order(.progress, ascending: false).first, "soon")
+        XCTAssertEqual(order(.progress).first, "unknown")
+        XCTAssertEqual(order(.remaining), ["soon", "stalled", "later", "unknown"])
+    }
+
+    func testSortsByRatioAndPeersWithNonTorrentsLast() {
+        var seeded = moving("seeded", total: 1_000, done: 1_000, speed: 0, status: .seeding)
+        seeded.bytesUploaded = 3_000
+        var torrent = DownloadTask(source: .magnet("magnet:?xt=urn:btih:abc"), name: "swarm",
+                                   saveDirectory: "/tmp", totalBytes: 1_000, bytesDownloaded: 1_000,
+                                   status: .seeding)
+        torrent.bytesUploaded = 500
+        torrent.connectionCount = 12
+        torrent.seedCount = 4
+        let http = moving("plain", total: 1_000, done: 1_000, speed: 0, status: .completed)
+        let ratio = ListPresentation.visible(tasks: [http, torrent, seeded], filter: .all, search: "",
+                                             sortKey: .ratio, ascending: false).map(\.name)
+        XCTAssertEqual(ratio.first, "swarm", "a plain download's ratio means nothing, so it sorts below")
+        let peers = ListPresentation.visible(tasks: [http, torrent], filter: .all, search: "",
+                                             sortKey: .peers, ascending: false).map(\.name)
+        XCTAssertEqual(peers, ["swarm", "plain"])
+    }
+
     func testEverySortKeyProducesAStableOrdering() {
         for key in SortKey.allCases {
             let ascending = ListPresentation.visible(

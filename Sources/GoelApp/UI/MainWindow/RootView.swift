@@ -74,6 +74,7 @@ struct RootView: View {
             HeaderBar(omniboxText: $omniboxText, omniboxFocus: $omniboxFocused,
                       showsOmnibox: !showsFirstRun)
             MainContentArea(omniboxText: $omniboxText, omniboxFocus: $omniboxFocused)
+                .environment(\.railShowsStatusFilters, railExpanded)
         }
         .frame(minWidth: WindowLayout.minimumListWidth, maxWidth: .infinity, maxHeight: .infinity)
         // A docked panel wider than a narrow window must not spill over the rail.

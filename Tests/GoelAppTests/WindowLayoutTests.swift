@@ -36,6 +36,7 @@ final class DownloadColumnsLayoutTests: XCTestCase {
         let fixed: (DownloadColumns.Layout) -> CGFloat = { layout in
             var width = self.base.index + self.base.status + 2 * DownloadColumns.cellPadding
                 + DownloadColumns.rowPadding + DownloadColumns.cellPadding
+                + self.base.action + DownloadColumns.cellPadding
             if layout != .compact {
                 width += self.base.size + self.base.speed + 2 * DownloadColumns.cellPadding
             }
@@ -62,7 +63,7 @@ final class DownloadColumnsLayoutTests: XCTestCase {
 
     func testLargerTextNeedsAWiderListForTheSameSet() {
         let scaled = DownloadColumns(scale: 1.3)
-        let width: CGFloat = 740
+        let width: CGFloat = 820
         XCTAssertEqual(DownloadColumns.layout(for: width, columns: base), .full)
         XCTAssertNotEqual(DownloadColumns.layout(for: width, columns: scaled), .full)
     }

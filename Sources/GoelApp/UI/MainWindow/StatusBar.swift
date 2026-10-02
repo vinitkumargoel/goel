@@ -5,6 +5,7 @@ import GoelCore
 /// transfers, the selection echo, then the speed-limit chip and the queue profile.
 struct StatusBar: View {
     @EnvironmentObject private var vm: AppViewModel
+    /// Observed so the finish time redraws on each speed tick (`vm.queueOverview` reads it).
     @EnvironmentObject private var telemetry: TelemetryStore
     @EnvironmentObject private var sftpStore: SFTPTransferStore
 
@@ -48,7 +49,7 @@ struct StatusBar: View {
     /// "1.2 GB left · done ≈ 14:32": answers "can I close the lid yet?" without adding up rows.
     @ViewBuilder
     private var queueFinish: some View {
-        let overview = QueueOverview(tasks: vm.tasks) { telemetry.displaySpeed(for: $0) }
+        let overview = vm.queueOverview
         if let done = overview.doneText() {
             Text(L10n.t("%1$@ left · %2$@", overview.remainingBytes.byteString, done))
                 .studioFont(.small.tabular)
@@ -61,8 +62,9 @@ struct StatusBar: View {
     /// With the panel closed (or several rows picked) nothing else confirms what is selected.
     @ViewBuilder
     private var selectionEcho: some View {
-        let selected = vm.selectedTasks
-        if !selected.isEmpty, !vm.detailPanelVisible || selected.count > 1 {
+        // Gate on the cheap set first: filtering the visible rows only pays off when the echo shows.
+        if !vm.selection.isEmpty, !vm.detailPanelVisible || vm.selection.count > 1,
+           case let selected = vm.selectedTasks, !selected.isEmpty {
             let bytes = selected.reduce(Int64(0)) { $0 + ($1.totalBytes ?? $1.bytesDownloaded) }
             Text(SelectionAggregate.statusLine(count: selected.count, totalBytes: bytes))
                 .studioFont(.small.tabular)

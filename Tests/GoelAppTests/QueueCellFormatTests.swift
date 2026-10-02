@@ -50,15 +50,19 @@ final class QueueCellFormatTests: XCTestCase {
 
     // MARK: Added column
 
-    func testTodayIsJustTheTime() {
+    /// One style down the column: "Today 1:12 AM", "Yesterday 8:15 PM", "1 Oct" — not a bare
+    /// time beside an abbreviated "Yest".
+    func testTodayIsLabelledWithTheTime() {
         let now = at(0, 15, 0)
-        XCTAssertEqual(DisplayFormat.compactDateTime(at(0, 14, 3, from: now), locale: british, now: now), "14:03")
+        XCTAssertEqual(DisplayFormat.compactDateTime(at(0, 14, 3, from: now), locale: british, now: now), "Today 14:03")
+        let early = DisplayFormat.compactDateTime(at(0, 1, 12, from: now), locale: english, now: now)
+        XCTAssertTrue(early.hasPrefix("Today 1:12"), early)
     }
 
-    func testYesterdayIsAbbreviatedWithTheTime() {
+    func testYesterdayIsSpelledOutWithTheTime() {
         let now = at(0, 15, 0)
         let text = DisplayFormat.compactDateTime(at(-1, 14, 2, from: now), locale: british, now: now)
-        XCTAssertEqual(text, "Yest 14:02")
+        XCTAssertEqual(text, "Yesterday 14:02")
     }
 
     func testOlderDatesAreAbbreviatedMonthAndDay() {

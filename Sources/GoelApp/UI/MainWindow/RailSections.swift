@@ -31,6 +31,12 @@ struct RailFilterSections: View {
         }
     }
 
+    /// "All downloads" is on only with nothing narrowing the list; every other row is on while
+    /// its own axis holds it, so "Active" and "Audio" can both be on.
+    private func isOn(_ filter: SidebarFilter) -> Bool {
+        filter == .all ? vm.filters.isEmpty : vm.filters.isOn(filter)
+    }
+
     private func filterRow(_ entry: SidebarEntry) -> some View {
         let shortcut = SidebarCatalog.shortcutFilters.firstIndex(of: entry.filter).map { $0 + 1 }
         let count = vm.count(for: entry.filter)
@@ -39,7 +45,7 @@ struct RailFilterSections: View {
             symbol: entry.symbol,
             count: count,
             isAlert: entry.filter == .failed,
-            isSelected: vm.filter == entry.filter && vm.selectedServer == nil && !rss.isOpen,
+            isSelected: isOn(entry.filter) && vm.selectedServer == nil && !rss.isOpen,
             help: shortcut.map { ShortcutHint.help(entry.title, "⌘\($0)") } ?? entry.title,
             accessibilityValue: L10n.t("%d downloads", count),
             accessibilityHint: L10n.t("Activate to filter the list.")
@@ -54,7 +60,7 @@ struct RailFilterSections: View {
     @ViewBuilder
     private var typesGroup: some View {
         let shown = SidebarCatalog.types.filter { entry in
-            showEmptyTypes || vm.filter == entry.filter || vm.count(for: entry.filter) > 0
+            showEmptyTypes || vm.filters.isOn(entry.filter) || vm.count(for: entry.filter) > 0
         }
         let hiddenCount = SidebarCatalog.types.count - shown.count
         disclosureHeader(L10n.t("Type"))
@@ -126,7 +132,7 @@ struct RailTagSection: View {
                         title: entry.tag,
                         dot: RailTagPalette.color(for: entry.tag, raw: tagColorsRaw),
                         count: entry.count,
-                        isSelected: vm.filter == filter && vm.selectedServer == nil && !rss.isOpen,
+                        isSelected: vm.filters.isOn(filter) && vm.selectedServer == nil && !rss.isOpen,
                         accessibilityValue: L10n.t("%d downloads", entry.count),
                         accessibilityHint: L10n.t("Activate to filter the list.")
                     ) {

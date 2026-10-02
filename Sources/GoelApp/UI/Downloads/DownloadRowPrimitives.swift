@@ -193,17 +193,20 @@ struct StateButton: View {
     let task: DownloadTask
     let vm: AppViewModel
     var compact = false
+    /// A round glyph even for Retry, for the list's fixed-width action column; the title stays
+    /// in the tooltip and the VoiceOver label.
+    var iconOnly = false
 
     var body: some View {
         if let action = RowStateAction(task: task) {
             Button { action.perform(on: task, vm: vm) } label: {
-                if action == .retry {
+                if action == .retry && !iconOnly {
                     Label(action.title, systemImage: action.symbol)
                 } else {
                     Image(systemName: action.symbol)
                 }
             }
-            .buttonStyle(DownloadStateButtonStyle(tone: action.tone, isCapsule: action == .retry,
+            .buttonStyle(DownloadStateButtonStyle(tone: action.tone, isCapsule: action == .retry && !iconOnly,
                                                   side: compact ? 20 : 24))
             .help(action.title)
             .a11yButton(L10n.t("%1$@ %2$@", action.title, task.name))

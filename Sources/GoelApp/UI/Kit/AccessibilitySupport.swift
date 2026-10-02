@@ -172,6 +172,11 @@ extension SortKey {
         case .added: return L10n.t("Added")
         case .downloadSpeed: return L10n.t("Download speed")
         case .uploadSpeed: return L10n.t("Upload speed")
+        case .eta: return L10n.t("Time left")
+        case .progress: return L10n.t("Progress")
+        case .remaining: return L10n.t("Remaining")
+        case .ratio: return L10n.t("Ratio")
+        case .peers: return L10n.t("Seeds/Peers")
         }
     }
 
@@ -181,6 +186,7 @@ extension SortKey {
         case .index: return L10n.t("#")
         case .downloadSpeed: return L10n.t("↓ Speed")
         case .uploadSpeed: return L10n.t("↑ Speed")
+        case .eta: return L10n.t("ETA")
         default: return title
         }
     }

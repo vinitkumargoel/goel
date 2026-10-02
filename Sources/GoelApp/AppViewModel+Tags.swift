@@ -27,7 +27,7 @@ extension AppViewModel {
         guard !name.isEmpty, name != tag else { return }
         apply(Self.retagged(tasks, tag: tag, replacement: name))
         TagColors.update { TagColors.renamed($0, from: tag, to: name) }
-        if case .tag(let current) = filter, current.lowercased() == tag.lowercased() { filter = .tag(name) }
+        filters = filters.renamingTag(tag, to: name)
         toastSuccess(L10n.t("Renamed tag “%1$@” to “%2$@”", tag, name))
     }
 
@@ -35,7 +35,7 @@ extension AppViewModel {
         let changes = Self.retagged(tasks, tag: tag, replacement: nil)
         apply(changes)
         TagColors.update { TagColors.removed($0, tag: tag) }
-        if case .tag(let current) = filter, current.lowercased() == tag.lowercased() { filter = .all }
+        filters = filters.removingTag(tag)
         toastSuccess(changes.count == 1 ? L10n.t("Removed tag “%@” from 1 download", tag)
                                         : L10n.t("Removed tag “%1$@” from %2$d downloads", tag, changes.count))
     }

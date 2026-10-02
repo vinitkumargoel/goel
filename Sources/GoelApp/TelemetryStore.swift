@@ -58,6 +58,12 @@ final class TelemetryStore: ObservableObject {
     /// Bumped when a history ring gains a point, so the graphs redraw at the ring's own pace.
     @Published private(set) var historyRevision = 0
 
+    /// Bumped whenever `displayedTaskSpeed` changes; keys the shared queue overview.
+    private var speedRevision = 0
+    private var overviewMemo: (tasks: Int, speeds: Int, value: QueueOverview)?
+    /// How many times the overview was actually folded; tests read it to prove reuse.
+    private(set) var queueOverviewBuilds = 0
+
     private var taskRings: [DownloadTask.ID: SpeedRing<SpeedSample>] = [:]
     private var sftpRings: [UUID: SpeedRing<Double>] = [:]
     /// The combined read-out (downloads plus SFTP) the status bar prints, one point per history tick.
@@ -67,6 +73,17 @@ final class TelemetryStore: ObservableObject {
 
     func displaySpeed(for task: DownloadTask) -> SpeedSample {
         displayedTaskSpeed[task.id] ?? SpeedSample(down: task.downloadSpeed, up: task.uploadSpeed)
+    }
+
+    /// The whole queue at the displayed speeds, folded once per task revision and speed tick
+    /// and shared by every view that shows it (status bar, board queue card), instead of each
+    /// walking every task in its body twice a second. `revision` must change whenever `tasks` does.
+    func queueOverview(for tasks: [DownloadTask], revision: Int) -> QueueOverview {
+        if let memo = overviewMemo, memo.tasks == revision, memo.speeds == speedRevision { return memo.value }
+        let value = QueueOverview(tasks: tasks) { displaySpeed(for: $0) }
+        overviewMemo = (revision, speedRevision, value)
+        queueOverviewBuilds += 1
+        return value
     }
 
     func taskHistory(_ id: DownloadTask.ID) -> [SpeedSample] { taskRings[id]?.elements ?? [] }
@@ -108,7 +125,10 @@ final class TelemetryStore: ObservableObject {
             taskRings = taskRings.filter { known.contains($0.key) }
             changed = true
         }
-        if changed { displayedTaskSpeed = next }
+        if changed {
+            displayedTaskSpeed = next
+            speedRevision &+= 1
+        }
         if recordHistory {
             globalRing.append(combined)
             globalTimes.append(now)

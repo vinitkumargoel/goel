@@ -97,14 +97,46 @@ struct DownloadTableRow: DownloadHoverable {
                     .frame(width: columns.speed, alignment: .trailing)
                     .padding(.horizontal, Studio.Space.xs)
             }
+            // Resume / Pause / Retry in their own column at the right edge, lined up row to row.
+            Group {
+                if showsStateButton {
+                    StateButton(task: task, vm: vm, compact: isCompact, iconOnly: true)
+                } else {
+                    Color.clear.frame(width: 1, height: 1).a11yDecorative()
+                }
+            }
+            .frame(width: columns.action, alignment: .center)
+            .padding(.horizontal, Studio.Space.xs)
         }
     }
 
+    /// "2.91 GB of 4.7 GB" on one line when it fits; otherwise wrapped over two lines in a
+    /// regular row, or just the total in a compact one.
+    @ViewBuilder
     private var sizeCell: some View {
-        Text(task.totalBytes?.byteString ?? "—")
+        let text = task.sizeColumnText
+        let total = task.totalBytes?.byteString ?? "—"
+        ViewThatFits(in: .horizontal) {
+            sizeText(text ?? "—", tone: text == nil ? Studio.Palette.ink3 : Studio.Palette.ink2)
+            if isCompact || text == total {
+                sizeText(total, tone: Studio.Palette.ink2)
+            } else {
+                Text(text ?? total)
+                    .studioFont(.monoBody)
+                    .foregroundStyle(Studio.Palette.ink2)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+            }
+        }
+        .help(text ?? "")
+    }
+
+    private func sizeText(_ value: String, tone: Color) -> some View {
+        Text(value)
             .studioFont(.monoBody)
-            .foregroundStyle(task.totalBytes == nil ? Studio.Palette.ink3 : Studio.Palette.ink2)
+            .foregroundStyle(tone)
             .lineLimit(1)
+            .fixedSize()
     }
 
     private var rowBackground: some View {
@@ -150,7 +182,6 @@ struct DownloadTableRow: DownloadHoverable {
             MiniProgressBar(task: task, height: 3)
                 .frame(minWidth: 40, maxWidth: 160)
             Spacer(minLength: 0)
-            if showsStateButton { StateButton(task: task, vm: vm, compact: true) }
         }
     }
 
@@ -173,7 +204,6 @@ struct DownloadTableRow: DownloadHoverable {
                 }
             }
             Spacer(minLength: 0)
-            if showsStateButton { StateButton(task: task, vm: vm) }
         }
     }
 

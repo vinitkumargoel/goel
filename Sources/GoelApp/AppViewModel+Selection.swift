@@ -79,7 +79,7 @@ extension AppViewModel {
     func showFilter(_ newFilter: SidebarFilter) {
         closeServerBrowser()
         search = ""
-        filter = newFilter
+        filters = DownloadFilters().setting(newFilter)
     }
 
     func selectNone() {

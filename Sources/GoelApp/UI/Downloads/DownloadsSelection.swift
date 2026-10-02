@@ -3,14 +3,10 @@ import GoelCore
 
 /// Selection in the order a layout draws its items. The list draws `visibleTasks` as is, so it
 /// keeps the view model's own methods; the board reads lane by lane, so ranges and arrow keys
-/// walk the board's order there. The order is worked out when the click or key lands, never
-/// cached, so a card that just changed lanes is where the user sees it.
+/// walk the board's order there. Both read `boardLanes`, the same lanes the board draws (rebuilt
+/// with `visibleTasks`), so a card that just changed lanes is where the user sees it.
 @MainActor
 extension AppViewModel {
-
-    var boardLanes: [BoardLane] {
-        BoardLanes.make(visible: visibleTasks, sections: visibleSections, grouping: grouping, ranks: queueRanks)
-    }
 
     func orderedTasks(for layout: DownloadsLayout) -> [DownloadTask] {
         layout == .board ? BoardLanes.flattened(boardLanes) : visibleTasks

@@ -4,6 +4,19 @@ import Foundation
 /// tested without one.
 enum SelectionRange {
 
+    /// The selection with every row the list no longer shows taken out, so the detail panel
+    /// never keeps describing a row that a filter or search just hid. A hidden primary row hands
+    /// over to the first still-selected row in list order; with none left, nothing is selected.
+    static func pruned<ID: Hashable>(selection: Set<ID>, primary: ID?, anchor: ID?,
+                                     visible: [ID]) -> (selection: Set<ID>, primary: ID?, anchor: ID?) {
+        let shown = Set(visible)
+        let kept = selection.intersection(shown)
+        let fallback = visible.first(where: kept.contains)
+        let nextPrimary = primary.flatMap { shown.contains($0) ? $0 : nil } ?? fallback
+        let nextAnchor = anchor.flatMap { kept.contains($0) ? $0 : nil } ?? nextPrimary
+        return (kept, nextPrimary, nextAnchor)
+    }
+
     /// Every id from `anchor` through `target` inclusive, in the order the list shows them.
     ///
     /// Both ends are looked up in `items` rather than trusted: a sort, a filter or a finished

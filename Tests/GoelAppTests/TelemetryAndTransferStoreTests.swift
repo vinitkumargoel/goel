@@ -95,6 +95,28 @@ final class TelemetryStoreTests: XCTestCase {
         sink.cancel()
     }
 
+    /// The status bar and the board's queue card share one overview per tick and task revision
+    /// instead of each folding the whole queue in every body; the figures are unchanged.
+    func testQueueOverviewIsReusedUntilTheTasksOrSpeedsChange() {
+        let store = TelemetryStore()
+        let a = UUID()
+        var tasks = [task(a, down: 10)]
+        tasks[0].totalBytes = 1_000
+        let first = store.queueOverview(for: tasks, revision: 1)
+        XCTAssertEqual(first, QueueOverview(tasks: tasks) { store.displaySpeed(for: $0) })
+        XCTAssertEqual(store.queueOverviewBuilds, 1)
+        _ = store.queueOverview(for: tasks, revision: 1)
+        XCTAssertEqual(store.queueOverviewBuilds, 1, "same revision and tick: reused")
+
+        store.sample(tasks: [task(a, down: 40)], combined: SpeedSample(down: 40, up: 0), recordHistory: false)
+        XCTAssertEqual(store.queueOverview(for: tasks, revision: 1).speed.down, 40)
+        XCTAssertEqual(store.queueOverviewBuilds, 2, "a new speed rebuilds it")
+
+        tasks[0].bytesDownloaded = 500
+        XCTAssertEqual(store.queueOverview(for: tasks, revision: 2).remainingBytes, 500)
+        XCTAssertEqual(store.queueOverviewBuilds, 3, "a new task revision rebuilds it")
+    }
+
     func testPersistsOnlyUnfinishedRows() {
         let store = TelemetryStore()
         let live = UUID(), done = UUID()

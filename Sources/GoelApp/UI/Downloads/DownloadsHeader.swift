@@ -47,7 +47,7 @@ struct DownloadsHeader: View {
     private var titleBlock: some View {
         let term = vm.search.trimmingCharacters(in: .whitespacesAndNewlines)
         return HStack(alignment: .firstTextBaseline, spacing: Studio.Space.s) {
-            Text(vm.filter.accessibilityName)
+            Text(vm.filters.title)
                 .studioFont(.title2)
                 .foregroundStyle(Studio.Palette.ink)
                 .lineLimit(1)
@@ -144,37 +144,65 @@ struct DownloadsHeaderMenuButton: View {
     }
 }
 
+/// The expanded rail lists every status filter; the header then drops its duplicate chips.
+private struct RailShowsStatusFiltersKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var railShowsStatusFilters: Bool {
+        get { self[RailShowsStatusFiltersKey.self] }
+        set { self[RailShowsStatusFiltersKey.self] = newValue }
+    }
+}
+
 /// The status chips with counts, then Type ▾ (or the active type as a removable chip), then the
-/// active tag as a removable chip.
+/// active tag as a removable chip. Status, type and tag combine ("Active" + "Audio ×"); each
+/// chip's count is what picking it would show with the other filters kept. While the expanded
+/// rail lists the statuses, only the active status shows here, as a removable chip.
 struct DownloadsFilterChips: View {
     @EnvironmentObject private var vm: AppViewModel
+    @Environment(\.railShowsStatusFilters) private var railShowsStatus
     @State private var typeMenuOpen = false
 
     var body: some View {
         HStack(spacing: Studio.Space.xs) {
-            ForEach(SidebarCatalog.library + SidebarCatalog.status) { entry in
-                StudioFilterChip(entry.filter == .all ? L10n.t("All") : entry.title,
-                                 count: vm.count(for: entry.filter),
-                                 isOn: vm.filter == entry.filter) {
-                    vm.filter = entry.filter
+            if railShowsStatus {
+                if vm.filters.status != .all {
+                    removableChip(title: vm.filters.status.accessibilityName,
+                                  count: vm.visibleCountIgnoringSearch, symbol: nil) {
+                        vm.filters.status = .all
+                    }
                 }
+            } else {
+                ForEach(SidebarCatalog.library + SidebarCatalog.status) { entry in
+                    StudioFilterChip(entry.filter == .all ? L10n.t("All") : entry.title,
+                                     count: vm.facetCount(for: entry.filter),
+                                     isOn: vm.filters.isOn(entry.filter)) {
+                        vm.filters = vm.filters.setting(entry.filter)
+                    }
+                }
+                Rectangle()
+                    .fill(Studio.Palette.hairlineStrong)
+                    .frame(width: 1, height: 20)
+                    .padding(.horizontal, Studio.Space.xxs)
+                    .a11yDecorative()
             }
-            Rectangle()
-                .fill(Studio.Palette.hairlineStrong)
-                .frame(width: 1, height: 20)
-                .padding(.horizontal, Studio.Space.xxs)
-                .a11yDecorative()
             typeChip
-            if case .tag(let name) = vm.filter {
-                removableChip(title: name, count: vm.count(for: vm.filter), symbol: "tag")
+            if let tag = vm.filters.tag {
+                removableChip(title: tag, count: vm.visibleCountIgnoringSearch, symbol: "tag") {
+                    vm.filters.tag = nil
+                }
             }
         }
     }
 
     @ViewBuilder
     private var typeChip: some View {
-        if case .type(let type) = vm.filter {
-            removableChip(title: type.accessibilityName, count: vm.count(for: vm.filter), symbol: nil)
+        if let type = vm.filters.type {
+            removableChip(title: type.accessibilityName, count: vm.visibleCountIgnoringSearch, symbol: nil) {
+                vm.filters.type = nil
+            }
         } else {
             Button {
                 typeMenuOpen.toggle()
@@ -194,11 +222,10 @@ struct DownloadsFilterChips: View {
         }
     }
 
-    /// The active type or tag filter: on, with an ✕ that goes back to All.
-    private func removableChip(title: String, count: Int, symbol: String?) -> some View {
-        Button {
-            vm.filter = .all
-        } label: {
+    /// An active filter: on, with an ✕ that removes just that filter and keeps the others.
+    private func removableChip(title: String, count: Int, symbol: String?,
+                               remove: @escaping () -> Void) -> some View {
+        Button(action: remove) {
             HStack(spacing: Studio.Space.xs) {
                 if let symbol { Image(systemName: symbol) }
                 Text(title)
@@ -210,7 +237,7 @@ struct DownloadsFilterChips: View {
             }
         }
         .buttonStyle(StudioPillButtonStyle(isOn: true))
-        .help(L10n.t("Show all downloads"))
+        .help(L10n.t("Clear filter"))
         .accessibilityLabel(L10n.t("Clear filter"))
         .accessibilityValue(title)
     }

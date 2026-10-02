@@ -41,7 +41,7 @@ struct RSSReaderView: View {
         .sheet(item: $editing) { request in
             RSSRuleSheet(original: request.feed).environmentObject(vm)
         }
-        .onChange(of: vm.filter) { if preview == nil { model.close() } }
+        .onChange(of: vm.filters) { if preview == nil { model.close() } }
         .onChange(of: vm.selectedServer) { _, server in if server != nil, preview == nil { model.close() } }
         .task(id: feed?.id) { await refreshSelected() }
     }

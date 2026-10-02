@@ -6,10 +6,12 @@ import GoelCore
 /// The list's fixed column widths, scaled with the text size. A value, so rows compare it.
 struct DownloadColumns: Equatable {
     var index: CGFloat = 30
-    var size: CGFloat = 84
+    var size: CGFloat = 104
     var status: CGFloat = 150
-    var added: CGFloat = 96
+    var added: CGFloat = 118
     var speed: CGFloat = 92
+    /// The row's Resume / Pause / Retry button, always at the right edge.
+    var action: CGFloat = 26
     var layout: Layout = .full
     /// What the header's context menu switched on; width can still hide any of them.
     var chosen: Set<ListColumn> = ListColumn.defaults
@@ -43,6 +45,7 @@ struct DownloadColumns: Equatable {
         status = (status * s).rounded()
         added = (added * s).rounded()
         speed = (speed * s).rounded()
+        action = (action * s).rounded()
         guard let listWidth else {
             extras = ListColumn.extras.filter(chosen.contains)
             return
@@ -70,7 +73,7 @@ struct DownloadColumns: Equatable {
 
     /// Width the core columns take once the width-driven layout has run.
     var coreWidth: CGFloat {
-        var total = index + Self.cellPadding + Self.rowPadding + Self.cellPadding
+        var total = index + Self.cellPadding + Self.rowPadding + Self.cellPadding + action + Self.cellPadding
         if showsStatus { total += status + Self.cellPadding }
         if showsSize { total += size + Self.cellPadding }
         if showsAdded { total += added + Self.cellPadding }
@@ -98,7 +101,7 @@ struct DownloadColumns: Equatable {
     /// (zero) width keeps the full set rather than flashing the compact one on first layout.
     static func layout(for listWidth: CGFloat, columns: DownloadColumns) -> Layout {
         guard listWidth.isFinite, listWidth > 0 else { return .full }
-        let chrome = rowPadding + cellPadding
+        let chrome = rowPadding + cellPadding + columns.action + cellPadding
         let base = columns.index + columns.status + 2 * cellPadding + chrome
         let full = base + columns.size + columns.added + columns.speed + 3 * cellPadding
         if listWidth >= full + minimumNameWidth { return .full }
@@ -109,6 +112,16 @@ struct DownloadColumns: Equatable {
 }
 
 extension ListColumn {
+    /// The extra columns whose header sorts; text columns (host, tags, path, protocol) don't.
+    var sortKey: SortKey? {
+        switch self {
+        case .eta: return .eta
+        case .ratio: return .ratio
+        case .peers: return .peers
+        default: return nil
+        }
+    }
+
     var cellAlignment: Alignment {
         switch self {
         case .eta, .ratio, .peers, .size, .speed: return .trailing

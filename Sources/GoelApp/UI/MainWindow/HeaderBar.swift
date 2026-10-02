@@ -14,8 +14,6 @@ struct HeaderBar: View {
     @AppStorage(ToolbarSlot.storageKey) private var slotsRaw = ""
     @Environment(\.mainWindowPreview) private var preview
     @State private var showsCustomize = false
-    /// The live totals give way first when the window narrows, so the omnibox keeps its room.
-    @State private var isWide = true
     /// With Search hidden, the compact button (or ⌘F) opened the omnibox; leaving it empty folds it.
     @State private var searchOpened = false
 
@@ -50,7 +48,6 @@ struct HeaderBar: View {
         .padding(.top, Studio.Space.l)
         .padding(.bottom, Studio.Space.sm)
         .contextMenu { HeaderCustomizeMenu(raw: $slotsRaw) }
-        .onGeometryChange(for: Bool.self) { $0.size.width >= 940 } action: { isWide = $0 }
         // ⌘F reaches the omnibox through RootView; a hidden Search has to unfold first.
         .onReceive(NotificationCenter.default.publisher(for: FocusBus.focusSearch)) { _ in
             searchOpened = true
@@ -71,10 +68,6 @@ struct HeaderBar: View {
 
     private var controls: some View {
         HStack(spacing: Studio.Space.s) {
-            if isWide {
-                HeaderSpeedTotals()
-                    .padding(.trailing, Studio.Space.xxs)
-            }
             HeaderToolbarItems(slots: slots)
             Button(L10n.t("Add"), systemImage: "plus") { vm.isAddSheetPresented = true }
                 .buttonStyle(.studio(.primary))
@@ -98,27 +91,6 @@ struct HeaderBar: View {
             }
         }
         .fixedSize()
-    }
-}
-
-/// The header's live totals, observing only the telemetry so a speed tick redraws just this.
-struct HeaderSpeedTotals: View {
-    @EnvironmentObject private var telemetry: TelemetryStore
-
-    var body: some View {
-        let speed = telemetry.displayedCombinedSpeed
-        VStack(alignment: .trailing, spacing: 1) {
-            Text(verbatim: "↓ \(speed.down.speedString)")
-                .foregroundStyle(Studio.Palette.accent)
-            Text(verbatim: "↑ \(speed.up.speedString)")
-                .foregroundStyle(Studio.Palette.upload)
-        }
-        .studioFont(.monoSmall.weight(600))
-        .lineLimit(1)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L10n.t("Total download speed"))
-        .accessibilityValue(A11y.sentence(A11y.speed(speed.down),
-                                          L10n.t("upload %@", A11y.speed(speed.up))))
     }
 }
 
