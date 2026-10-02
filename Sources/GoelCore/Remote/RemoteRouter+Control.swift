@@ -57,6 +57,13 @@ extension RemoteRouter {
         case ("POST", "/api/settings"):
             return await postSettings(request, backend: backend)
 
+        case ("GET", "/api/rules"):
+            guard let rules = await backend.rulesState() else { return notFound() }
+            return json(RemoteRulesState(rules: rules.map(RemoteRule.init)))
+
+        case ("POST", "/api/rules"):
+            return await postRules(request, backend: backend)
+
         default:
             return nil
         }
@@ -298,6 +305,22 @@ extension RemoteRouter {
         }
         guard let updated = await backend.updateSettings(update) else { return notFound() }
         return json(updated)
+    }
+
+    private static func postRules(_ request: RemoteRequest, backend: RemoteBackend) async -> Data {
+        guard let current = await backend.rulesState() else { return notFound() }
+        guard request.body.count <= 262_144,
+              let update = try? JSONDecoder().decode(RemoteRulesUpdate.self, from: request.body)
+        else { return badRequest() }
+        if let refusal = update.refusal() { return badRequest(refusal) }
+        let resolved = update.resolved(against: current)
+        if let refusal = RemoteRulesUpdate.actionRefusal(resolved) { return badRequest(refusal) }
+        // The same rule as an Add's folder, for every folder a rule newly asks for.
+        for folder in Set(update.foldersToVet(against: current)) where await backend.remoteSaveDirectoryAllowed(folder) == false {
+            return forbidden(saveFolderRefusal)
+        }
+        guard let stored = await backend.replaceRules(resolved) else { return notFound() }
+        return json(RemoteRulesState(rules: stored.map(RemoteRule.init)))
     }
 
     private static func postSchedule(_ request: RemoteRequest, backend: RemoteBackend) async -> Data {

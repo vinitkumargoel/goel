@@ -17,6 +17,8 @@ import type {
   TrackerEditResult,
   ScheduleState,
   ServerSettings,
+  PortalRule,
+  RulesState,
   ServerSettingsUpdate,
   ScheduleUpdate,
   TaskDetail,
@@ -200,6 +202,10 @@ export const api = {
   /** A 404 means a server with no editable settings: callers hide the cards. */
   serverSettings: () => getJSON<ServerSettings>('/api/settings'),
   updateServerSettings: (body: ServerSettingsUpdate) => postJSON<ServerSettings>('/api/settings', body),
+  /** A 404 means a server with no editable rules: callers hide the card. */
+  rules: () => getJSON<RulesState>('/api/rules'),
+  /** The whole ordered list replaces the stored one; the echo is what was stored. */
+  updateRules: (rules: readonly PortalRule[]) => postJSON<RulesState>('/api/rules', { rules }),
   schedule: () => getJSON<ScheduleState>('/api/schedule'),
   updateSchedule: (body: ScheduleUpdate) => postJSON<ScheduleState>('/api/schedule', body),
 

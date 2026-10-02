@@ -59,6 +59,14 @@ private final class ControlBackend: RemoteBackend, @unchecked Sendable {
         return RemoteSettingsState(appSettings)
     }
     func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { allowedFolders.contains(folder) }
+    var rules: [AutoSortRule]? = []
+    private(set) var rulesWrites = 0
+    func rulesState() async -> [AutoSortRule]? { rules }
+    func replaceRules(_ new: [AutoSortRule]) async -> [AutoSortRule]? {
+        rulesWrites += 1
+        rules = new
+        return new
+    }
     func scheduleState() async -> RemoteScheduleState? { schedule }
     func updateSchedule(_ update: RemoteScheduleUpdate) async -> RemoteScheduleState? {
         guard var state = schedule else { return nil }
@@ -109,6 +117,7 @@ final class RemoteControlRoutesTests: XCTestCase {
             raw("POST", "/api/history-clear", json: "{}", auth: auth),
             raw("POST", "/api/schedule", json: #"{"enabled":true}"#, auth: auth),
             raw("POST", "/api/settings", json: #"{"bittorrent":{"dht":false}}"#, auth: auth),
+            raw("POST", "/api/rules", json: #"{"rules":[]}"#, auth: auth),
             raw("POST", "/api/trackers", json: #"{"id":"\#(q)","add":["udp://t.example:80/announce"]}"#, auth: auth),
         ]
     }
@@ -510,5 +519,137 @@ final class RemoteScheduleUpdateTests: XCTestCase {
         XCTAssertEqual(after.scheduleDays, [2, 3])
         XCTAssertTrue(after.speedLimitEnabled, "an unrelated setting must not be reverted")
         XCTAssertEqual(after.defaultSaveDirectory, before.defaultSaveDirectory)
+    }
+}
+
+extension RemoteControlRoutesTests {
+    // MARK: - Rules
+
+    private func rule(_ extra: String = "", name: String = "Disk images",
+                      field: String = "fileExtension", op: String = "isAnyOf", value: String = "dmg, pkg",
+                      action: String = #""tag":"apps""#) -> String {
+        #"{"name":"\#(name)","enabled":true,"match":"all","startPaused":false,"#
+            + #""conditions":[{"field":"\#(field)","op":"\#(op)","value":"\#(value)"}],\#(action)\#(extra)}"#
+    }
+
+    private func postRules(_ rules: [String], _ backend: ControlBackend) async -> String {
+        await send(raw("POST", "/api/rules", json: #"{"rules":[\#(rules.joined(separator: ","))]}"#), backend)
+    }
+
+    func testRulesRoundTripThroughTheStore() async {
+        let backend = ControlBackend()
+        let created = await postRules([rule(#","folder":"/srv/downloads","priority":"high","speedLimitBytesPerSec":500000"#)], backend)
+        XCTAssertTrue(created.hasPrefix("HTTP/1.1 200"), created)
+        XCTAssertEqual(backend.rules?.count, 1)
+        let stored = backend.rules?.first
+        XCTAssertEqual(stored?.folder, "/srv/downloads")
+        XCTAssertEqual(stored?.priority, .high)
+        XCTAssertEqual(stored?.conditions.first?.op, .isAnyOf)
+
+        let listed = await send(raw("GET", "/api/rules"), backend)
+        XCTAssertTrue(listed.hasPrefix("HTTP/1.1 200"))
+        XCTAssertTrue(listed.contains(#""name":"Disk images""#) && listed.contains(stored!.id.uuidString))
+
+        // Disable + reorder by echoing the list back: the id keeps the rule's identity.
+        let second = AutoSortRule(name: "Second", conditions: [.init(field: .domain, op: .endsWith, value: "a.com")], tag: "x")
+        backend.rules = (backend.rules ?? []) + [second]
+        let reordered = [
+            rule(#","id":"\#(second.id.uuidString)""#, name: "Second", field: "domain", op: "endsWith", value: "a.com"),
+            rule(#","id":"\#(stored!.id.uuidString)","folder":"/srv/downloads""#).replacingOccurrences(of: #""enabled":true"#, with: #""enabled":false"#),
+        ]
+        let out = await postRules(reordered, backend)
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200"), out)
+        XCTAssertEqual(backend.rules?.map(\.name), ["Second", "Disk images"])
+        XCTAssertEqual(backend.rules?.last?.enabled, false)
+        XCTAssertEqual(backend.rules?.first?.id, second.id)
+
+        let emptied = await postRules([], backend)
+        XCTAssertTrue(emptied.hasPrefix("HTTP/1.1 200"))
+        XCTAssertEqual(backend.rules?.count, 0)
+    }
+
+    func testRulesRouteIs404WithoutAStoreAndRefusesCrossSite() async {
+        let backend = ControlBackend()
+        backend.rules = nil
+        let get = await send(raw("GET", "/api/rules"), backend)
+        XCTAssertTrue(get.hasPrefix("HTTP/1.1 404"))
+        let post = await postRules([rule()], backend)
+        XCTAssertTrue(post.hasPrefix("HTTP/1.1 404"))
+        backend.rules = []
+        let cross = await send(raw("POST", "/api/rules", json: #"{"rules":[]}"#, origin: "https://evil.example"), backend)
+        XCTAssertTrue(cross.hasPrefix("HTTP/1.1 403"))
+        let anon = await send(raw("GET", "/api/rules", auth: false), backend)
+        XCTAssertTrue(anon.hasPrefix("HTTP/1.1 401"))
+        XCTAssertEqual(backend.rulesWrites, 0)
+    }
+
+    func testBadRulesAreRefusedWithoutLeakingAndWriteNothing() async {
+        let backend = ControlBackend()
+        let long = String(repeating: "a", count: 600)
+        let bad: [String] = [
+            rule(name: "   "),
+            rule(name: String(repeating: "n", count: 121)),
+            rule(field: "nope"),
+            rule(op: "weird"),
+            rule(field: "size", op: "contains", value: "1 GB"),
+            rule(field: "fileName", op: "largerThan", value: "1"),
+            rule(field: "fileName", op: "matchesRegex", value: "(unclosed"),
+            rule(field: "fileName", op: "contains", value: long),
+            rule(field: "size", op: "largerThan", value: "lots"),
+            rule(field: "fileName", op: "contains", value: ""),
+            rule(#","folder":"relative/dir""#),
+            rule(#","folder":"/../../etc""#, action: #""tag":"x""#),
+            rule(#","speedLimitBytesPerSec":-5"#),
+            rule(#","priority":"skip""#),
+            rule(#","whenDone":{"kind":"runScript","target":"/tmp/x.sh"}"#),
+            rule(#","whenDone":{"kind":"openWith","target":"/Applications/X.app"}"#),
+            rule(#","whenDone":{"kind":"moveTo"}"#),
+            rule(action: #""tag":"""#),
+            rule(#","match":"some""#).replacingOccurrences(of: #""match":"all","#, with: ""),
+            rule(action: #""tag":"bad\u0007tag""#),
+        ]
+        for json in bad {
+            let out = await postRules([json], backend)
+            XCTAssertTrue(out.hasPrefix("HTTP/1.1 400") || out.hasPrefix("HTTP/1.1 403"), "\(json) -> \(out.prefix(60))")
+            XCTAssertFalse(out.contains("(unclosed") || out.contains("NSRegular") || out.contains("/etc"), out)
+        }
+        let dupe = UUID().uuidString
+        let twice = await postRules([rule(#","id":"\#(dupe)""#), rule(#","id":"\#(dupe)""#)], backend)
+        XCTAssertTrue(twice.hasPrefix("HTTP/1.1 400"))
+        let junk = await send(raw("POST", "/api/rules", json: "not json"), backend)
+        XCTAssertTrue(junk.hasPrefix("HTTP/1.1 400"))
+        let tooMany = await postRules(Array(repeating: rule(), count: 101), backend)
+        XCTAssertTrue(tooMany.hasPrefix("HTTP/1.1 400"))
+        XCTAssertEqual(backend.rulesWrites, 0)
+    }
+
+    func testRuleFoldersUseTheSaveFolderRule() async {
+        let backend = ControlBackend()
+        let refused = await postRules([rule(#","folder":"/etc/cron.d""#)], backend)
+        XCTAssertTrue(refused.hasPrefix("HTTP/1.1 403"))
+        let moveRefused = await postRules([rule(#","whenDone":{"kind":"moveTo","target":"/root/.ssh"}"#)], backend)
+        XCTAssertTrue(moveRefused.hasPrefix("HTTP/1.1 403"))
+        XCTAssertEqual(backend.rulesWrites, 0)
+        let allowed = await postRules([rule(#","whenDone":{"kind":"moveTo","target":"/srv/downloads"}"#)], backend)
+        XCTAssertTrue(allowed.hasPrefix("HTTP/1.1 200"), allowed)
+        XCTAssertEqual(backend.rules?.first?.whenDone, WhenDone(.moveTo, target: "/srv/downloads"))
+    }
+
+    func testAnExistingScriptRuleIsKeptAndItsFolderNotRevetted() async {
+        let backend = ControlBackend()
+        let scripted = AutoSortRule(name: "Scripted", conditions: [.init(field: .fileName, op: .contains, value: "x")],
+                                    folder: "/data/legacy", whenDone: WhenDone(.runScript, target: "/opt/run.sh"))
+        backend.rules = [scripted]
+        let listed = await send(raw("GET", "/api/rules"), backend)
+        XCTAssertTrue(listed.contains(#""locked":true"#))
+        XCTAssertFalse(listed.contains("/opt/run.sh"), "the script path is not exposed")
+
+        // Disable it from the portal: no whenDone sent, folder unchanged (not on the allow list).
+        let out = await postRules([rule(#","id":"\#(scripted.id.uuidString)","folder":"/data/legacy""#,
+                                       name: "Scripted", field: "fileName", op: "contains", value: "x")
+            .replacingOccurrences(of: #""enabled":true"#, with: #""enabled":false"#)], backend)
+        XCTAssertTrue(out.hasPrefix("HTTP/1.1 200"), out)
+        XCTAssertEqual(backend.rules?.first?.whenDone, WhenDone(.runScript, target: "/opt/run.sh"))
+        XCTAssertEqual(backend.rules?.first?.enabled, false)
     }
 }

@@ -1032,5 +1032,89 @@
       "close": "Schließen",
       "try": "Probier „Verlauf“, „pausieren“ oder „Design“"
     }
+  },
+  "rules": {
+    "title": "Download-Regeln",
+    "desc": "Neue Downloads nach Name, Typ, Website oder Größe sortieren. Die Regeln werden der Reihe nach geprüft; die erste aktive, die passt, gilt. Sie werden mit der Desktop-App geteilt.",
+    "empty": "Noch keine Regeln. Lege eine an, um passende Downloads in einen Ordner zu legen, zu taggen oder ihr Verhalten zu ändern.",
+    "add": "Regel hinzufügen",
+    "editBtn": "Bearbeiten",
+    "saved": "Regel gespeichert",
+    "deleted": "Regel gelöscht",
+    "and": " und ",
+    "or": " oder ",
+    "edit": "Regel {{name}} bearbeiten",
+    "remove": "Regel {{name}} löschen",
+    "moveUp": "Regel {{name}} nach oben",
+    "moveDown": "Regel {{name}} nach unten",
+    "delete": {
+      "title": "Diese Regel löschen?",
+      "body": "„{{name}}“ gilt nicht mehr für neue Downloads. Bereits hinzugefügte Downloads bleiben unverändert.",
+      "confirm": "Regel löschen"
+    },
+    "match": {
+      "all": "alle",
+      "any": "eine"
+    },
+    "fields": {
+      "fileName": "Dateiname",
+      "fileExtension": "Endung",
+      "domain": "Domain",
+      "url": "URL",
+      "size": "Größe"
+    },
+    "ops": {
+      "isEqual": "ist",
+      "contains": "enthält",
+      "beginsWith": "beginnt mit",
+      "endsWith": "endet mit",
+      "isAnyOf": "ist eines von",
+      "matchesRegex": "entspricht Regex",
+      "largerThan": "ist größer als",
+      "smallerThan": "ist kleiner als"
+    },
+    "priority": {
+      "high": "Hoch",
+      "normal": "Normal",
+      "low": "Niedrig"
+    },
+    "done": {
+      "nothing": "Nichts tun",
+      "open": "Öffnen",
+      "reveal": "Im Ordner zeigen",
+      "moveTo": "Verschieben nach …"
+    },
+    "editor": {
+      "addTitle": "Download-Regel hinzufügen",
+      "editTitle": "Download-Regel bearbeiten",
+      "subtitle": "Wenn ein neuer Download passt, lege fest, wohin er kommt und wie er läuft.",
+      "name": "Regelname",
+      "nameInvalid": "Gib der Regel einen Namen mit höchstens 120 Zeichen.",
+      "when": "Wenn ein neuer Download passt",
+      "matchLabel": "Alle oder eine Bedingung muss passen",
+      "ofThese": "dieser Bedingungen:",
+      "conditionN": "Bedingung {{n}}",
+      "valueN": "Wert der Bedingung {{n}}",
+      "removeCondition": "Bedingung {{n}} entfernen",
+      "addCondition": "Bedingung hinzufügen",
+      "sizeHint": "z. B. 1 GB",
+      "conditionInvalid": "Jede Bedingung braucht einen Wert.",
+      "sizeInvalid": "Eine Größe sieht so aus: 500 MB oder 1,5 GB.",
+      "then": "Dann",
+      "folder": "Speichern in",
+      "folderDefault": "Standard-Ordnerregel",
+      "tag": "Tag",
+      "none": "Keiner",
+      "speed": "Tempolimit (KB/s)",
+      "noCap": "Kein Limit",
+      "speedInvalid": "Gib eine ganze Zahl in KB/s an oder lass das Feld leer.",
+      "priority": "Priorität",
+      "startPaused": "Pausiert starten",
+      "done": "Wenn fertig",
+      "moveTarget": "Zielordner für fertige Downloads",
+      "doneLocked": "Die Aktion „Wenn fertig“ dieser Regel führt ein Skript oder eine App aus und lässt sich nur in der Desktop-App ändern. Sie bleibt unverändert.",
+      "actionInvalid": "Gib der Regel mindestens eine Aktion: Ordner, Tag, Tempolimit, Priorität, Pausiert starten oder Wenn fertig.",
+      "save": "Regel speichern"
+    }
   }
 }
