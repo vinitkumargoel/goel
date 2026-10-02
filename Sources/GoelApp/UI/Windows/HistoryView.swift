@@ -16,6 +16,7 @@ struct HistoryView: View {
     @State private var selectionAnchor: UUID?
     @State private var confirmingClear = false
     @FocusState private var listFocused: Bool
+    @Environment(\.undoManager) private var undoManager
 
     private let loadsFromStore: Bool
 
@@ -39,6 +40,8 @@ struct HistoryView: View {
         }
         .frame(minWidth: 560, idealWidth: 760, minHeight: 380, idealHeight: 560)
         .studioWindowBackground()
+        // History's own toasts (removed, copied, exported) appear here, not only in the main window.
+        .overlay(alignment: .bottom) { ToastOverlay(queue: vm.toasts, bottomPadding: 24) }
         // Re-reads when a download finishes or an entry changes, so an open window stays current.
         .task(id: vm.historyRevision) {
             guard loadsFromStore else { return }
@@ -120,7 +123,7 @@ struct HistoryView: View {
                 Button(L10n.t("Copy %d Links", picked.count), systemImage: "link") { copyLinks(picked) }
                     .buttonStyle(.studio(.ghost, size: .small))
                 Button(L10n.t("Remove %d from History", picked.count), systemImage: "trash", role: .destructive) {
-                    picked.forEach(remove)
+                    remove(picked)
                 }
                 .buttonStyle(.studio(.destructive, size: .small))
                 Spacer(minLength: Studio.Space.s)
@@ -231,7 +234,7 @@ struct HistoryView: View {
                    onOpen: { open(item) }, onReveal: { reveal(item) }, onLocate: { locate(item) },
                    onRedownload: { vm.redownload(item.entry) },
                    onCopyLink: { vm.copyToPasteboard(item.entry.locator) },
-                   onRemove: { remove(item) })
+                   onRemove: { remove([item]) })
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { open(item) }
             .onTapGesture { click(item, ordered: ordered) }
@@ -251,12 +254,12 @@ struct HistoryView: View {
             Button(L10n.t("Download Again")) { vm.redownload(one.entry) }
             Button(L10n.t("Copy Link")) { vm.copyToPasteboard(one.entry.locator) }
             Divider()
-            Button(L10n.t("Remove from History"), role: .destructive) { remove(one) }
+            Button(L10n.t("Remove from History"), role: .destructive) { remove([one]) }
         } else if !picked.isEmpty {
             Button(L10n.t("Download %d Again", picked.count)) { picked.forEach { vm.redownload($0.entry) } }
             Button(L10n.t("Copy %d Links", picked.count)) { copyLinks(picked) }
             Divider()
-            Button(L10n.t("Remove %d from History", picked.count), role: .destructive) { picked.forEach(remove) }
+            Button(L10n.t("Remove %d from History", picked.count), role: .destructive) { remove(picked) }
         }
     }
 
@@ -326,10 +329,12 @@ struct HistoryView: View {
         items = items?.map { $0.id == item.id ? replacement : $0 }
     }
 
-    private func remove(_ item: HistoryPresentation.Item) {
-        vm.deleteHistoryEntry(item.id)
-        items?.removeAll { $0.id == item.id }
-        selection.remove(item.id)
+    /// One batch: a single write, a single toast with Undo (also Edit ▸ Undo in this window).
+    private func remove(_ picked: [HistoryPresentation.Item]) {
+        let ids = Set(picked.map(\.id))
+        vm.removeHistoryEntries(picked.map(\.entry), undoManager: undoManager)
+        items?.removeAll { ids.contains($0.id) }
+        selection.subtract(ids)
     }
 
     private func exportCSV() {

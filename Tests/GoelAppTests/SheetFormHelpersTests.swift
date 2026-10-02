@@ -128,15 +128,15 @@ final class SettingsSearchTests: XCTestCase {
     }
 
     func testRowTitlesFindTheirPane() {
-        XCTAssertEqual(search("proxy host"), [.network])
+        XCTAssertEqual(search("proxy host").first, .network)
         XCTAssertEqual(search("DHT"), [.bittorrent])
         XCTAssertEqual(search("audit"), [.audit])
         XCTAssertTrue(search("finish").contains(.scheduler))
     }
 
     func testMatchingIgnoresCaseDiacriticsAndWordOrder() {
-        XCTAssertEqual(search("PROXY PORT"), [.network])
-        XCTAssertEqual(search("port proxy"), [.network])
+        XCTAssertEqual(search("PROXY PORT").first, .network)
+        XCTAssertEqual(search("port proxy").first, .network)
         XCTAssertEqual(search("mode encryption"), [.bittorrent])
         XCTAssertEqual(search("µtp"), [.bittorrent])
     }
@@ -166,7 +166,7 @@ final class SettingsSearchTests: XCTestCase {
 
     func testTheIndexIsFoldedOnceAndMatchesLikeTheOldScan() {
         let index = SettingsSearch.Index(localize: { $0 })
-        XCTAssertEqual(index.panes(matching: "PROXY PORT"), [.network])
+        XCTAssertEqual(index.panes(matching: "PROXY PORT").first, .network)
         XCTAssertEqual(index.panes(matching: "µtp"), [.bittorrent])
         XCTAssertEqual(index.panes(matching: "ÉNCRYPTION"), [.bittorrent], "diacritics in the query fold away")
         XCTAssertEqual(index.panes(matching: ""), SettingsView.Pane.Group.allCases.flatMap(\.panes))
@@ -176,16 +176,29 @@ final class SettingsSearchTests: XCTestCase {
         }
     }
 
-    func testEveryWordMustSitInOneKeywordNotAcrossThePane() {
-        // "Enable DHT" and "Encryption mode" are both in BitTorrent, but no one keyword has both words.
-        XCTAssertEqual(search("dht encryption"), [])
+    func testWordsMayHitDifferentKeywordsOfOnePane() {
+        XCTAssertEqual(search("dht encryption"), [.bittorrent])
+        XCTAssertEqual(search("dht qwertyuiop"), [])
+    }
+
+    func testPlainEnglishQueriesFindTheirPane() {
+        XCTAssertTrue(search("speed limit").contains(.traffic))
+        XCTAssertTrue(search("dark mode").contains(.general))
+        XCTAssertTrue(search("shutdown").contains(.scheduler))
+        XCTAssertTrue(search("shut-down").contains(.scheduler))
+        XCTAssertTrue(search("bandwidth").contains(.traffic))
+        XCTAssertTrue(search("download location").contains(.general))
+    }
+
+    func testAKeywordHoldingEveryWordRanksFirst() {
+        XCTAssertEqual(search("proxy host").first, .network)
     }
 
     func testTheCachedIndexIsReusedPerLanguage() {
         let first = SettingsSearch.index(for: "English")
         let again = SettingsSearch.index(for: "English")
         XCTAssertEqual(first.entries.map(\.pane), again.entries.map(\.pane))
-        XCTAssertEqual(SettingsSearch.panes(matching: "proxy host"), [.network])
+        XCTAssertEqual(SettingsSearch.panes(matching: "proxy host").first, .network)
     }
 
     func testResultAnnouncements() {

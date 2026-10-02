@@ -46,7 +46,7 @@ extension SettingsView.Pane {
             return ["Appearance, startup, where files land, and sleep.",
                     "Appearance", "Theme", "Light", "Dark", "Language", "Startup", "Launch at login",
                     "Launch minimized", "Show in menu bar",
-                    "Default download folder", "Fixed folder", "When a file exists", "Clipboard capture",
+                    "Default download folder", "Fixed folder", "Choose automatically, by type, by source URL, or fixed.", "When a file exists", "Clipboard capture",
                     "Power management", "Prevent sleep during active downloads",
                     "Allow sleep if downloads can resume later", "Allow sleep while seeding",
                     "Pause downloads below battery threshold", "Don’t seed on battery"]
@@ -75,12 +75,13 @@ extension SettingsView.Pane {
                     "Options", "How it works", "Include expensive networks", "Allow paths outside VPN",
                     "Streams per adapter", "Check path diversity"]
         case .traffic:
-            return ["Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile.",
+            return ["Three switchable speed profiles. The status-bar speed toggle switches between Unlimited and the active profile.",
                     "Max download speed", "Max upload speed", "Max connections (global)",
-                    "Max connections per server", "Max simultaneous downloads", "Stop seeding at ratio",
+                    "Max connections per server", "Max simultaneous downloads", "0 = unlimited.",
+                    "Seeding and peer uploads. 0 = unlimited.", "Stop seeding at ratio",
                     "Max metadata-resolution downloads", "Extra connections per download"]
         case .bittorrent:
-            return ["Protocol, privacy, and watch-folder behavior.",
+            return ["Protocol, privacy, and watch-folder behaviour.",
                     "Torrent files", "Peers & privacy", "Extra trackers", "Default torrent client",
                     "Auto-delete .torrent when done",
                     "Watch folder for .torrent files", "Watched folder",
@@ -95,8 +96,7 @@ extension SettingsView.Pane {
                     "Weekly profile schedule", "Switch profiles by the hour"]
         case .rss:
             return ["Watch feeds and queue new items automatically (podcasts, releases, torrent feeds).",
-                    "Check feeds every", "Feeds", "Add a feed", "Feed URL", "Title contains",
-                    "Add items paused", "Rules and articles"]
+                    "Check feeds every", "Feeds", "Add a feed", "Rules and articles"]
         case .afterDownload:
             return ["What happens to a file once it finishes.",
                     "Extract", "Auto-extract archives", "Script", "Run a script on completion",
@@ -136,7 +136,8 @@ extension SettingsView.Pane {
 }
 
 /// Filters the Settings sidebar against a static keyword index. Matching is case- and
-/// diacritic-insensitive, and every word of the query must appear (in any order) in one keyword.
+/// diacritic-insensitive, and every word of the query must appear (in any order, or as a synonym) in some keyword of the
+/// pane; a pane with one keyword holding every word ranks first.
 enum SettingsSearch {
 
     /// Fewer characters than this don't highlight rows: one letter lights up half the pane.
@@ -150,17 +151,57 @@ enum SettingsSearch {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
     }
 
+    /// Words that mean the same thing to a user hunting for a setting. Each group is matched
+    /// as alternatives: a query word hits a keyword containing any member. Multi-word members
+    /// are folded to their first word in the query ("dark mode" → "dark").
+    static let synonymGroups: [[String]] = [
+        ["limit", "throttle", "bandwidth", "cap", "max", "unlimited"],
+        ["dark", "light", "appearance", "theme"],
+        ["location", "folder", "save", "directory"],
+        ["shutdown", "shut down", "power off"],
+    ]
+
+    /// Phrases collapsed to one query word before splitting ("dark mode" is one idea).
+    private static let phrases: [(phrase: String, word: String)] = [
+        ("dark mode", "dark"), ("light mode", "light"), ("speed limit", "limit"),
+    ]
+
+    /// Folds spaces and hyphens away so "shutdown" meets "Shut down" and "Pre-fetch" meets "prefetch".
+    static func squeeze(_ text: String) -> String {
+        text.filter { !$0.isWhitespace && $0 != "-" && $0 != "‑" }
+    }
+
     /// The query's words, folded once so each keyword costs only a substring check.
     static func tokens(_ query: String) -> [String] {
-        query.split(whereSeparator: \.isWhitespace).map { fold(String($0)) }
+        var folded = fold(query)
+        for (phrase, word) in phrases { folded = folded.replacingOccurrences(of: phrase, with: word) }
+        return folded.split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+
+    /// The query word plus its synonyms, squeezed for comparison.
+    private static func alternatives(_ token: String) -> [String] {
+        let squeezed = squeeze(token)
+        var out = [squeezed]
+        for group in synonymGroups where group.contains(where: { squeeze($0) == squeezed }) {
+            out += group.map(squeeze)
+        }
+        return out
+    }
+
+    /// Whether `text` (already folded) contains the token or a synonym of it.
+    static func contains(folded text: String, token: String) -> Bool {
+        if text.contains(token) { return true }
+        let squeezed = squeeze(text)
+        return alternatives(token).contains { squeezed.contains($0) }
     }
 
     static func matches(_ text: String, query: String) -> Bool {
         matches(folded: fold(text), tokens: tokens(query))
     }
 
+    /// Every token must hit this one text.
     static func matches(folded text: String, tokens: [String]) -> Bool {
-        !tokens.isEmpty && tokens.allSatisfy { text.contains($0) }
+        !tokens.isEmpty && tokens.allSatisfy { contains(folded: text, token: $0) }
     }
 
     /// Whether a `SettingRow` titled `name` lights up for this query.
@@ -233,9 +274,18 @@ enum SettingsSearch {
         func panes(matching query: String) -> [SettingsView.Pane] {
             guard SettingsSearch.isActive(query) else { return entries.map(\.pane) }
             let tokens = SettingsSearch.tokens(query)
-            return entries
-                .filter { entry in entry.keys.contains { SettingsSearch.matches(folded: $0, tokens: tokens) } }
-                .map(\.pane)
+            let hits = entries
+                .compactMap { entry -> (pane: SettingsView.Pane, strict: Bool)? in
+                    if entry.keys.contains(where: { SettingsSearch.matches(folded: $0, tokens: tokens) }) {
+                        return (entry.pane, true)
+                    }
+                    let loose = tokens.allSatisfy { token in
+                        entry.keys.contains { SettingsSearch.contains(folded: $0, token: token) }
+                    }
+                    return loose ? (entry.pane, false) : nil
+                }
+            // Panes where one keyword has every word come first; the rest follow in sidebar order.
+            return hits.filter(\.strict).map(\.pane) + hits.filter { !$0.strict }.map(\.pane)
         }
     }
 

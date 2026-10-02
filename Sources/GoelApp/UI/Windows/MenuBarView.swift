@@ -21,6 +21,7 @@ struct MenuBarPopover: View {
     /// Observed so the transfer rows redraw; read through `vm.sftpTransfers`.
     @EnvironmentObject private var sftpStore: SFTPTransferStore
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     @ObservedObject var center: MediaJobCenter
     @ObservedObject var commands: CommandState
@@ -30,6 +31,8 @@ struct MenuBarPopover: View {
     var countdownOverride: AutoShutdownCountdown?
 
     @State private var measuredListHeight: CGFloat = 0
+    /// The single link on the clipboard, if any; refreshed whenever the popover opens.
+    @State private var clipboardLink: String?
 
     static let width: CGFloat = 400
     private static let minListHeight: CGFloat = 62
@@ -57,6 +60,7 @@ struct MenuBarPopover: View {
             header(count: queue.total + transfers.count + jobs.count, failures: attention.total)
             // The window's blocking card is invisible in menu-bar-only mode, yet the countdown still fires.
             MenuBarCountdownSection(countdown: countdownOverride ?? vm.autoShutdownCountdown)
+            if let clipboardLink { clipboardRow(clipboardLink) }
             if isEmpty {
                 emptyState
             } else {
@@ -76,6 +80,11 @@ struct MenuBarPopover: View {
         }
         .frame(width: Self.width)
         .background(Studio.Palette.sheet)
+        .onAppear(perform: refreshClipboard)
+        // A popover that stays alive between openings: opening it makes its window key again.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            refreshClipboard()
+        }
     }
 
     /// A `.window` `MenuBarExtra` sizes to the content's *ideal* height, which a `ScrollView` has none of.
@@ -136,13 +145,16 @@ struct MenuBarPopover: View {
                 ForEach(attention.shown) { task in
                     MenuBarFailedRow(task: task, vm: vm, onOpen: { open(task) })
                 }
+                if attention.total > attention.shown.count {
+                    moreRow(count: attention.total - attention.shown.count, filter: .failed)
+                }
             }
             if !queue.listed.isEmpty {
                 sectionLabel(L10n.t("In progress"))
                 ForEach(queue.listed) { task in
                     MenuBarDownloadRow(task: task, vm: vm, onOpen: { open(task) })
                 }
-                if queue.hiddenCount > 0 { moreRow(queue) }
+                if queue.hiddenCount > 0 { moreRow(count: queue.hiddenCount, filter: queue.hiddenFilter) }
             }
             if !transfers.isEmpty {
                 sectionLabel(L10n.t("SFTP Transfers"))
@@ -183,20 +195,45 @@ struct MenuBarPopover: View {
 
     /// Rows past the cap still count and still get a way in: the header used to report only the
     /// eight drawn, so twelve downloads read "Downloads · 8".
-    private func moreRow(_ queue: MenuBarQueue) -> some View {
+    private func moreRow(count: Int, filter: SidebarFilter) -> some View {
         Button {
-            vm.showFilter(queue.hiddenFilter)
+            vm.showFilter(filter)
             activateMainWindow()
         } label: {
             HStack(spacing: Studio.Space.xxs) {
-                Text(L10n.t("%d more in Goel°", queue.hiddenCount))
+                Text(L10n.t("%d more in Goel°", count))
                 Image(systemName: "chevron.right").font(StudioFonts.font(.ui, size: 9, weight: 700))
             }
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.studio(.ghost, size: .small, fullWidth: true))
-        .a11yButton(L10n.t("%d more downloads", queue.hiddenCount),
+        .a11yButton(L10n.t("%d more downloads", count),
                     hint: L10n.t("Opens the main window with them listed."))
+    }
+
+    /// One link on the clipboard becomes one tap; several go through the Add sheet's review step.
+    private func clipboardRow(_ link: String) -> some View {
+        Button(action: addFromClipboard) {
+            HStack(spacing: Studio.Space.s) {
+                Image(systemName: "doc.on.clipboard").accessibilityHidden(true)
+                Text(L10n.t("Add from Clipboard"))
+                Text(Self.shorten(link))
+                    .studioMono()
+                    .foregroundStyle(Studio.Palette.ink3)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+        }
+        .buttonStyle(.studio(.soft, size: .small, fullWidth: true))
+        .padding(.horizontal, Studio.Space.l)
+        .padding(.bottom, Studio.Space.s)
+        .a11yButton(L10n.t("Add from clipboard"), hint: L10n.t("Adds the link on the clipboard to the queue."))
+    }
+
+    private static func shorten(_ locator: String) -> String {
+        guard locator.count > 36 else { return locator }
+        return locator.prefix(20) + "…" + locator.suffix(12)
     }
 
     private var emptyState: some View {
@@ -242,6 +279,7 @@ struct MenuBarPopover: View {
             .buttonStyle(.studio(.ghost, size: .small))
             .disabled(!snapshot.pauseAllEnabled)
             .a11yButton(pausing ? L10n.t("Pause all downloads") : L10n.t("Resume all downloads"))
+            overflowMenu
         }
         .padding(.horizontal, Studio.Space.l)
         .padding(.vertical, Studio.Space.m)
@@ -249,7 +287,51 @@ struct MenuBarPopover: View {
         .overlay(alignment: .top) { StudioDivider() }
     }
 
+    private var overflowMenu: some View {
+        Menu {
+            Button(L10n.t("Settings…")) {
+                NSApp.activate(ignoringOtherApps: true)
+                openSettings()
+            }
+            Divider()
+            Button(L10n.t("Quit Goel°")) { NSApp.terminate(nil) }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(StudioFonts.font(.ui, size: 13, weight: 650))
+                .frame(width: 22, height: 22)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(L10n.t("More"))
+        .accessibilityLabel(L10n.t("More"))
+    }
+
     // MARK: Actions
+
+    private func refreshClipboard() {
+        let text = NSPasteboard.general.string(forType: .string)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let text, !text.isEmpty, !vm.parsedSources(in: text).isEmpty else {
+            clipboardLink = nil
+            return
+        }
+        clipboardLink = text.split(whereSeparator: \.isNewline).count == 1 ? text : L10n.t("Several links")
+    }
+
+    private func addFromClipboard() {
+        let text = NSPasteboard.general.string(forType: .string) ?? ""
+        let sources = vm.parsedSources(in: text)
+        if sources.count == 1 {
+            // Straight into the queue; the new row shows up here, so the main window stays where it is.
+            vm.add(rawLines: text, saveDirectory: nil, priority: .normal)
+            clipboardLink = nil
+        } else {
+            // Several links need the review step, which lives in the main window's Add sheet.
+            MainWindowPresenter.register { openWindow(id: MainWindowID.value) }
+            vm.addFromClipboard()
+        }
+    }
 
     private func open(_ task: DownloadTask) {
         vm.reveal(task.id)
@@ -278,8 +360,8 @@ private struct MenuBarSpeedControls: View {
         let profileLocked = vm.managedPolicy.isLocked(.selectedProfileName)
         HStack(spacing: Studio.Space.s) {
             Button(action: vm.toggleSnail) {
-                Label(SpeedProfileText.pill(limitEnabled: settings.speedLimitEnabled,
-                                            profile: settings.selectedProfile),
+                Label(SpeedProfileText.capPill(limitEnabled: settings.speedLimitEnabled,
+                                               profile: settings.selectedProfile),
                       systemImage: "tortoise")
                     .monospacedDigit()
             }
@@ -301,7 +383,7 @@ private struct MenuBarSpeedControls: View {
                                       profile, limitEnabled: settings.speedLimitEnabled))
                 },
                 size: .small, fullWidth: true,
-                accessibilityLabel: L10n.t("Queue profile"))
+                accessibilityLabel: L10n.t("Speed profile"))
                 .disabled(profileLocked)
                 .help(SpeedProfileText.queueSummary(settings.selectedProfile, limitEnabled: settings.speedLimitEnabled))
                 .accessibilityValue(SpeedProfileText.spokenQueueSummary(

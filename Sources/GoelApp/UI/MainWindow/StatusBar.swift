@@ -24,7 +24,7 @@ struct StatusBar: View {
                 .layoutPriority(1)
             // The caption goes first when the window is narrow, so the figures beside it don't truncate.
             ViewThatFits(in: .horizontal) {
-                Text(L10n.t("Queue profile"))
+                Text(L10n.t("Speed profile"))
                     .studioFont(.caption)
                     .foregroundStyle(Studio.Palette.ink3)
                     .lineLimit(1)

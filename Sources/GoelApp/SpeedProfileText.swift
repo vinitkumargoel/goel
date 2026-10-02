@@ -39,6 +39,15 @@ enum SpeedProfileText {
         return L10n.t("%1$@ · %2$@", profile.name, rate(profile.maxDownloadBytesPerSec))
     }
 
+    /// The pill where the profile is already named by neighbouring segments (the menu-bar popover):
+    /// only what the segments don't say, the cap. "Speed: Unlimited" off, "↓ 2 MB/s" on, "Limit on" when
+    /// the active profile's download cap is itself unlimited.
+    static func capPill(limitEnabled: Bool, profile: TrafficProfile) -> String {
+        guard limitEnabled else { return L10n.t("Speed: Unlimited") }
+        guard profile.maxDownloadBytesPerSec > 0 else { return L10n.t("Limit on") }
+        return L10n.t("↓ %@", rate(profile.maxDownloadBytesPerSec))
+    }
+
     /// What choosing a profile changes right now. The queue limits always apply; the caps only
     /// while the snail is on (``AppSettings/effectiveProfile`` zeroes them), so they are marked off.
     /// "Low — up to 2 downloads at once, seed to 1.0×; speed cap ↓ 2 MB/s, ↑ 256 KB/s (off)"

@@ -62,7 +62,7 @@ struct SFTPConnectionEditor: View {
     var canSave: Bool { saveBlocker == nil }
 
     var body: some View {
-        StudioSheet(title: existing == nil ? L10n.t("Add SFTP Server") : L10n.t("Edit SFTP Server"),
+        StudioSheet(title: existing == nil ? L10n.t("Add SFTP server") : L10n.t("Edit SFTP server"),
                     subtitle: existing.map { $0.credentialKey },
                     symbol: "server.rack", width: 520) {
             form

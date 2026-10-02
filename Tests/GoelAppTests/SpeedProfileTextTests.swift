@@ -32,6 +32,14 @@ final class SpeedProfileTextTests: XCTestCase {
         XCTAssertEqual(SpeedProfileText.pill(limitEnabled: true, profile: profile(down: 0, up: 5)), "Low")
     }
 
+    func testCapPillDoesNotRepeatTheProfileName() {
+        let low = profile(down: 2 * 1_048_576, up: 0)
+        XCTAssertEqual(SpeedProfileText.capPill(limitEnabled: false, profile: low), "Speed: Unlimited")
+        XCTAssertEqual(SpeedProfileText.capPill(limitEnabled: true, profile: low),
+                       "↓ \(Double(2 * 1_048_576).speedString)")
+        XCTAssertEqual(SpeedProfileText.capPill(limitEnabled: true, profile: profile(down: 0, up: 5)), "Limit on")
+    }
+
     /// The profile still changes concurrency and seeding with the snail off, so the tooltip must say so
     /// and must not promise a cap that is not applied.
     func testQueueSummaryMarksCapsOffWhileTheLimitIsOff() {

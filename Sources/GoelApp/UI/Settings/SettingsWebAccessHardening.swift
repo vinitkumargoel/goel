@@ -117,13 +117,18 @@ struct WebAccessHardeningCard: View {
             .managed(.remoteAllowedHostNames, vm.managedPolicy)
         }
         SettingRow(L10n.t("Failed sign-ins before backoff"),
-                   detail: L10n.t("Wrong passwords from one address are slowed exponentially. The delay "
-                       + "is per-address, so one attacker can’t lock everybody else out.")) {
-            SettingsIntField(value: setting(vm, \.remoteLoginMaxAttempts), width: 80)
+                   detail: SettingsRangeText.detail(
+                       L10n.t("Wrong passwords from one address are slowed exponentially. The delay "
+                           + "is per-address, so one attacker can’t lock everybody else out."),
+                       SettingsBounds.remoteLoginMaxAttempts)) {
+            SettingsIntField(value: setting(vm, \.remoteLoginMaxAttempts), width: 80,
+                             range: SettingsBounds.remoteLoginMaxAttempts)
         }
         SettingRow(L10n.t("Backoff (seconds)"),
-                   detail: L10n.t("The first delay after the limit is hit; it doubles from there.")) {
-            SettingsIntField(value: backoffSecondsBinding, unit: L10n.t("s"), width: 80)
+                   detail: SettingsRangeText.detail(L10n.t("The first delay after the limit is hit; it doubles from there."),
+                                                    Self.backoffSecondsRange)) {
+            SettingsIntField(value: backoffSecondsBinding, unit: L10n.t("s"), width: 80,
+                             range: Self.backoffSecondsRange)
         }
     }
 
@@ -156,6 +161,8 @@ struct WebAccessHardeningCard: View {
             }
         }
     }
+
+    private static let backoffSecondsRange = Int(SettingsBounds.remoteLoginBackoffSeconds.lowerBound)...Int(SettingsBounds.remoteLoginBackoffSeconds.upperBound)
 
     private var backoffSecondsBinding: Binding<Int> {
         Binding(

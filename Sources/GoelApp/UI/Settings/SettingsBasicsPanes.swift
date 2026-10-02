@@ -149,8 +149,8 @@ struct NetworkSettingsPane: View {
                                       placeholder: L10n.t("proxy.example.com"), isMonospaced: true)
                         .managed(.proxyHost, vm.managedPolicy)
                 }
-                SettingRow(L10n.t("Proxy port"), detail: L10n.t("Port the proxy listens on."), isIndented: true) {
-                    SettingsIntField(value: setting(vm, \.proxyPort))
+                SettingRow(L10n.t("Proxy port"), detail: SettingsRangeText.detail(L10n.t("Port the proxy listens on."), SettingsBounds.proxyPort), isIndented: true) {
+                    SettingsIntField(value: setting(vm, \.proxyPort), range: SettingsBounds.proxyPort)
                         .managed(.proxyPort, vm.managedPolicy)
                 }
             }
@@ -159,14 +159,19 @@ struct NetworkSettingsPane: View {
 
     private var connectionsCard: some View {
         SettingsCard(title: L10n.t("Connections"), symbol: "arrow.triangle.2.circlepath") {
-            SettingRow(L10n.t("Connection timeout"), detail: L10n.t("Seconds before a stalled connection drops.")) {
-                SettingsDoubleField(value: setting(vm, \.connectionTimeout), unit: L10n.t("s"))
+            SettingRow(L10n.t("Connection timeout"), detail: SettingsRangeText.detail(L10n.t("Seconds before a stalled connection drops."),
+                SettingsBounds.connectionTimeout)) {
+                SettingsDoubleField(value: setting(vm, \.connectionTimeout), unit: L10n.t("s"),
+                                    range: SettingsBounds.connectionTimeout)
             }
-            SettingRow(L10n.t("Retry count"), detail: L10n.t("Attempts before marking a download failed.")) {
-                SettingsIntField(value: setting(vm, \.retryCount))
+            SettingRow(L10n.t("Retry count"), detail: SettingsRangeText.detail(L10n.t("Attempts before marking a download failed."),
+                SettingsBounds.retryCount)) {
+                SettingsIntField(value: setting(vm, \.retryCount), range: SettingsBounds.retryCount)
             }
-            SettingRow(L10n.t("Retry interval"), detail: L10n.t("Seconds to wait between retries.")) {
-                SettingsDoubleField(value: setting(vm, \.retryInterval), unit: L10n.t("s"))
+            SettingRow(L10n.t("Retry interval"), detail: SettingsRangeText.detail(L10n.t("Seconds to wait between retries."),
+                SettingsBounds.retryInterval)) {
+                SettingsDoubleField(value: setting(vm, \.retryInterval), unit: L10n.t("s"),
+                                    range: SettingsBounds.retryInterval)
             }
             SettingRow(L10n.t("Auto-retry failed downloads"),
                        detail: L10n.t("Automatically re-queue a failed download and try again, with an exponential "
@@ -174,9 +179,11 @@ struct NetworkSettingsPane: View {
                        isOn: setting(vm, \.autoRetryEnabled))
             if vm.settings.autoRetryEnabled {
                 SettingRow(L10n.t("Auto-retry attempts"),
-                           detail: L10n.t("How many times to retry before leaving it failed for a manual retry."),
+                           detail: SettingsRangeText.detail(L10n.t("How many times to retry before leaving it failed for a manual retry."),
+                                                     SettingsBounds.autoRetryMaxAttempts),
                            isIndented: true) {
-                    SettingsIntField(value: setting(vm, \.autoRetryMaxAttempts))
+                    SettingsIntField(value: setting(vm, \.autoRetryMaxAttempts),
+                                     range: SettingsBounds.autoRetryMaxAttempts)
                 }
             }
             SettingRow(L10n.t("Custom user-agent"), detail: L10n.t("Sent with HTTP requests.")) {

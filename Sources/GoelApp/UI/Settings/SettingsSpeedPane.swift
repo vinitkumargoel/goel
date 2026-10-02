@@ -7,8 +7,8 @@ struct SpeedSettingsPane: View {
 
     var body: some View {
         SettingsPane(title: L10n.t("Speed & Connections"),
-                     subtitle: L10n.t("Three switchable profiles. The status-bar "
-                         + "snail toggles Unlimited vs the active profile."),
+                     subtitle: L10n.t("Three switchable speed profiles. The status-bar "
+                         + "speed toggle switches between Unlimited and the active profile."),
                      managedKeys: [.selectedProfileName, .maxDownloadBytesPerSec, .maxUploadBytesPerSec],
                      fillsWidth: true) {
             VStack(alignment: .leading, spacing: Studio.Space.l) {
@@ -35,36 +35,48 @@ struct SpeedSettingsPane: View {
                           alignment: .leading, spacing: Studio.Space.ml) {
                     // Deliberately not `.managed(…)`: a forced ceiling is a clamp, not an assignment.
                     ProfileFieldTile(title: L10n.t("Max download speed"), label: L10n.t("Max download"),
-                                     detail: L10n.t("0 = unlimited.")) {
+                                     detail: SettingsRangeText.detail(L10n.t("0 = unlimited."),
+                                         SettingsBounds.profileSpeedMegabytes)) {
                         SettingsDoubleField(value: megabytesBinding(\.maxDownloadBytesPerSec), unit: L10n.t("MB/s"),
-                                            width: nil)
+                                            width: nil, range: SettingsBounds.profileSpeedMegabytes)
                     }
                     ProfileFieldTile(title: L10n.t("Max upload speed"), label: L10n.t("Max upload"),
-                                     detail: L10n.t("Seeding and peer uploads. 0 = unlimited.")) {
+                                     detail: SettingsRangeText.detail(L10n.t("Seeding and peer uploads. 0 = unlimited."),
+                                         SettingsBounds.profileSpeedMegabytes)) {
                         SettingsDoubleField(value: megabytesBinding(\.maxUploadBytesPerSec), unit: L10n.t("MB/s"),
-                                            width: nil)
+                                            width: nil, range: SettingsBounds.profileSpeedMegabytes)
                     }
                     ProfileFieldTile(title: L10n.t("Max simultaneous downloads"),
                                      label: L10n.t("Simultaneous downloads"),
-                                     detail: L10n.t("The rest wait in the queue.")) {
-                        SettingsIntField(value: profileBinding(\.maxSimultaneousDownloads), width: nil)
+                                     detail: SettingsRangeText.detail(L10n.t("The rest wait in the queue."),
+                                         SettingsBounds.profileMaxSimultaneousDownloads)) {
+                        SettingsIntField(value: profileBinding(\.maxSimultaneousDownloads), width: nil,
+                                         range: SettingsBounds.profileMaxSimultaneousDownloads)
                     }
                     ProfileFieldTile(title: L10n.t("Stop seeding at ratio"), label: L10n.t("Seed ratio"),
-                                     detail: L10n.t("Uploaded ÷ downloaded; 0 seeds forever.")) {
-                        SettingsDoubleField(value: profileBinding(\.seedRatioLimit), unit: "×", width: nil)
+                                     detail: SettingsRangeText.detail(L10n.t("Uploaded ÷ downloaded; 0 seeds forever."),
+                                         SettingsBounds.profileSeedRatioLimit)) {
+                        SettingsDoubleField(value: profileBinding(\.seedRatioLimit), unit: "×", width: nil,
+                                            range: SettingsBounds.profileSeedRatioLimit)
                     }
                     ProfileFieldTile(title: L10n.t("Max connections (global)"), label: L10n.t("Connections, global"),
-                                     detail: L10n.t("Open connections across every download.")) {
-                        SettingsIntField(value: profileBinding(\.maxConnections), width: nil)
+                                     detail: SettingsRangeText.detail(L10n.t("Open connections across every download."),
+                                         SettingsBounds.profileMaxConnections)) {
+                        SettingsIntField(value: profileBinding(\.maxConnections), width: nil,
+                                         range: SettingsBounds.profileMaxConnections)
                     }
                     ProfileFieldTile(title: L10n.t("Max connections per server"), label: L10n.t("Per server"),
-                                     detail: L10n.t("Some servers block clients that open too many.")) {
-                        SettingsIntField(value: profileBinding(\.maxConnectionsPerServer), width: nil)
+                                     detail: SettingsRangeText.detail(L10n.t("Some servers block clients that open too many."),
+                                         SettingsBounds.profileMaxConnectionsPerServer)) {
+                        SettingsIntField(value: profileBinding(\.maxConnectionsPerServer), width: nil,
+                                         range: SettingsBounds.profileMaxConnectionsPerServer)
                     }
                     ProfileFieldTile(title: L10n.t("Max metadata-resolution downloads"),
                                      label: L10n.t("Metadata slots"),
-                                     detail: L10n.t("Concurrent “requesting info” magnets.")) {
-                        SettingsIntField(value: profileBinding(\.maxMetadataResolutions), width: nil)
+                                     detail: SettingsRangeText.detail(L10n.t("Concurrent “requesting info” magnets."),
+                                         SettingsBounds.profileMaxMetadataResolutions)) {
+                        SettingsIntField(value: profileBinding(\.maxMetadataResolutions), width: nil,
+                                         range: SettingsBounds.profileMaxMetadataResolutions)
                     }
                     ProfileFieldTile(title: L10n.t("Extra connections per download"),
                                      label: L10n.t("Extra connections"),
@@ -100,7 +112,7 @@ struct SpeedSettingsPane: View {
         Binding(
             get: { Double(vm.settings.selectedProfile[keyPath: keyPath]) / 1_048_576 },
             set: { mbPerSec in
-                let mb = mbPerSec.isFinite ? min(max(0, mbPerSec), 1_048_576) : 0
+                let mb = mbPerSec.isFinite ? SettingsBounds.clamp(mbPerSec, to: SettingsBounds.profileSpeedMegabytes).value : 0
                 let bytes = Int64(mb * 1_048_576)
                 vm.update { settings in
                     guard let idx = settings.profiles.firstIndex(where: { $0.name == settings.selectedProfileName })

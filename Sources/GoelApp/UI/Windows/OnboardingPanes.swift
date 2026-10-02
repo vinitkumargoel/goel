@@ -214,9 +214,9 @@ struct OnboardingClipboardPane: View {
             OnboardingItem(symbol: "basket", tone: .neutral, title: L10n.t("Drop Basket"),
                            detail: L10n.t("A small always-on-top target — drag links onto it from anywhere.")) {
                 StudioKeyCaps("⇧⌘B")
-                Button(L10n.t("Show")) { DropBasketController.shared.toggle() }
+                Button(L10n.t("Toggle")) { DropBasketController.shared.toggle() }
                     .buttonStyle(.studio(.secondary, size: .small))
-                    .accessibilityLabel(L10n.t("Show drop basket"))
+                    .accessibilityLabel(L10n.t("Toggle drop basket"))
             }
             OnboardingItem(symbol: "link.badge.plus", tone: .neutral, title: L10n.t("Link Grabber"),
                            detail: L10n.t("Give it a page URL and it lists every file linked from it to pick from.")) {

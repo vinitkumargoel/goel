@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import GoelCore
 
@@ -21,6 +22,15 @@ enum OnboardingState {
     static var licenceNoticeDismissed: Bool {
         get { UserDefaults.standard.bool(forKey: licenceNoticeDismissedKey) }
         set { UserDefaults.standard.set(newValue, forKey: licenceNoticeDismissedKey) }
+    }
+
+    /// Posted by Help ▸ Show Setup Again… and the command palette; the main window presents the flow.
+    static let showAgainNotification = Notification.Name("goel.onboarding.showAgain")
+
+    @MainActor
+    static func requestShowAgain() {
+        NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: showAgainNotification, object: nil)
     }
 
     static let commercialURL = URL(string: "https://goel.vinitk.dev/commercial")!
@@ -53,7 +63,7 @@ enum OnboardingBrowserChoice: String, CaseIterable, Identifiable {
         switch self {
         case .firefox:
             return L10n.t("about:debugging → This Firefox → Load Temporary Add-on → "
-                + "the folder’s manifest.json.")
+                + "the folder’s manifest.json. Reload it after each Firefox restart.")
         case .safari, .other:
             return ""
         default:

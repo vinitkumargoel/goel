@@ -79,13 +79,13 @@ struct StatusProfilePicker: View {
             selection: Binding(get: { vm.activeProfileName }, set: { vm.setProfile($0) }),
             segments: vm.queueProfiles.map(segment),
             size: .small,
-            accessibilityLabel: L10n.t("Queue profile"))
+            accessibilityLabel: L10n.t("Speed profile"))
     }
 
     private func segment(_ profile: TrafficProfile) -> StudioSegment<String> {
         StudioSegment(
             profile.name, title: profile.name,
-            accessibilityLabel: L10n.t("%@ queue profile", profile.name),
+            accessibilityLabel: L10n.t("%@ speed profile", profile.name),
             accessibilityValue: vm.spokenQueueSummary(for: profile),
             help: vm.queueSummary(for: profile),
             actions: [StudioSegmentAction(title: L10n.t("Edit Profile…"),

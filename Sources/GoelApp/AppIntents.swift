@@ -24,7 +24,7 @@ enum IntentBridge {
             switch self {
             case .notReady: return "Goel° didn’t finish opening. Try again."
             case .invalidURL: return "That isn’t a link Goel° can download."
-            case .unknownProfile(let name): return "There’s no traffic profile named \(name)."
+            case .unknownProfile(let name): return "There’s no speed profile named \(name)."
             }
         }
     }
@@ -93,7 +93,7 @@ struct TrafficProfileOptions: DynamicOptionsProvider {
 }
 
 struct SetTrafficProfileIntent: AppIntent {
-    static let title: LocalizedStringResource = "Set Traffic Profile"
+    static let title: LocalizedStringResource = "Set Speed Profile"
     static let openAppWhenRun = true
 
     @Parameter(title: "Profile", optionsProvider: TrafficProfileOptions())
@@ -145,8 +145,8 @@ struct GoelShortcuts: AppShortcutsProvider {
                     shortTitle: "Pause All", systemImageName: "pause.circle")
         AppShortcut(intent: ResumeAllIntent(), phrases: ["Resume \(.applicationName) downloads"],
                     shortTitle: "Resume All", systemImageName: "play.circle")
-        AppShortcut(intent: SetTrafficProfileIntent(), phrases: ["Set \(.applicationName) traffic profile"],
-                    shortTitle: "Traffic Profile", systemImageName: "gauge.with.dots.needle.33percent")
+        AppShortcut(intent: SetTrafficProfileIntent(), phrases: ["Set \(.applicationName) speed profile"],
+                    shortTitle: "Speed Profile", systemImageName: "gauge.with.dots.needle.33percent")
         AppShortcut(intent: GetActiveDownloadsIntent(), phrases: ["What is \(.applicationName) downloading"],
                     shortTitle: "Active Downloads", systemImageName: "arrow.down.circle")
     }

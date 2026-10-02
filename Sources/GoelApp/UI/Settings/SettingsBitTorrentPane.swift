@@ -6,7 +6,7 @@ struct BitTorrentSettingsPane: View {
     @EnvironmentObject private var vm: AppViewModel
 
     var body: some View {
-        SettingsPane(title: L10n.t("BitTorrent"), subtitle: L10n.t("Protocol, privacy, and watch-folder behavior.")) {
+        SettingsPane(title: L10n.t("BitTorrent"), subtitle: L10n.t("Protocol, privacy, and watch-folder behaviour.")) {
             clientCard
             protocolCard
                 .settingsColumn(.trailing)

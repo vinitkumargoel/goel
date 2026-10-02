@@ -65,7 +65,7 @@ struct AuditLogSettingsPane: View {
                                       + "a file on this Mac and nowhere else."),
                      managedKeys: [.auditLogEnabled, .auditLogDirectory, .auditLogRetentionDays,
                                    .auditLogKeepFiles, .auditLogMaxFileMegabytes]) {
-            SettingsCard(title: L10n.t("Audit log"), symbol: "doc.text.magnifyingglass") {
+            SettingsCard(title: L10n.t("Audit Log"), symbol: "doc.text.magnifyingglass") {
                 SettingRow(L10n.t("Keep an audit log"),
                            detail: L10n.t("Off by default. Nothing is recorded, and nothing is ever sent anywhere — "
                                           + "Goel° has no telemetry.")) {
@@ -94,17 +94,23 @@ struct AuditLogSettingsPane: View {
             if vm.settings.auditLogEnabled {
                 SettingsCard(title: L10n.t("Rotation"), symbol: "arrow.triangle.2.circlepath") {
                     SettingRow(L10n.t("Rotate at (MB)"),
-                               detail: L10n.t("The live file is rotated once it passes this size.")) {
-                        SettingsIntField(value: setting(vm, \.auditLogMaxFileMegabytes), unit: L10n.t("MB"))
+                               detail: SettingsRangeText.detail(L10n.t("The live file is rotated once it passes this size."),
+                                   SettingsBounds.auditLogMaxFileMegabytes)) {
+                        SettingsIntField(value: setting(vm, \.auditLogMaxFileMegabytes), unit: L10n.t("MB"),
+                                         range: SettingsBounds.auditLogMaxFileMegabytes)
                             .managed(.auditLogMaxFileMegabytes, vm.managedPolicy)
                     }
-                    SettingRow(L10n.t("Rotated files to keep"), detail: L10n.t("Older ones are deleted.")) {
-                        SettingsIntField(value: setting(vm, \.auditLogKeepFiles))
+                    SettingRow(L10n.t("Rotated files to keep"), detail: SettingsRangeText.detail(L10n.t("Older ones are deleted."),
+                        SettingsBounds.auditLogKeepFiles)) {
+                        SettingsIntField(value: setting(vm, \.auditLogKeepFiles),
+                                         range: SettingsBounds.auditLogKeepFiles)
                             .managed(.auditLogKeepFiles, vm.managedPolicy)
                     }
                     SettingRow(L10n.t("Keep for (days)"),
-                               detail: L10n.t("Rotated files older than this are deleted. 0 keeps them forever.")) {
-                        SettingsIntField(value: setting(vm, \.auditLogRetentionDays))
+                               detail: SettingsRangeText.detail(L10n.t("Rotated files older than this are deleted. 0 keeps them forever."),
+                                   SettingsBounds.auditLogRetentionDays)) {
+                        SettingsIntField(value: setting(vm, \.auditLogRetentionDays),
+                                         range: SettingsBounds.auditLogRetentionDays)
                             .managed(.auditLogRetentionDays, vm.managedPolicy)
                     }
                 }

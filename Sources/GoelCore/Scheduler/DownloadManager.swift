@@ -310,6 +310,17 @@ public actor DownloadManager {
         await discardOrphanedSpools(sources, ignoringHistory: [id])
     }
 
+    /// Removes several entries at once. Spool files are left for the launch sweep so an Undo
+    /// (`restoreHistoryEntries`) can bring Download Again back intact.
+    public func removeHistoryEntries(_ ids: Set<UUID>) {
+        for id in ids { persistHistoryRemoval(id) }
+    }
+
+    /// Puts removed entries back (Undo).
+    public func restoreHistoryEntries(_ entries: [HistoryEntry]) {
+        for entry in entries { persistHistory(entry) }
+    }
+
     /// History's "Locate…": the file was moved by hand, so point the entry at where it is now.
     public func relocateHistoryEntry(_ entry: HistoryEntry, to path: String) {
         var moved = entry
