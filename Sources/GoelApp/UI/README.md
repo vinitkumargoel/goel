@@ -130,7 +130,7 @@ SF magnet: use `StudioMagnetShape()` (stroked) or `StudioArtGlyph(kind: .magnet,
 - Root of every window: `.studioWindowBackground()` (canvas behind everything, `NSWindow.backgroundColor` set, title bar blended). AppKit panels: `window.applyStudioChrome(appearance: mode)`.
 - `.studioRailBackground()`, `.studioGlass(in: shape)` (controls over artwork/video), `.studioScrim()`.
 - Appearance: `StudioAppearanceMode` = `.system / .light / .dark` (`title`, `symbol`, `colorScheme`, `nsAppearance`). Read/write `viewModel.appearanceMode`; ⇧⌘T calls `viewModel.toggleAppearanceMode()`. Scenes use `appearance.colorScheme` / `.mode` (`AppAppearance`).
-- Storage is `AppSettings.theme` (GoelCore). Values from the old palette picker migrate on read — `frost-light`/`light` → Light; `frost-dark`/`dracula`/`nord`/`dark` → Dark; `system` and anything unknown → System — and are never rewritten behind the user's back. New writes are `system`/`light`/`dark`. The web portal's look is separate: `AppSettings.remoteTheme`, read through `RemotePortalTheme` (Frost Light/Dark, Dracula, Nord).
+- Storage is `AppSettings.theme` (GoelCore). Values from the old palette picker migrate on read — `frost-light`/`light` → Light; `frost-dark`/`dracula`/`nord`/`dark` → Dark; `system` and anything unknown → System — and are never rewritten behind the user's back. New writes are `system`/`light`/`dark`. The web portal's look is separate: `AppSettings.remoteTheme`, read through `RemotePortalTheme` (Match the device / Light / Dark).
 
 
 ## Snapshot harness

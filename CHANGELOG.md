@@ -110,9 +110,9 @@ Fixes from a full-codebase audit, grouped by area.
   menus, VoiceOver labels and every feature are unchanged.
 - **Appearance is now System, Light or Dark.** It replaces the Frost Light, Frost Dark,
   Dracula and Nord palettes (Settings → General, or ⇧⌘T to flip it). Your stored choice
-  migrates on first launch — Frost Light becomes Light; Frost Dark, Dracula and Nord become
-  Dark — and fresh installs follow the Mac. Increase Contrast is honoured in both. The web
-  portal keeps its own four themes (Settings → Web Access).
+  carries over — Frost Light reads as Light; Frost Dark, Dracula and Nord read as Dark —
+  and fresh installs follow the Mac. Increase Contrast is honoured in both. The web portal
+  keeps a separate setting (Settings → Web Access → Web theme).
 - **Bundled fonts.** The app ships Bricolage Grotesque (display), Figtree (interface) and
   Spline Sans Mono (speeds, sizes and other figures) as variable fonts under the SIL Open
   Font License; the licences are in the app bundle. All text still follows the system text
