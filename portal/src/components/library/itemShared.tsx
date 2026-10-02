@@ -121,6 +121,8 @@ interface ItemButtonProps {
   label: string
   name: string
   phone: boolean
+  /** A call for this row is in flight: the button waits instead of firing twice. */
+  busy?: boolean
   className: string
   onPress: (e: MouseEvent<HTMLButtonElement>) => void
   children: ReactNode
@@ -131,13 +133,15 @@ interface ItemButtonProps {
  * pointer shortcut hidden from assistive tech (the same action is in the row menu, Shift+F10, and
  * the selection bar). On a phone it is announced, but stays out of the tab order: the item is it.
  */
-export function ItemButton({ label, name, phone, className, onPress, children }: ItemButtonProps) {
+export function ItemButton({ label, name, phone, busy, className, onPress, children }: ItemButtonProps) {
   const { t } = useTranslation()
   return (
     <button
       type="button"
       className={className}
       tabIndex={-1}
+      disabled={busy}
+      aria-busy={busy || undefined}
       aria-hidden={phone ? undefined : true}
       aria-label={phone ? t('library.actionNamed', { action: label, name }) : label}
       title={label}

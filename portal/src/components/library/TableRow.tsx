@@ -32,6 +32,7 @@ export const TableRow = memo(function TableRow(props: ItemProps) {
         label={actionLabel}
         name={task.name}
         phone={phone}
+        busy={task.busy}
         className={className}
         onPress={() => onAction(task.id, action)}
       >

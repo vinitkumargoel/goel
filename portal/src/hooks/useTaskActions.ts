@@ -38,6 +38,21 @@ export function useTaskActions({ refresh, toast, confirm, currentIds, lookup }: 
   /** Rows removed with an Undo still on screen: hidden now, sent to the server when the toast goes. */
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set())
   const pending = useRef(new Set<string>())
+  /** Pause / resume / retry calls in flight: the row shows the expected state and its button waits. */
+  const [inflight, setInflight] = useState<ReadonlyMap<string, RowAction>>(() => new Map())
+  const inflightRef = useRef(inflight)
+  inflightRef.current = inflight
+
+  const mark = useCallback((ids: readonly string[], action: RowAction | null) => {
+    setInflight((current) => {
+      const next = new Map(current)
+      for (const id of ids) {
+        if (action) next.set(id, action)
+        else next.delete(id)
+      }
+      return next
+    })
+  }, [])
 
   const unhide = useCallback((id: string) => {
     setHidden((current) => {
@@ -87,25 +102,32 @@ export function useTaskActions({ refresh, toast, confirm, currentIds, lookup }: 
 
   const runAction = useCallback(
     async (id: string, action: RowAction) => {
+      if (inflightRef.current.has(id)) return
+      mark([id], action)
       try {
         await CALL[action](id)
         doneToast(action)
       } catch (e) {
+        // Dropping the mark below is the rollback: the row falls back to the server's own status.
         const message = failureMessage(e)
         if (message) toast(message, 'warn')
       }
       await refresh()
+      mark([id], null)
     },
-    [refresh, doneToast, toast],
+    [refresh, doneToast, toast, mark],
   )
 
   const runBulk = useCallback(
     async (action: RowAction, ids: string[]) => {
-      const results = await runPool(ids, BULK_CONCURRENCY, (id) => CALL[action](id))
+      const targets = ids.filter((id) => !inflightRef.current.has(id))
+      mark(targets, action)
+      const results = await runPool(targets, BULK_CONCURRENCY, (id) => CALL[action](id))
       report(action, results, () => doneToast(action))
       await refresh()
+      mark(targets, null)
     },
-    [refresh, doneToast, report],
+    [refresh, doneToast, report, mark],
   )
 
   const remove = useCallback(
@@ -219,5 +241,5 @@ export function useTaskActions({ refresh, toast, confirm, currentIds, lookup }: 
   const pauseAll = useCallback(() => void runAll('pause'), [runAll])
   const resumeAll = useCallback(() => void runAll('resume'), [runAll])
 
-  return { runAction, runBulk, removeTask, removeMany, pauseAll, resumeAll, hidden }
+  return { runAction, runBulk, removeTask, removeMany, pauseAll, resumeAll, hidden, inflight }
 }

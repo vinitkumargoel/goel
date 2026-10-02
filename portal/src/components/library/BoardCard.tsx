@@ -80,6 +80,7 @@ function ActionButton({ task, canWrite, phone, onAction, className }: ItemProps 
       label={t(`common.${action}`)}
       name={task.name}
       phone={phone}
+      busy={task.busy}
       className={className}
       onPress={() => onAction(task.id, action)}
     >
@@ -163,6 +164,7 @@ function CompactBody(props: BoardCardProps) {
                 label={t('common.retry')}
                 name={task.name}
                 phone={props.phone}
+                busy={task.busy}
                 className="btn sm soft"
                 onPress={() => props.onAction(task.id, 'retry')}
               >

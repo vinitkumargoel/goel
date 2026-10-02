@@ -38,6 +38,24 @@ afterEach(() => {
 })
 
 describe('useTaskActions', () => {
+  it('holds a row in flight until the call settles, ignores a second press, and rolls back on error', async () => {
+    let fail!: (e: unknown) => void
+    const pause = vi.spyOn(api, 'pause').mockReturnValue(new Promise<void>((_, rej) => (fail = rej)))
+    const { result } = setup()
+    let done!: Promise<void>
+    act(() => {
+      done = result.current.runAction('a', 'pause')
+    })
+    expect(result.current.inflight.get('a')).toBe('pause')
+    await act(() => result.current.runAction('a', 'pause'))
+    expect(pause).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      fail(new ApiError('http', 'boom', 500))
+      await done
+    })
+    expect(result.current.inflight.size).toBe(0)
+  })
+
   it('reports a partial bulk failure with both counts', async () => {
     vi.spyOn(api, 'pause').mockImplementation(async (id) => {
       if (id === 'b' || id === 'd') throw new ApiError('http', 'boom', 500)

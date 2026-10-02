@@ -19,6 +19,8 @@ export interface TaskRow {
   name: string
   status: string
   statusToken: StatusToken
+  /** Client-only: a pause, resume or retry for this row is in flight (see lib/optimistic). */
+  busy?: boolean
   kind: TaskKind
   progress: number
   downSpeed: number
