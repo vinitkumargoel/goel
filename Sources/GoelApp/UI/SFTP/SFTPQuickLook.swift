@@ -3,54 +3,6 @@ import AppKit
 import Quartz
 import GoelCore
 
-enum SFTPFileIcon {
-    enum Category { case image, video, audio, archive, code, pdf, text, disk, app, other }
-
-    static func category(of name: String) -> Category {
-        switch (name as NSString).pathExtension.lowercased() {
-        case "jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "heic", "svg", "ico": return .image
-        case "mp4", "mkv", "mov", "avi", "wmv", "flv", "webm", "m4v", "mpg", "mpeg": return .video
-        case "mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "aiff": return .audio
-        case "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz", "zst": return .archive
-        case "swift", "c", "h", "cpp", "cc", "py", "js", "ts", "go", "rs", "rb", "java",
-             "kt", "sh", "json", "yml", "yaml", "xml", "html", "css", "toml", "php", "sql": return .code
-        case "pdf": return .pdf
-        case "txt", "md", "log", "rtf", "csv", "conf", "ini", "env": return .text
-        case "iso", "img", "dmg", "vmdk", "qcow2": return .disk
-        case "app", "deb", "rpm", "pkg", "exe", "apk", "appimage": return .app
-        default: return .other
-        }
-    }
-
-    static func symbol(for entry: SFTPEntry) -> String {
-        guard !entry.isDirectory else { return "folder.fill" }
-        switch category(of: entry.name) {
-        case .image: return "photo"
-        case .video: return "film"
-        case .audio: return "music.note"
-        case .archive: return "doc.zipper"
-        case .code: return "chevron.left.forwardslash.chevron.right"
-        case .pdf: return "doc.richtext"
-        case .text: return "doc.text"
-        case .disk: return "opticaldiscdrive"
-        case .app: return "app.badge"
-        case .other: return "doc"
-        }
-    }
-
-    static func tint(for entry: SFTPEntry) -> Color {
-        guard !entry.isDirectory else { return Theme.accent }
-        switch category(of: entry.name) {
-        case .image: return Theme.indigo
-        case .video, .pdf: return Theme.red
-        case .audio, .archive: return Theme.orange
-        case .code, .app: return Theme.green
-        case .disk: return Theme.indigo
-        case .text, .other: return .secondary
-        }
-    }
-}
-
 /// Presents one file in the shared Quick Look panel. For remote previews it also owns the
 /// temporary folder the file was copied into, and deletes it when the preview is replaced or the
 /// panel closes — previews are up to 512 MB each and used to pile up in $TMPDIR forever.
