@@ -196,7 +196,6 @@ private struct StudioSegmentButton<Value: Hashable>: View {
     let action: () -> Void
 
     @State private var hovered = false
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size == .small ? 7 : Studio.Radius.small, style: .continuous)
@@ -223,12 +222,12 @@ private struct StudioSegmentButton<Value: Hashable>: View {
                         .matchedGeometryEffect(id: "studio.segment.selection", in: namespace)
                 }
             }
+            .studioButtonFocusRing(shape: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.studioPlain)
         .disabled(!segment.isEnabled)
         .opacity(segment.isEnabled ? 1 : 0.45)
-        .studioFocusRing(isFocused, shape: shape)
         .onHover { hovered = segment.isEnabled && $0 }
         .modifier(StudioOptionalHelp(text: segment.help))
         .modifier(StudioSegmentActions(actions: segment.actions))

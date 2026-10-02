@@ -34,7 +34,6 @@ struct RailRow<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     @State private var hovered = false
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
@@ -62,10 +61,10 @@ struct RailRow<Trailing: View>: View {
                     shape.fill(Studio.Palette.segment)
                 }
             }
+            .studioButtonFocusRing(shape: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
-        .studioFocusRing(isFocused, shape: shape)
+        .buttonStyle(.studioPlain)
         .onHover { hovered = $0 }
         .help(help ?? title)
         .accessibilityElement(children: .ignore)

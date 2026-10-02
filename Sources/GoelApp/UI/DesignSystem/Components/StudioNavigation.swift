@@ -21,7 +21,6 @@ struct StudioRailItem: View {
     let action: () -> Void
 
     @State private var hovered = false
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.tile, style: .continuous)
@@ -59,10 +58,10 @@ struct StudioRailItem: View {
                         .offset(x: -4, y: 4)
                 }
             }
+            .studioButtonFocusRing(shape: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
-        .studioFocusRing(isFocused, shape: shape)
+        .buttonStyle(.studioPlain)
         .onHover { hovered = $0 }
         .help(shortcut.map { ShortcutHint.help(title, $0) } ?? title)
         .accessibilityLabel(title)

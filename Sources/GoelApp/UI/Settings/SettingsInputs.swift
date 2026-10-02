@@ -240,7 +240,6 @@ private struct SettingsRadioButton: View {
     let action: () -> Void
     @State private var hovered = false
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         Button(action: action) {
@@ -255,14 +254,14 @@ private struct SettingsRadioButton: View {
                     }
                 }
                 .frame(width: 17, height: 17)
-                .studioFocusRing(isFocused, shape: Circle())
+                .studioButtonFocusRing(shape: Circle())
                 Text(title)
                     .studioFont(.small)
                     .foregroundStyle(Studio.Palette.ink)
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.studioPlain)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovered = isEnabled && $0 }
         .accessibilityLabel(title)

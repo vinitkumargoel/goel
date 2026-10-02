@@ -187,7 +187,6 @@ private struct DownloadStudioMenuRow: View {
 
     @State private var hovered = false
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let tint = node.isDestructive ? Studio.Palette.bad : Studio.Palette.ink
@@ -221,10 +220,10 @@ private struct DownloadStudioMenuRow: View {
             .padding(.horizontal, Studio.Space.sm)
             .frame(minHeight: 28)
             .background(hovered ? Studio.Palette.accent : .clear, in: shape)
-            .studioFocusRing(isFocused, shape: shape)
+            .studioButtonFocusRing(shape: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.studioPlain)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovered = isEnabled && $0 }
         .accessibilityLabel(node.title)

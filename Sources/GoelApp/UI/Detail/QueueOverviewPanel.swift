@@ -189,7 +189,6 @@ private struct QueueCountTile: View {
 
     @EnvironmentObject private var vm: AppViewModel
     @State private var hovered = false
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let lit = count > 0 ? tone : nil
@@ -212,10 +211,10 @@ private struct QueueCountTile: View {
                                    : hovered ? Studio.Palette.segment : Studio.Palette.well))
             .overlay(shape.strokeBorder(lit == .accent ? Studio.Palette.accentLine
                                         : lit == .bad ? Color.clear : Studio.Palette.hairline, lineWidth: 1))
+            .studioButtonFocusRing(shape: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
-        .studioFocusRing(isFocused, shape: shape)
+        .buttonStyle(.studioPlain)
         .onHover { hovered = $0 }
         .help(L10n.t("Show %@", filter.accessibilityName))
         .a11yButton(L10n.t("%1$d %2$@", count, spoken), hint: L10n.t("Activate to filter the list."))

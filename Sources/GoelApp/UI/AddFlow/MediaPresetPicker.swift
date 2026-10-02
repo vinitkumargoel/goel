@@ -128,7 +128,6 @@ private struct MediaPresetTile: View {
     let action: () -> Void
 
     @State private var hovered = false
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous)
@@ -161,10 +160,10 @@ private struct MediaPresetTile: View {
             .background {
                 if isSelected { shape.inset(by: -3).fill(Studio.Palette.accentSoft) }
             }
-            .studioFocusRing(isFocused, shape: shape)
+            .studioButtonFocusRing(shape: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.studioPlain)
         .onHover { hovered = $0 }
         .a11yGroup(label: preset.title(maxHeight: maxHeight), value: preset.detail)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)

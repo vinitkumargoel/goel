@@ -277,7 +277,75 @@ private struct StudioPillButtonBody: View {
     }
 }
 
+/// A plain button whose label can draw the focus ring. `@Environment(\.isFocused)` read by the
+/// view that *builds* a `Button` reports that view's focusable ancestor, never the button, so a
+/// ring drawn there never shows. This style reads the button's own focus and hands it to the
+/// label, where `.studioButtonFocusRing(shape:)` draws it on whichever part should carry it.
+///
+///     Button(action: pick) { tile.studioButtonFocusRing(shape: shape) }
+///         .buttonStyle(.studioPlain)
+///
+/// `hitPadding` adds an invisible clickable margin around the label, so a small control is
+/// still a 24 pt target without growing visibly.
+struct StudioPlainButtonStyle: ButtonStyle {
+    var hitPadding = EdgeInsets()
+
+    func makeBody(configuration: Configuration) -> some View {
+        StudioPlainButtonBody(configuration: configuration, hitPadding: hitPadding)
+    }
+}
+
+extension ButtonStyle where Self == StudioPlainButtonStyle {
+    static var studioPlain: StudioPlainButtonStyle { StudioPlainButtonStyle() }
+
+    static func studioPlain(hitPadding: EdgeInsets) -> StudioPlainButtonStyle {
+        StudioPlainButtonStyle(hitPadding: hitPadding)
+    }
+}
+
+private struct StudioPlainButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let hitPadding: EdgeInsets
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        let label = configuration.label.environment(\.studioButtonIsFocused, isFocused)
+        if hitPadding == EdgeInsets() {
+            label
+        } else {
+            label.padding(hitPadding).contentShape(Rectangle())
+        }
+    }
+}
+
+private struct StudioButtonIsFocusedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Whether the enclosing `.studioPlain` button has keyboard focus.
+    var studioButtonIsFocused: Bool {
+        get { self[StudioButtonIsFocusedKey.self] }
+        set { self[StudioButtonIsFocusedKey.self] = newValue }
+    }
+}
+
+private struct StudioButtonFocusRing<S: InsettableShape>: ViewModifier {
+    let shape: S
+    @Environment(\.studioButtonIsFocused) private var isFocused
+
+    func body(content: Content) -> some View {
+        content.studioFocusRing(isFocused, shape: shape)
+    }
+}
+
 extension View {
+    /// The focus ring of the enclosing `.studioPlain` button, drawn around this view. Use it
+    /// inside the button's label.
+    func studioButtonFocusRing<S: InsettableShape>(shape: S) -> some View {
+        modifier(StudioButtonFocusRing(shape: shape))
+    }
+
     /// The Studio keyboard-focus ring: a 3 pt accent halo outside `shape` (`.field.focus`).
     func studioFocusRing<S: InsettableShape>(_ isFocused: Bool, shape: S) -> some View {
         overlay {

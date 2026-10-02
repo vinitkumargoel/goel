@@ -173,7 +173,6 @@ struct StudioSwitchToggleStyle: ToggleStyle {
 private struct StudioSwitchBody: View {
     let configuration: ToggleStyleConfiguration
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.isFocused) private var isFocused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -194,10 +193,10 @@ private struct StudioSwitchBody: View {
                         .padding(2)
                 }
                 .frame(width: 34, height: 20)
-                .studioFocusRing(isFocused, shape: Capsule())
+                .studioButtonFocusRing(shape: Capsule())
                 .contentShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.studioPlain)
             .opacity(isEnabled ? 1 : 0.45)
             .accessibilityRepresentation {
                 Toggle(isOn: configuration.$isOn) { configuration.label }
