@@ -3,8 +3,9 @@ import Foundation
 /// `GET /api/rules`: the auto-sort rules, in the order they are checked. The same list the desktop
 /// app edits, so a change on either side shows on the other.
 ///
-/// Two when-done kinds are never writable here: `runScript` and `openWith` name an executable or app
-/// on the host, so setting one from a browser would be remote code execution by another name. A rule
+/// Three when-done kinds are never writable here: `runScript` and `openWith` name an executable or app
+/// on the host, and `open` launches the downloaded file itself (a `.command` or `.app` fetched by a
+/// remote Add would run), so setting one from a browser would be remote code execution by another name. A rule
 /// that already has one keeps it (`whenDone.locked`) and says so, but the portal can neither set nor
 /// read the path.
 public struct RemoteRule: Sendable, Codable, Equatable {
@@ -15,7 +16,7 @@ public struct RemoteRule: Sendable, Codable, Equatable {
     }
 
     public struct WhenDone: Sendable, Codable, Equatable {
-        /// `nothing`, `open`, `reveal`, `moveTo`; reads may also show `openWith` and `runScript`.
+        /// `nothing`, `reveal`, `moveTo`; reads may also show `open`, `openWith` and `runScript`.
         public var kind: String
         /// The folder for `moveTo`.
         public var target: String?
@@ -55,7 +56,7 @@ public struct RemoteRulesUpdate: Sendable, Equatable, Decodable {
     static let maxPath = 1024
     static let maxTag = 64
     static let priorities: [String: FilePriority] = ["high": .high, "normal": .normal, "low": .low]
-    static let writableWhenDone: Set<String> = ["nothing", "open", "reveal", "moveTo"]
+    static let writableWhenDone: Set<String> = ["nothing", "reveal", "moveTo"]
 
     /// Shape checks; folders are vetted by the router against the backend. Refuses rather than clamps.
     func refusal() -> String? {
@@ -99,7 +100,7 @@ public struct RemoteRulesUpdate: Sendable, Equatable, Decodable {
         if let folder = rule.folder, !folder.isEmpty, let problem = pathRefusal(folder) { return problem }
         if let done = rule.whenDone {
             guard writableWhenDone.contains(done.kind) else {
-                return "When done must be nothing, open, reveal or moveTo."
+                return "When done must be nothing, reveal or moveTo."
             }
             if done.kind == "moveTo" {
                 guard let target = done.target, !target.isEmpty else { return "Move to needs a folder." }
@@ -200,7 +201,7 @@ extension RemoteRulesState {
 
 extension RemoteRule {
     init(_ r: AutoSortRule) {
-        let locked = r.whenDone.map { $0.kind == .openWith || $0.kind == .runScript } ?? false
+        let locked = r.whenDone.map { $0.kind == .open || $0.kind == .openWith || $0.kind == .runScript } ?? false
         self.init(
             id: r.id.uuidString, name: r.name, enabled: r.enabled, match: r.match.rawValue,
             conditions: r.conditions.map { .init(field: $0.field.rawValue, op: $0.op.rawValue, value: $0.value) },

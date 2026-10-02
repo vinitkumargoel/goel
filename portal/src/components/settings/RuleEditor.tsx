@@ -16,8 +16,8 @@ interface Props {
   onWarn: (message: string) => void
 }
 
-type DoneKind = 'nothing' | 'open' | 'reveal' | 'moveTo'
-const DONE_KINDS: readonly DoneKind[] = ['nothing', 'open', 'reveal', 'moveTo']
+type DoneKind = 'nothing' | 'reveal' | 'moveTo'
+const DONE_KINDS: readonly DoneKind[] = ['nothing', 'reveal', 'moveTo']
 const PRIORITIES = ['high', 'normal', 'low'] as const
 
 /** One select as the Studio draws it: a native control, so the keyboard and screen readers just work. */

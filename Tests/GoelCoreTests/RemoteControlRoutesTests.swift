@@ -606,6 +606,8 @@ extension RemoteControlRoutesTests {
             rule(#","priority":"skip""#),
             rule(#","whenDone":{"kind":"runScript","target":"/tmp/x.sh"}"#),
             rule(#","whenDone":{"kind":"openWith","target":"/Applications/X.app"}"#),
+            // Opening the finished file would run a downloaded .command or .app.
+            rule(#","whenDone":{"kind":"open"}"#),
             rule(#","whenDone":{"kind":"moveTo"}"#),
             rule(action: #""tag":"""#),
             rule(#","match":"some""#).replacingOccurrences(of: #""match":"all","#, with: ""),
