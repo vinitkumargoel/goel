@@ -19,12 +19,19 @@ struct CreateTorrentView: View {
     @State private var progress: Double?
     @State private var cancelFlag = CancelFlag()
     @State private var error: String?
+    /// Set once the file is written: the sheet then shows "Created … · Seeding" instead of the form.
+    @State private var created: Created?
     @State private var dropTargeted = false
     @FocusState private var trackersFocused: Bool
 
+    struct Created: Equatable {
+        let url: URL
+        let isSeeding: Bool
+    }
+
     /// The extra parameters fill the form for previews and snapshots; the app passes only `onClose`.
     init(onClose: @escaping () -> Void, sourcePath: String = "", summary: TorrentSourceSummary? = nil,
-         trackers: String = "", comment: String = "", progress: Double? = nil, error: String? = nil) {
+         trackers: String = "", comment: String = "", progress: Double? = nil, error: String? = nil, created: Created? = nil) {
         self.onClose = onClose
         _sourcePath = State(initialValue: sourcePath)
         _summary = State(initialValue: summary)
@@ -32,13 +39,16 @@ struct CreateTorrentView: View {
         _comment = State(initialValue: comment)
         _progress = State(initialValue: progress)
         _error = State(initialValue: error)
+        _created = State(initialValue: created)
     }
 
     var body: some View {
-        StudioSheet(title: L10n.t("Create Torrent"),
+        StudioSheet(title: L10n.t("Create torrent"),
                     subtitle: L10n.t("Share a file or folder: hashing runs here, so the list stays free."),
                     symbol: "shippingbox", width: 580) {
-            if let progress {
+            if let created {
+                success(created)
+            } else if let progress {
                 hashing(progress)
             } else {
                 source
@@ -48,13 +58,20 @@ struct CreateTorrentView: View {
                 }
             }
         } footer: {
-            if progress == nil {
+            if let created {
+                StudioSheetFooter(cancelTitle: L10n.t("Close"), onCancel: onClose,
+                                  primaryTitle: L10n.t("Reveal in Finder"), primarySymbol: "folder",
+                                  onPrimary: { NSWorkspace.shared.activateFileViewerSelecting([created.url]) }) {
+                    EmptyView()
+                }
+            } else if progress == nil {
                 StudioSheetFooter(cancelTitle: L10n.t("Close"), onCancel: onClose, primaryTitle: L10n.t("Create…"),
-                                  primaryEnabled: !sourcePath.isEmpty, onPrimary: create) { EmptyView() }
+                                  primaryEnabled: !sourcePath.isEmpty && formBlocker == nil,
+                                  onPrimary: create) { EmptyView() }
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
-            guard progress == nil else { return false }
+            guard progress == nil, created == nil else { return false }
             _ = providers.first?.loadObject(ofClass: URL.self) { url, _ in
                 guard let path = url?.path else { return }
                 Task { @MainActor in sourcePath = path }
@@ -142,10 +159,12 @@ struct CreateTorrentView: View {
                     .modifier(StudioFieldChrome(isFocused: trackersFocused, radius: Studio.Radius.small))
                     .accessibilityLabel(L10n.t("Tracker URLs, one per line"))
             }
+            issueNote(CreateTorrentValidation.trackerIssues(trackers), noun: L10n.t("tracker"))
             WindowsLabeledField(label: L10n.t("Web seeds")) {
                 textField(L10n.t("Optional — https:// mirrors"), text: $webSeeds, mono: true,
                           label: L10n.t("Web seeds"))
             }
+            issueNote(CreateTorrentValidation.webSeedIssues(webSeeds), noun: L10n.t("web seed"))
             HStack(alignment: .top, spacing: Studio.Space.m) {
                 WindowsLabeledField(label: L10n.t("Piece size")) { pieceSizeMenu }
                 WindowsLabeledField(label: L10n.t("Comment")) {
@@ -160,6 +179,27 @@ struct CreateTorrentView: View {
             }
             .toggleStyle(.studioCheckbox)
             .studioFont(.small)
+            if CreateTorrentValidation.privateNeedsTrackers(isPrivate: isPrivate, trackers: trackers) {
+                StudioNote(tone: .warn, symbol: "exclamationmark.triangle",
+                           message: L10n.t("A private torrent needs at least one tracker: peers come only from "
+                               + "trackers. Add one above or turn Private off."))
+            }
+        }
+    }
+
+    private var formBlocker: String? {
+        CreateTorrentValidation.blocker(isPrivate: isPrivate, trackers: trackers, webSeeds: webSeeds)
+    }
+
+    /// Names the first unusable line so the user can find it in a long list.
+    @ViewBuilder
+    private func issueNote(_ issues: [CreateTorrentValidation.Issue], noun: String) -> some View {
+        if let first = issues.first {
+            let message = issues.count == 1
+                ? L10n.t("Line %1$d isn’t a valid %2$@ URL: %3$@", first.line, noun, first.text)
+                : L10n.t("%1$d lines aren’t valid %2$@ URLs; the first is line %3$d: %4$@",
+                         issues.count, noun, first.line, first.text)
+            StudioNote(tone: .warn, symbol: "exclamationmark.triangle", message: message)
         }
     }
 
@@ -217,6 +257,31 @@ struct CreateTorrentView: View {
         .accessibilityElement(children: .contain)
     }
 
+    private func success(_ created: Created) -> some View {
+        VStack(spacing: Studio.Space.m) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(StudioFonts.font(.ui, size: 40, weight: 600))
+                .foregroundStyle(Studio.Palette.good)
+                .accessibilityHidden(true)
+            Text(created.isSeeding
+                 ? L10n.t("Created %@ · Seeding", created.url.lastPathComponent)
+                 : L10n.t("Created %@", created.url.lastPathComponent))
+                .studioFont(.title3)
+                .foregroundStyle(Studio.Palette.ink)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .truncationMode(.middle)
+            Text((created.url.path as NSString).abbreviatingWithTildeInPath)
+                .studioFont(.small)
+                .foregroundStyle(Studio.Palette.ink3)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Studio.Space.xl)
+        .accessibilityElement(children: .combine)
+    }
+
     // MARK: Actions
 
     private func choose(directories: Bool) {
@@ -228,6 +293,7 @@ struct CreateTorrentView: View {
     }
 
     private func create() {
+        guard formBlocker == nil else { return }
         // NSSavePanel asks "Replace?" itself before returning an existing file; nothing here
         // may bypass that (no delegate override), since the write below is an atomic replace.
         let save = NSSavePanel()
@@ -260,8 +326,7 @@ struct CreateTorrentView: View {
                 }
                 progress = nil
                 if seed { vm.seedCreatedTorrent(url, sourcePath: options.sourcePath) }
-                vm.toastSuccess(L10n.t("Created “%@”", url.lastPathComponent))
-                NSWorkspace.shared.activateFileViewerSelecting([url])
+                created = Created(url: url, isSeeding: seed)
             } catch {
                 progress = nil
                 if (error as? TorrentCreator.Failure) != .cancelled {

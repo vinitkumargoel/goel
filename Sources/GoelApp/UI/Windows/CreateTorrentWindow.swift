@@ -17,7 +17,7 @@ final class CreateTorrentWindow {
         let host = NSHostingController(rootView: CreateTorrentView(onClose: { [weak self] in self?.close() })
             .environmentObject(vm))
         let window = NSWindow(contentViewController: host)
-        window.title = L10n.t("Create Torrent")
+        window.title = L10n.t("Create torrent")
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         // The sheet draws its own heading; the title bar blends into it.
