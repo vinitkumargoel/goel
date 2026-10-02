@@ -51,7 +51,7 @@ struct StudioSheet<Content: View, Footer: View>: View {
                 }
             }
             .padding(.horizontal, Studio.Space.xl)
-            .padding(.top, 18)
+            .padding(.top, Studio.Space.section)
             .padding(.bottom, Studio.Space.m)
 
             VStack(alignment: .leading, spacing: Studio.Space.ml) {

@@ -18,6 +18,17 @@ extension Studio {
         static let xxl: CGFloat = 28
         static let xxxl: CGFloat = 32
 
+        /// Between a glyph and its label, between stacked captions.
+        static let snug: CGFloat = 5
+        /// Row padding, compact stacks.
+        static let cozy: CGFloat = 7
+        /// Chip and pill inner padding.
+        static let roomy: CGFloat = 9
+        /// Between a row's leading art and its text.
+        static let relaxed: CGFloat = 11
+        /// Settings card and sheet horizontal padding, lane inset.
+        static let section: CGFloat = 18
+
         /// Between board lanes.
         static let laneGap: CGFloat = 18
         /// Between cards in a lane.
@@ -27,6 +38,12 @@ extension Studio {
     }
 
     enum Radius {
+        /// Swatches and tiny progress bars.
+        static let hair: CGFloat = 3
+        /// Small tiles and map cells.
+        static let micro: CGFloat = 4
+        /// Key-cap-sized tiles and focus rims on compact rows.
+        static let mini: CGFloat = 5
         /// Badges and key caps.
         static let badge: CGFloat = 6
         /// Small buttons, small fields, menu items.

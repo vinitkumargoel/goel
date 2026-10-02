@@ -25,7 +25,7 @@ struct RuleEditorSheet: View {
                     symbol: "line.3.horizontal.decrease.circle", width: 580) {
             ScrollView {
                 VStack(alignment: .leading, spacing: Studio.Space.l) {
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: Studio.Space.snug) {
                         RuleFieldLabel(L10n.t("Rule name"))
                         SettingsTextField(text: $rule.name, width: nil, placeholder: L10n.t("Rule name"),
                                           accessibilityName: L10n.t("Rule name"), size: .regular)

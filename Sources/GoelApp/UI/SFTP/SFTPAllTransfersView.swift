@@ -55,7 +55,7 @@ struct SFTPAllTransfersView: View {
             Spacer()
         }
         .padding(.horizontal, Studio.Space.xl)
-        .padding(.top, 18)
+        .padding(.top, Studio.Space.section)
         .padding(.bottom, Studio.Space.m)
     }
 
@@ -116,7 +116,7 @@ private struct SFTPAllTransfersRow: View {
             actions
         }
         .padding(.horizontal, Studio.Space.m)
-        .padding(.vertical, 11)
+        .padding(.vertical, Studio.Space.relaxed)
         .studioSurface(.card, radius: Studio.Radius.compactCard, elevation: .card)
         .overlay {
             if isFailed {

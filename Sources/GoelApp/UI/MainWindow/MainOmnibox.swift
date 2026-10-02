@@ -56,7 +56,7 @@ struct MainOmnibox<Accessory: View>: View {
                 .help(ShortcutHint.help(L10n.t("Search downloads (host:example.com narrows to a site)"), "⌘F"))
             trailing(input)
         }
-        .padding(.leading, 18)
+        .padding(.leading, Studio.Space.section)
         .padding(.trailing, Studio.Space.sm)
         .frame(minHeight: 58)
     }

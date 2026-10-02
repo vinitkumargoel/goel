@@ -125,7 +125,7 @@ struct StudioLaneHeader: View {
                 Text(verbatim: "\(count)")
                     .studioFont(.monoSmall.weight(600))
                     .foregroundStyle(Studio.Palette.ink2)
-                    .padding(.horizontal, 7)
+                    .padding(.horizontal, Studio.Space.cozy)
                     .padding(.vertical, 2)
                     .background(Studio.Palette.segment, in: Capsule())
                     .accessibilityLabel(L10n.t("%d items", count))

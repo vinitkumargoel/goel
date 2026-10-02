@@ -50,7 +50,7 @@ struct DownloadTableRow: DownloadHoverable {
     var body: some View {
         cells
             .padding(.horizontal, Studio.Space.m)
-            .padding(.vertical, isCompact ? 3 : 7)
+            .padding(.vertical, isCompact ? 3 : Studio.Space.cozy)
             .frame(minHeight: columns.density.rowHeight)
             .background(rowBackground)
             .contentShape(Rectangle())
@@ -194,7 +194,7 @@ struct DownloadTableRow: DownloadHoverable {
         HStack(spacing: Studio.Space.sm) {
             artwork
             VStack(alignment: .leading, spacing: Studio.Space.xxs) {
-                HStack(spacing: 7) {
+                HStack(spacing: Studio.Space.cozy) {
                     FileNameText(task.compactDisplayName, lineLimit: 1)
                         .studioFont(Studio.TextStyle.bodyStrong.weight(650))
                         .foregroundStyle(Studio.Palette.ink)

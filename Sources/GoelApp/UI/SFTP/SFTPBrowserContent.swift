@@ -170,9 +170,9 @@ extension SFTPBrowserView {
 
     @ViewBuilder private var marqueeOverlay: some View {
         if let rect = marqueeRect {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
+            RoundedRectangle(cornerRadius: Studio.Radius.hair, style: .continuous)
                 .fill(Studio.Palette.accentSoft)
-                .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .overlay(RoundedRectangle(cornerRadius: Studio.Radius.hair, style: .continuous)
                     .strokeBorder(Studio.Palette.accentLine, lineWidth: 1))
                 .frame(width: rect.width, height: rect.height)
                 .offset(x: rect.minX, y: rect.minY)

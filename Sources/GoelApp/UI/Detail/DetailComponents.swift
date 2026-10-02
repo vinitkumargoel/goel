@@ -91,7 +91,7 @@ struct DetailFacts<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) { content() }
+        VStack(alignment: .leading, spacing: Studio.Space.roomy) { content() }
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -231,7 +231,7 @@ struct DetailMenuButton<Items: View>: View {
         Menu {
             items()
         } label: {
-            HStack(spacing: size == .small ? 5 : 7) {
+            HStack(spacing: size == .small ? Studio.Space.snug : Studio.Space.cozy) {
                 if let symbol {
                     Image(systemName: symbol)
                         .studioFont(.ui, size: size == .small ? 12 : 13, weight: 650)

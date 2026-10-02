@@ -45,7 +45,7 @@ struct SFTPEntryRow: View {
                 .frame(width: Self.dateWidth, alignment: .trailing)
         }
         .padding(.horizontal, Studio.Space.ml)
-        .padding(.vertical, 7)
+        .padding(.vertical, Studio.Space.cozy)
         .frame(minHeight: 38)
         .background(highlight)
         .overlay {

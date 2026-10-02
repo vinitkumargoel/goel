@@ -34,7 +34,7 @@ struct AddFlowHeader<Leading: View, Trailing: View>: View {
             trailing()
         }
         .padding(.horizontal, Studio.Space.xl)
-        .padding(.top, 18)
+        .padding(.top, Studio.Space.section)
         .padding(.bottom, Studio.Space.m)
     }
 }
@@ -184,7 +184,7 @@ struct AddTextArea: View {
                 Text(placeholder)
                     .studioFont(style.weight(400))
                     .foregroundStyle(Studio.Palette.ink3)
-                    .padding(.horizontal, 5)
+                    .padding(.horizontal, Studio.Space.snug)
                     .accessibilityHidden(true)
                     .allowsHitTesting(false)
             }
@@ -196,7 +196,7 @@ struct AddTextArea: View {
                 .accessibilityLabel(accessibilityLabel)
                 .accessibilityHint(accessibilityHint ?? "")
         }
-        .padding(.horizontal, 7)
+        .padding(.horizontal, Studio.Space.cozy)
         .padding(.vertical, Studio.Space.s)
         .frame(height: height)
         .modifier(StudioFieldChrome(isFocused: focused, isInvalid: isInvalid))
@@ -208,7 +208,7 @@ struct AddCheckGlyph: View {
     let state: FileCheckState
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Studio.Radius.mini, style: .continuous)
         ZStack {
             if state == .off {
                 shape.fill(Studio.Palette.card)

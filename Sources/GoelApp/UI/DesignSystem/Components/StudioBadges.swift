@@ -116,7 +116,7 @@ struct StudioPill: View {
                 .lineLimit(1)
         }
         .foregroundStyle(tone.foreground)
-        .padding(.horizontal, 9)
+        .padding(.horizontal, Studio.Space.roomy)
         .frame(minHeight: 22)
         .background(tone.background, in: Capsule())
         // `segment` sits within a few points of `card` and `well` in dark: a hairline keeps a
@@ -195,8 +195,8 @@ struct StudioTagLabel: View {
     var color: Color = Studio.Palette.accent
 
     var body: some View {
-        HStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
+        HStack(spacing: Studio.Space.snug) {
+            RoundedRectangle(cornerRadius: Studio.Radius.hair, style: .continuous)
                 .fill(color)
                 .frame(width: 7, height: 7)
                 .accessibilityHidden(true)

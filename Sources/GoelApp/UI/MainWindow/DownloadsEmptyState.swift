@@ -193,7 +193,7 @@ private struct EmptyStateWay: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(18)
+            .padding(Studio.Space.section)
             .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
             .background(shape.fill(Studio.Palette.card).studioElevation(hovering ? .floating : .card))
             .overlay(shape.strokeBorder(isPrimary || hovering ? Studio.Palette.accentLine : Studio.Palette.cardEdge,

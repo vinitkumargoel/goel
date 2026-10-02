@@ -69,7 +69,7 @@ struct SFTPTransferRow: View {
             }
         }
         .padding(.horizontal, density == .full ? Studio.Space.ml : Studio.Space.m)
-        .padding(.vertical, density == .full ? Studio.Space.s : 7)
+        .padding(.vertical, density == .full ? Studio.Space.s : Studio.Space.cozy)
     }
 
     private var identityContent: some View {

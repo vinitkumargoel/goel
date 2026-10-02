@@ -162,7 +162,7 @@ struct AddAdvancedOptions: View {
         HStack(alignment: .top, spacing: Studio.Space.m) {
             AddFieldLabel(label)
                 .frame(width: labelWidth, alignment: .leading)
-                .padding(.top, 7)
+                .padding(.top, Studio.Space.cozy)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

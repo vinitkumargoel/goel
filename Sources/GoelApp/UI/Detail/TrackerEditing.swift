@@ -78,7 +78,7 @@ struct TrackerRow: View {
                 menu
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             }
-            .padding(.vertical, 7)
+            .padding(.vertical, Studio.Space.cozy)
             StudioDivider()
         }
         .contentShape(Rectangle())

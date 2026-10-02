@@ -134,7 +134,7 @@ struct WeeklyProfileGrid: View {
         let selected = brush == name
         let style = Self.style(for: name, in: names)
         return Button { brush = name } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: Studio.Space.snug) {
                 if !name.isEmpty {
                     // The swatch carries the letter its cells show.
                     Text(ProfileScheduleSummary.glyphs(for: names)[name] ?? "")
@@ -142,10 +142,10 @@ struct WeeklyProfileGrid: View {
                         .foregroundStyle(style.rim == nil ? Studio.Palette.onAccent : Studio.Palette.ink)
                         .padding(.horizontal, 2)
                         .frame(minWidth: 14, minHeight: 14)
-                        .background(style.fill, in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                        .background(style.fill, in: RoundedRectangle(cornerRadius: Studio.Radius.hair, style: .continuous))
                         .overlay {
                             if let rim = style.rim {
-                                RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(rim, lineWidth: 1)
+                                RoundedRectangle(cornerRadius: Studio.Radius.hair, style: .continuous).strokeBorder(rim, lineWidth: 1)
                             }
                         }
                         .accessibilityHidden(true)
@@ -284,7 +284,7 @@ struct WeeklyProfileGrid: View {
             for hour in 0..<24 {
                 let rect = CGRect(x: CGFloat(hour) * w + gap / 2, y: CGFloat(day) * h + gap / 2,
                                   width: w - gap, height: h - gap)
-                let path = Path(roundedRect: rect, cornerRadius: 5, style: .continuous)
+                let path = Path(roundedRect: rect, cornerRadius: Studio.Radius.mini, style: .continuous)
                 let style = style(for: cells[day * 24 + hour], in: names)
                 context.fill(path, with: .color(style.fill))
                 if let rim = style.rim {

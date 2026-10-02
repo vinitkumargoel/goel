@@ -162,7 +162,7 @@ struct RSSArticleRow: View {
                 Circle()
                     .fill(unread ? Studio.Palette.accent : .clear)
                     .frame(width: 8, height: 8)
-                    .padding(.top, 5)
+                    .padding(.top, Studio.Space.snug)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title)

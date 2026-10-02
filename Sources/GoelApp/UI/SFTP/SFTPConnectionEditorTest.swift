@@ -284,7 +284,7 @@ struct SFTPLabeledField<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: Studio.Space.snug) {
             Text(required ? L10n.t("%@ *", label) : label)
                 .studioFont(.callout.weight(650).size(12))
                 .foregroundStyle(Studio.Palette.ink2)

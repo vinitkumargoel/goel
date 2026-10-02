@@ -121,13 +121,13 @@ struct StatusTransfersButton: View {
 
     var body: some View {
         Button { showsTransfers.toggle() } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: Studio.Space.snug) {
                 Image(systemName: "server.rack").studioFont(.ui, size: 11, weight: 600)
                 Text(count == 1 ? L10n.t("%d SFTP transfer", count) : L10n.t("%d SFTP transfers", count))
                     .studioFont(.small.weight(600).tabular)
             }
             .foregroundStyle(Studio.Palette.upload)
-            .padding(.horizontal, 9)
+            .padding(.horizontal, Studio.Space.roomy)
             .frame(height: 24)
             .background(hovered ? Studio.Palette.uploadSoft : .clear, in: Capsule())
             .contentShape(Capsule())

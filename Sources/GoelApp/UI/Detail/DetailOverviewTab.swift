@@ -37,7 +37,7 @@ struct DetailProgressHero: View {
     var body: some View {
         let speed = telemetry.displaySpeed(for: task)
         let state = StudioDownloadState(task: task)
-        HStack(alignment: .center, spacing: 18) {
+        HStack(alignment: .center, spacing: Studio.Space.section) {
             VStack(alignment: .leading, spacing: Studio.Space.xs) {
                 if task.status == .requestingMetadata {
                     Text(L10n.t("Waiting for metadata…"))

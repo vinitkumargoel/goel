@@ -86,9 +86,9 @@ struct AddInputStep: View {
                     Text(L10n.t("Continue"))
                     Text(verbatim: "⌘↩")
                         .studioFont(.keyCap)
-                        .padding(.horizontal, 5)
+                        .padding(.horizontal, Studio.Space.snug)
                         .padding(.vertical, Studio.Space.hair)
-                        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .overlay(RoundedRectangle(cornerRadius: Studio.Radius.mini, style: .continuous)
                             .strokeBorder(Studio.Palette.onAccent.opacity(0.6), lineWidth: 1))
                         .accessibilityHidden(true)
                 }

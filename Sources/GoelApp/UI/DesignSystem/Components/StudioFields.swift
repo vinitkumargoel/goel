@@ -155,7 +155,7 @@ struct StudioOmnibox<Suggestions: View>: View {
                     StudioKeyCaps(shortcutHint)
                 }
             }
-            .padding(.leading, 18)
+            .padding(.leading, Studio.Space.section)
             .padding(.trailing, Studio.Space.sm)
             .frame(minHeight: 58)
             suggestions()

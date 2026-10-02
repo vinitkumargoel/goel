@@ -126,7 +126,7 @@ struct DownloadBoardCard: DownloadHoverable {
     // MARK: Compact (`.mcard`)
 
     private var compact: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: Studio.Space.relaxed) {
             if task.status == .queued, let rank = queueRank {
                 Text(verbatim: "#\(rank)")
                     .studioFont(.monoSmall)
@@ -150,7 +150,7 @@ struct DownloadBoardCard: DownloadHoverable {
             trailingButton
         }
         .padding(.horizontal, Studio.Space.m)
-        .padding(.vertical, 11)
+        .padding(.vertical, Studio.Space.relaxed)
     }
 
     private var metaLine: some View {
@@ -179,10 +179,10 @@ struct DownloadBoardCard: DownloadHoverable {
             .padding(.top, Studio.Space.xs)
         } else if task.status == .requestingMetadata || task.status == .paused {
             MiniProgressBar(task: task)
-                .padding(.top, 5)
+                .padding(.top, Studio.Space.snug)
         } else if let progress = task.seedTargetProgress {
             ProgressTrack(fraction: progress, tone: .upload)
-                .padding(.top, 5)
+                .padding(.top, Studio.Space.snug)
         }
     }
 

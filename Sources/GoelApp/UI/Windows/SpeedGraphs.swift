@@ -170,7 +170,7 @@ struct GlobalSpeedHistoryPopover: View {
                 legend(.up, history)
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, Studio.Space.section)
         .padding(.top, Studio.Space.l)
         .padding(.bottom, Studio.Space.l)
         .frame(width: 360)

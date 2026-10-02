@@ -270,7 +270,7 @@ private struct LinkGrabberResults: View {
 
     private func card(_ link: GrabbedLink) -> some View {
         let isOn = selected.contains(link.url)
-        return HStack(spacing: 11) {
+        return HStack(spacing: Studio.Space.relaxed) {
             Toggle(isOn: Binding(
                 get: { selected.contains(link.url) },
                 set: { on in
@@ -295,7 +295,7 @@ private struct LinkGrabberResults: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Studio.Space.m)
-        .padding(.vertical, 11)
+        .padding(.vertical, Studio.Space.relaxed)
         .studioSurface(.card, radius: Studio.Radius.compactCard, isSelected: false)
     }
 

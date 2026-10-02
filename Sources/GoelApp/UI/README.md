@@ -77,7 +77,7 @@ Use `StudioScaled { factor in … }` to scale a layout metric with the text size
 ### Spacing, radius, elevation, motion
 
 - `Studio.Space`: `hair 2 · xxs 4 · xs 6 · s 8 · sm 10 · m 12 · ml 14 · l 16 · xl 20 · xxl 28 · xxxl 32`, plus `laneGap 18`, `cardGap 10`, `gutter 22`.
-- `Studio.Radius`: `badge 6 · small 8 · artSmall 9 · control 10 · segment 11 · well 12 · tile 13 · compactCard 15 · card 16 · boardCard 18 · artLarge 18 · omnibox 20 · sheet 22`.
+- `Studio.Radius`: `hair 3 · micro 4 · mini 5 · badge 6 · small 8 · artSmall 9 · control 10 · segment 11 · well 12 · tile 13 · compactCard 15 · card 16 · boardCard 18 · artLarge 18 · omnibox 20 · sheet 22`.
 - `.studioElevation(.flat | .raised | .card | .floating)` — layered soft shadows (`--sh-1`, `--sh-card`, `--sh-float`); apply to the background **shape**, not to text.
 - `.studioSurface(.card | .well | .raised | .sheet, radius:, elevation:, isSelected:)` — fill + rim + shadow (+ dark top highlight, + 2 pt accent ring when selected). Clips content, not the shadow.
 - `Studio.Motion.sweep / .quick / .spring`. Respect Reduce Motion (`@Environment(\.accessibilityReduceMotion)`) and `@Environment(\.studioStillFrames)` (set by the snapshot harness): no animation when either is true.

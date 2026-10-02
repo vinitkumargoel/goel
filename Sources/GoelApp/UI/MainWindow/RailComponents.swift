@@ -80,7 +80,7 @@ struct RailRow<Trailing: View>: View {
                 .studioFont(.ui, size: 13, weight: 600)
                 .foregroundStyle(isSelected ? Studio.Palette.accent : Studio.Palette.ink3)
         } else if let dot {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
+            RoundedRectangle(cornerRadius: Studio.Radius.hair, style: .continuous)
                 .fill(dot)
                 .frame(width: 9, height: 9)
         }

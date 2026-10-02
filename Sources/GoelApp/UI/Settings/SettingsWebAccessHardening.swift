@@ -62,7 +62,7 @@ struct WebAccessHardeningCard: View {
                     .rotationEffect(.degrees(showsRows ? 90 : 0))
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, Studio.Space.section)
             .padding(.vertical, Studio.Space.ml)
             .contentShape(Rectangle())
         }

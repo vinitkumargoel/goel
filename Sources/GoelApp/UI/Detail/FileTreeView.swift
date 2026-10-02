@@ -154,7 +154,7 @@ struct DetailCheckMark: View {
     @State private var hovered = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Studio.Radius.mini, style: .continuous)
         ZStack {
             if state == .off {
                 shape.fill(Studio.Palette.card)

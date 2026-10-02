@@ -84,7 +84,7 @@ struct CommandPalette: View {
             }
             StudioKeyCaps("esc")
         }
-        .padding(.leading, 18)
+        .padding(.leading, Studio.Space.section)
         .padding(.trailing, Studio.Space.ml)
         .frame(minHeight: 58)
         // Arrow keys must be handled on the field, not the list, or they move the text cursor.
@@ -227,7 +227,7 @@ private struct PaletteRow: View {
                 }
             }
             .padding(.horizontal, Studio.Space.sm)
-            .padding(.vertical, 7)
+            .padding(.vertical, Studio.Space.cozy)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isHighlighted ? Studio.Palette.accentSoft : .clear,
                         in: RoundedRectangle(cornerRadius: Studio.Radius.segment, style: .continuous))

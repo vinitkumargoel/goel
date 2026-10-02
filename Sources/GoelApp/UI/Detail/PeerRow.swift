@@ -160,7 +160,7 @@ struct DetailTableRow<Content: View>: View {
         VStack(spacing: 0) {
             HStack(spacing: Studio.Space.s) { content() }
                 .padding(.horizontal, Studio.Space.xxs)
-                .padding(.vertical, 7)
+                .padding(.vertical, Studio.Space.cozy)
             StudioDivider()
         }
     }

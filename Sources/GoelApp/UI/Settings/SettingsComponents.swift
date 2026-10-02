@@ -153,7 +153,7 @@ struct SettingsCard<Accessory: View, Content: View>: View {
                         Spacer(minLength: Studio.Space.s)
                         accessory()
                     }
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, Studio.Space.section)
                     .padding(.top, Studio.Space.ml)
                     .padding(.bottom, Studio.Space.xxs)
                 }
@@ -196,7 +196,7 @@ struct SettingsCardBlock<Content: View>: View {
             VStack(alignment: .leading, spacing: Studio.Space.s) {
                 content()
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, Studio.Space.section)
             .padding(.vertical, verticalPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -246,14 +246,14 @@ struct SettingRow<Control: View>: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.leading, isIndented ? 18 : 0)
+                .padding(.leading, isIndented ? Studio.Space.section : 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
                 // The explanation wraps; a control never truncates.
                 control()
                     .fixedSize(horizontal: true, vertical: false)
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, Studio.Space.section)
             .padding(.vertical, Studio.Space.m)
             .frame(minHeight: 52)
             .settingsSearchHighlight(title, query: searchQuery)
@@ -280,7 +280,7 @@ struct SettingsActionRow<Content: View>: View {
                 Spacer(minLength: 0)
                 content()
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, Studio.Space.section)
             .padding(.vertical, Studio.Space.sm)
         }
     }

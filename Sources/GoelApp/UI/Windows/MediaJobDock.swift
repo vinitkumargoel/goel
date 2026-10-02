@@ -36,7 +36,7 @@ struct MediaJobStack: View {
                     .studioFont(.caption.weight(600))
                     .foregroundStyle(Studio.Palette.ink2)
                     .padding(.horizontal, Studio.Space.sm)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, Studio.Space.snug)
                     .background(Capsule().fill(Studio.Palette.cardRaised).studioElevation(.raised))
                     .overlay(Capsule().strokeBorder(Studio.Palette.cardEdge, lineWidth: 1))
             }

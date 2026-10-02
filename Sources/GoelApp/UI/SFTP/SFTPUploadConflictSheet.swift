@@ -66,7 +66,7 @@ struct SFTPUploadConflictSheet: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Studio.Space.xl)
-        .padding(.top, 18)
+        .padding(.top, Studio.Space.section)
         .padding(.bottom, Studio.Space.m)
     }
 

@@ -147,13 +147,13 @@ struct DownloadStudioMenu: View {
                 .studioFont(.eyebrow)
                 .foregroundStyle(Studio.Palette.ink3)
                 .padding(.horizontal, Studio.Space.sm)
-                .padding(.top, isFirst ? 5 : 7)
+                .padding(.top, isFirst ? Studio.Space.snug : Studio.Space.cozy)
                 .padding(.bottom, 3)
                 .accessibilityAddTraits(.isHeader)
         case .divider:
             // Strong: menus sit on `cardRaised`, where the plain hairline vanishes in dark.
             StudioDivider(strong: true)
-                .padding(.vertical, 5)
+                .padding(.vertical, Studio.Space.snug)
                 .padding(.horizontal, Studio.Space.xs)
         case .row(let node):
             switch node.kind {

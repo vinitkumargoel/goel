@@ -19,7 +19,7 @@ struct DownloadStatusCell: View {
                     .labelStyle(StudioButtonLabelStyle(spacing: Studio.Space.xxs, iconSize: 10))
                     .studioFont(Studio.TextStyle.caption.weight(650))
                     .foregroundStyle(Studio.Palette.bad)
-                    .padding(.horizontal, 9)
+                    .padding(.horizontal, Studio.Space.roomy)
                     .frame(minHeight: 22)
                     .background(Studio.Palette.badSoft, in: Capsule())
                     .lineLimit(1)
@@ -33,7 +33,7 @@ struct DownloadStatusCell: View {
                 }
             }
         } else {
-            HStack(spacing: 5) {
+            HStack(spacing: Studio.Space.snug) {
                 DownloadStatusPill(text: text, tone: StudioDownloadState(task: task).tone)
                     .layoutPriority(1)
                 if let progress = task.seedTargetProgress {
@@ -125,7 +125,7 @@ struct ListSectionHeader: View {
                 .foregroundStyle(Studio.Palette.ink3)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, Studio.Space.section)
         .padding(.top, Studio.Space.sm)
         .padding(.bottom, Studio.Space.xxs)
         .frame(maxWidth: .infinity)
