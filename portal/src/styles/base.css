@@ -113,6 +113,8 @@ table {
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+  /* A canvas-coloured inner ring keeps the accent ring >= 3:1 against any surface it lands on. */
+  box-shadow: 0 0 0 2px var(--canvas);
 }
 
 .sr-only {
