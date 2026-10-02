@@ -68,7 +68,6 @@ struct StatusSpeedStat: View {
     let direction: SpeedDirection
     @EnvironmentObject private var telemetry: TelemetryStore
     @State private var showsHistory = false
-    @Environment(\.mainWindowPreview) private var preview
 
     var body: some View {
         let speed = direction.value(telemetry.displayedCombinedSpeed)
