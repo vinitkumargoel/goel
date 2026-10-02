@@ -62,13 +62,13 @@ struct IconRail: View {
         VStack(spacing: Studio.Space.xxs) {
             StudioRailItem(symbol: "rectangle.3.group", title: L10n.t("All downloads"),
                            badge: vm.count(for: .active),
-                           isSelected: listShowing && vm.filter == .all && flyout == nil,
+                           isSelected: listShowing && vm.filters.isEmpty && flyout == nil,
                            shortcut: shortcut(for: .all)) {
                 pick(.all)
             }
             StudioRailItem(symbol: "exclamationmark.triangle", title: L10n.t("Needs you"),
                            badge: vm.count(for: .failed), badgeTone: .bad,
-                           isSelected: listShowing && vm.filter == .failed && flyout == nil,
+                           isSelected: listShowing && vm.filters == DownloadFilters(status: .failed) && flyout == nil,
                            shortcut: shortcut(for: .failed)) {
                 pick(.failed)
             }
@@ -108,14 +108,11 @@ struct IconRail: View {
         .padding(.bottom, Studio.Space.ml)
     }
 
-    private var isTagFilter: Bool {
-        if case .tag = vm.filter { return true }
-        return false
-    }
+    private var isTagFilter: Bool { vm.filters.tag != nil }
 
     /// Status and type filters live in the Filters flyout (All and Failed have their own items).
     private var isOtherFilter: Bool {
-        vm.filter != .all && vm.filter != .failed && !isTagFilter
+        vm.filters.type != nil || (vm.filters.status != .all && vm.filters.status != .failed)
     }
 
     private func shortcut(for filter: SidebarFilter) -> String? {

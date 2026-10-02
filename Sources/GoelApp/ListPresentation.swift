@@ -10,24 +10,45 @@ enum ListPresentation {
         sortKey: SortKey,
         ascending: Bool
     ) -> [DownloadTask] {
+        visible(tasks: tasks, filters: DownloadFilters().setting(filter), search: search,
+                sortKey: sortKey, ascending: ascending)
+    }
+
+    /// Every axis of `filters` must match (status AND type AND tag), then the search.
+    static func visible(
+        tasks: [DownloadTask],
+        filters: DownloadFilters,
+        search: String,
+        sortKey: SortKey,
+        ascending: Bool
+    ) -> [DownloadTask] {
+        let rest = DownloadFilters(type: filters.type, tag: filters.tag)
+        let coreStatus = isCoreStatus(filters.status)
+        let extra: ((DownloadTask) -> Bool)?
+        if coreStatus {
+            extra = rest.isEmpty ? nil : { rest.matches($0) }
+        } else {
+            extra = { filters.matches($0) }
+        }
+        return TaskListQuery.visible(
+            tasks: tasks,
+            filter: coreStatus ? mapFilter(filters.status) : .all,
+            search: search,
+            sortKey: mapSort(sortKey),
+            ascending: ascending,
+            extraMatch: extra
+        )
+    }
+
+    static func count(tasks: [DownloadTask], filters: DownloadFilters) -> Int {
+        filters.isEmpty ? tasks.count : tasks.reduce(0) { $0 + (filters.matches($1) ? 1 : 0) }
+    }
+
+    /// Statuses `TaskListQuery` filters itself; the rest are matched app-side.
+    private static func isCoreStatus(_ filter: SidebarFilter) -> Bool {
         switch filter {
-        case .type, .failed, .queued, .tag:
-            return TaskListQuery.visible(
-                tasks: tasks,
-                filter: .all,
-                search: search,
-                sortKey: mapSort(sortKey),
-                ascending: ascending,
-                extraMatch: { matches($0, filter: filter) }
-            )
-        default:
-            return TaskListQuery.visible(
-                tasks: tasks,
-                filter: mapFilter(filter),
-                search: search,
-                sortKey: mapSort(sortKey),
-                ascending: ascending
-            )
+        case .all, .active, .paused, .completed, .seeding: return true
+        case .type, .failed, .queued, .tag: return false
         }
     }
 

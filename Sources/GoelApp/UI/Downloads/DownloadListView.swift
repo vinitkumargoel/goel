@@ -132,17 +132,17 @@ struct DownloadsNoMatch: View {
 
     var body: some View {
         let term = vm.search.trimmingCharacters(in: .whitespacesAndNewlines)
-        let narrowed = vm.filter != .all || !term.isEmpty
+        let narrowed = !vm.filters.isEmpty || !term.isEmpty
         // Echo the search, as the portal does; a filter alone has no words to echo.
         let title = term.isEmpty ? L10n.t("No downloads match") : L10n.t("No downloads match “%@”", term)
-        let message = !term.isEmpty && vm.filter != .all
-            ? L10n.t("Try a different filter or search term. The %@ filter is also on.", vm.filter.accessibilityName)
+        let message = !term.isEmpty && !vm.filters.isEmpty
+            ? L10n.t("Try a different filter or search term. The %@ filter is also on.", vm.filters.title)
             : L10n.t("Try a different filter or search term.")
         StudioEmptyState(symbol: "magnifyingglass", title: title, message: message) {
             if narrowed {
                 Button(L10n.t("Clear Search and Filter")) {
                     vm.search = ""
-                    vm.filter = .all
+                    vm.filters = DownloadFilters()
                 }
                 .buttonStyle(.studio())
             }

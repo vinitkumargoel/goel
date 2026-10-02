@@ -116,8 +116,21 @@ final class AppViewModel: ObservableObject {
     /// without moving the other.
     @Published var selectionAnchor: DownloadTask.ID?
 
-    @Published var filter: SidebarFilter = .all { didSet { recomputeVisible() } }
-    @Published var search: String = "" { didSet { recomputeVisible() } }
+    /// Status, type and tag, ANDed. Narrowing drops hidden rows from the selection, so the
+    /// detail panel never shows a download the list no longer does.
+    @Published var filters = DownloadFilters() {
+        didSet {
+            guard filters != oldValue else { return }
+            recomputeVisible()
+            pruneSelectionToVisible()
+        }
+    }
+    @Published var search: String = "" {
+        didSet {
+            recomputeVisible()
+            pruneSelectionToVisible()
+        }
+    }
     @Published var sortKey: SortKey = .status { didSet { recomputeVisible() } }
     @Published var sortAscending: Bool = true { didSet { recomputeVisible() } }
     /// Remembered across launches: grouping is a way of working, not a momentary view.
@@ -552,7 +565,7 @@ final class AppViewModel: ObservableObject {
     func recomputeVisible() {
         let sorted = ListPresentation.visible(
             tasks: tasks,
-            filter: filter,
+            filters: filters,
             search: search,
             sortKey: sortKey,
             ascending: sortAscending
@@ -579,8 +592,33 @@ final class AppViewModel: ObservableObject {
     }
 
 
+    /// One filter on its own across every task: the rail's counts and badges.
     func count(for filter: SidebarFilter) -> Int {
         ListPresentation.count(tasks: tasks, filter: filter)
+    }
+
+    /// How many rows picking `filter` would show with the other axes kept: the header chips.
+    func facetCount(for filter: SidebarFilter) -> Int {
+        ListPresentation.count(tasks: tasks, filters: filters.setting(filter))
+    }
+
+    /// Rows every active filter lets through, before the search: an active filter chip's count.
+    var visibleCountIgnoringSearch: Int { ListPresentation.count(tasks: tasks, filters: filters) }
+
+    /// The single-filter view of `filters`, for callers that pick one filter at a time (the
+    /// rail, ⌘1…⌘9, the palette, the menu bar). Setting `.all` shows everything (every axis
+    /// cleared); any other value changes only its own axis.
+    var filter: SidebarFilter {
+        get { filters.primary }
+        set { filters = newValue == .all ? DownloadFilters() : filters.setting(newValue) }
+    }
+
+    func pruneSelectionToVisible() {
+        let kept = SelectionRange.pruned(selection: selection, primary: primarySelection,
+                                         anchor: selectionAnchor, visible: visibleTasks.map(\.id))
+        if kept.selection != selection { selection = kept.selection }
+        if kept.primary != primarySelection { primarySelection = kept.primary }
+        if kept.anchor != selectionAnchor { selectionAnchor = kept.anchor }
     }
 
     var selectedTask: DownloadTask? {
