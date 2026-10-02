@@ -43,18 +43,19 @@ struct RuleEditorSheet: View {
         } footer: {
             StudioSheetFooter(onCancel: { dismiss() },
                               primaryTitle: L10n.t("Save Rule"),
-                              primaryEnabled: RulesPreview.canSave(rule)) {
+                              primaryEnabled: AutoSortRulePresentation.canSave(rule)) {
                 onSave(rule)
                 dismiss()
             } leading: {
-                if !RulesPreview.canSave(rule) {
+                if !AutoSortRulePresentation.canSave(rule) {
                     Text(L10n.t("Give the rule a name, a condition and at least one action."))
                         .studioFont(.caption)
                         .foregroundStyle(Studio.Palette.ink3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .help(RulesPreview.canSave(rule) ? "" : L10n.t("Give the rule a name, a condition and at least one action."))
+            .help(AutoSortRulePresentation.canSave(rule)
+                  ? "" : L10n.t("Give the rule a name, a condition and at least one action."))
         }
     }
 
@@ -115,11 +116,13 @@ private struct RuleConditionRow: View {
     var body: some View {
         HStack(spacing: Studio.Space.xs) {
             SettingsSelect(selection: fieldBinding,
-                           options: AutoSortRule.Field.allCases.map { SettingsOption($0, RulesPreview.fieldLabel($0)) },
+                           options: AutoSortRule.Field.allCases.map {
+                               SettingsOption($0, AutoSortRulePresentation.fieldLabel($0))
+                           },
                            width: 112, accessibilityName: L10n.t("Field"))
             SettingsSelect(selection: $condition.op,
                            options: AutoSortRule.Operator.available(for: condition.field)
-                               .map { SettingsOption($0, RulesPreview.operatorLabel($0)) },
+                               .map { SettingsOption($0, AutoSortRulePresentation.operatorLabel($0)) },
                            width: 132, accessibilityName: L10n.t("Comparison"))
             SettingsTextField(text: $condition.value, width: nil, placeholder: placeholder,
                               isMonospaced: true, accessibilityName: L10n.t("Value"))
@@ -258,12 +261,14 @@ private struct RuleWhenDoneSelect: View {
 
     var body: some View {
         SettingsSelect(selection: $selection,
-                       options: WhenDone.Kind.allCases.map { SettingsOption($0.rawValue, RulesPreview.whenDoneLabel($0)) },
+                       options: WhenDone.Kind.allCases.map {
+                           SettingsOption($0.rawValue, AutoSortRulePresentation.whenDoneLabel($0))
+                       },
                        width: 200, accessibilityName: L10n.t("When done")) { picked in
             handle(picked)
         }
         .onAppear { selection = whenDone.kind.rawValue }
-        .help(RulesPreview.whenDoneSummary(whenDone))
+        .help(AutoSortRulePresentation.whenDoneSummary(whenDone))
     }
 
     private func handle(_ raw: String) {

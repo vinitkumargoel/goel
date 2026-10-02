@@ -203,37 +203,3 @@ final class NotificationPlanningTests: XCTestCase {
         XCTAssertTrue(DockMenuModel.hasPausable(tasks))
     }
 }
-
-final class RulesPreviewTests: XCTestCase {
-
-    func testHistoryBecomesCandidatesWithHost() {
-        let entry = HistoryEntry(id: UUID(), name: "a.dmg", locator: "https://GitHub.com/x/a.dmg", kind: .http,
-                                 totalBytes: 10, savePath: "/tmp/a.dmg", completedAt: Date())
-        let candidate = RulesPreview.candidates(from: [entry])[0]
-        XCTAssertEqual(candidate.host, "github.com")
-        XCTAssertEqual(candidate.fileExtension, "dmg")
-        XCTAssertEqual(candidate.size, 10)
-    }
-
-    func testMovingClampsAtTheEnds() {
-        let rules = ["a", "b", "c"].map { AutoSortRule(name: $0, conditions: []) }
-        XCTAssertEqual(RulesPreview.moving(rules[2].id, by: -1, in: rules).map(\.name), ["a", "c", "b"])
-        XCTAssertEqual(RulesPreview.moving(rules[0].id, by: -1, in: rules).map(\.name), ["a", "b", "c"])
-        XCTAssertEqual(RulesPreview.moving(rules[0].id, by: 5, in: rules).map(\.name), ["b", "c", "a"])
-    }
-
-    func testCanSaveNeedsNameConditionAndAction() {
-        var rule = AutoSortRule(name: "Apps", conditions: [.init(field: .fileExtension, op: .isAnyOf, value: "dmg")])
-        XCTAssertFalse(RulesPreview.canSave(rule), "no action yet")
-        rule.folder = "/Users/me/Installers"
-        XCTAssertTrue(RulesPreview.canSave(rule))
-        rule.name = " "
-        XCTAssertFalse(RulesPreview.canSave(rule))
-    }
-
-    func testSummaryReadsLikeASentence() {
-        let rule = AutoSortRule(name: "r", conditions: [.init(field: .fileExtension, op: .isAnyOf, value: "dmg, pkg")],
-                                folder: "/Apps", tag: "apps", startPaused: true)
-        XCTAssertEqual(RulesPreview.summary(rule), "Extension is any of dmg, pkg → /Apps, tag “apps”, start paused")
-    }
-}

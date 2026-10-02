@@ -1,8 +1,10 @@
 import Foundation
 import GoelCore
 
-/// Pure helpers behind the Rules pane and editor, kept out of the views so they can be tested.
-enum RulesPreview {
+/// What the Rules pane and editor show about auto-sort rules: the one-line summary and the
+/// field/operator/When-done labels, which rules can be saved, reordering, and past downloads turned
+/// into candidates for the live match preview. Pure, kept out of the views so it can be tested.
+enum AutoSortRulePresentation {
 
     static func candidates(from history: [HistoryEntry]) -> [AutoSortCandidate] {
         history.map { entry in

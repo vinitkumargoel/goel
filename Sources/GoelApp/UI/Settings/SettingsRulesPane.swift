@@ -52,7 +52,7 @@ struct RulesSettingsPane: View {
         }
         .task {
             guard loadsHistory else { return }
-            history = await RulesPreview.candidates(from: vm.fetchHistory())
+            history = await AutoSortRulePresentation.candidates(from: vm.fetchHistory())
         }
         .sheet(item: $editing) { rule in
             RuleEditorSheet(rule: rule, history: history) { saved in save(saved) }
@@ -89,7 +89,7 @@ struct RulesSettingsPane: View {
     }
 
     private func move(_ id: UUID, by offset: Int) {
-        vm.update { $0.autoSortRules = RulesPreview.moving(id, by: offset, in: $0.autoSortRules) }
+        vm.update { $0.autoSortRules = AutoSortRulePresentation.moving(id, by: offset, in: $0.autoSortRules) }
     }
 
     private func delete(_ id: UUID) {
@@ -119,7 +119,7 @@ private struct RuleCard: View {
                         .studioFont(.cardTitle.size(13))
                         .foregroundStyle(rule.enabled ? Studio.Palette.ink : Studio.Palette.ink3)
                         .lineLimit(1)
-                    Text(RulesPreview.summary(rule))
+                    Text(AutoSortRulePresentation.summary(rule))
                         .studioFont(.caption)
                         .foregroundStyle(Studio.Palette.ink3)
                         .lineLimit(2)
@@ -134,7 +134,7 @@ private struct RuleCard: View {
             .buttonStyle(.plain)
             .help(L10n.t("Edit rule"))
             .accessibilityLabel(rule.name)
-            .accessibilityValue(RulesPreview.summary(rule))
+            .accessibilityValue(AutoSortRulePresentation.summary(rule))
             .accessibilityHint(L10n.t("Edit rule"))
 
             HStack(spacing: 2) {

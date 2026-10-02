@@ -75,31 +75,23 @@ struct StatusProfilePicker: View {
 
     var body: some View {
         StudioSegmentedControl(
-            selection: Binding(get: { vm.settings.selectedProfileName }, set: { vm.setProfile($0) }),
-            segments: vm.settings.profiles.map(segment),
+            selection: Binding(get: { vm.activeProfileName }, set: { vm.setProfile($0) }),
+            segments: vm.queueProfiles.map(segment),
             size: .small,
             accessibilityLabel: L10n.t("Queue profile"))
     }
 
     private func segment(_ profile: TrafficProfile) -> StudioSegment<String> {
-        let limitEnabled = vm.settings.speedLimitEnabled
-        let editDisabled = profile.name != vm.settings.selectedProfileName
-            && vm.managedPolicy.isLocked(.selectedProfileName)
-        return StudioSegment(
+        StudioSegment(
             profile.name, title: profile.name,
             accessibilityLabel: L10n.t("%@ queue profile", profile.name),
-            accessibilityValue: SpeedProfileText.spokenQueueSummary(profile, limitEnabled: limitEnabled),
-            help: SpeedProfileText.queueSummary(profile, limitEnabled: limitEnabled),
-            actions: [StudioSegmentAction(title: L10n.t("Edit Profile…"), isEnabled: !editDisabled) {
-                editProfile(profile.name)
+            accessibilityValue: vm.spokenQueueSummary(for: profile),
+            help: vm.queueSummary(for: profile),
+            actions: [StudioSegmentAction(title: L10n.t("Edit Profile…"),
+                                          isEnabled: vm.canEditProfile(named: profile.name)) {
+                vm.prepareToEditProfile(named: profile.name)
+                openSettings()
             }])
-    }
-
-    /// The Speed & Connections pane edits the active profile, so editing one makes it the active one.
-    private func editProfile(_ name: String) {
-        if name != vm.settings.selectedProfileName { vm.setProfile(name) }
-        SettingsRoute.shared.request(.traffic)
-        openSettings()
     }
 }
 
