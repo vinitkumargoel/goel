@@ -42,6 +42,7 @@ struct StudioSheet<Content: View, Footer: View>: View {
                         Text(subtitle)
                             .studioFont(.small)
                             .foregroundStyle(Studio.Palette.ink2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: Studio.Space.s)

@@ -80,7 +80,6 @@ private struct StudioButtonBody: View {
             }
             .studioFocusRing(isFocused, shape: shape)
             .contentShape(shape)
-            .opacity(isEnabled ? 1 : 0.45)
             .onHover { hovered = isEnabled && $0 }
             .animation(Studio.Motion.quick, value: hovered)
             .animation(Studio.Motion.quick, value: configuration.isPressed)
@@ -88,7 +87,11 @@ private struct StudioButtonBody: View {
 
     private var pressed: Bool { configuration.isPressed }
 
+    // Disabled drops the accent and the lift instead of fading the whole button: a faded accent
+    // fill still reads as live on the dark canvas. Filled variants turn into a neutral well.
+
     private var hasLift: Bool {
+        guard isEnabled else { return false }
         switch style.variant {
         case .primary, .secondary, .destructive, .destructivePrimary: return !pressed
         case .soft, .ghost: return false
@@ -96,6 +99,7 @@ private struct StudioButtonBody: View {
     }
 
     private var fill: Color {
+        guard isEnabled else { return disabledFill }
         switch style.variant {
         case .primary:
             return pressed || hovered ? Studio.Palette.accentStrong : Studio.Palette.accent
@@ -112,6 +116,7 @@ private struct StudioButtonBody: View {
     }
 
     private var foreground: Color {
+        guard isEnabled else { return Studio.Palette.ink3 }
         switch style.variant {
         case .primary, .destructivePrimary: return Studio.Palette.onAccent
         case .secondary: return Studio.Palette.ink
@@ -123,8 +128,19 @@ private struct StudioButtonBody: View {
 
     private var border: Color? {
         switch style.variant {
-        case .secondary, .destructive: return Studio.Palette.hairlineStrong
-        default: return nil
+        case .secondary, .destructive: return isEnabled ? Studio.Palette.hairlineStrong : Studio.Palette.hairline
+        // A disabled filled button keeps its outline, so it still reads as a button on a footer
+        // or well whose colour is close to the neutral fill.
+        case .primary, .destructivePrimary, .soft: return isEnabled ? nil : Studio.Palette.hairlineStrong
+        case .ghost: return nil
+        }
+    }
+
+    private var disabledFill: Color {
+        switch style.variant {
+        case .primary, .destructivePrimary, .soft: return Studio.Palette.segment
+        case .secondary, .destructive: return Studio.Palette.card
+        case .ghost: return .clear
         }
     }
 }

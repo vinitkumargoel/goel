@@ -13,16 +13,25 @@ struct StatusBar: View {
             StatusSpeedStat(direction: .down)
             StatusSpeedStat(direction: .up)
             queueFinish
+                .layoutPriority(1)
             if !activeTransfers.isEmpty { StatusTransfersButton(count: activeTransfers.count) }
             selectionEcho
             Spacer(minLength: Studio.Space.s)
             StatusSpeedLimitChip()
-            Text(L10n.t("Queue profile"))
-                .studioFont(.caption)
-                .foregroundStyle(Studio.Palette.ink3)
-                .lineLimit(1)
-                .accessibilityHidden(true)
+                .fixedSize()
+                .layoutPriority(1)
+            // The caption goes first when the window is narrow, so the figures beside it don't truncate.
+            ViewThatFits(in: .horizontal) {
+                Text(L10n.t("Queue profile"))
+                    .studioFont(.caption)
+                    .foregroundStyle(Studio.Palette.ink3)
+                    .lineLimit(1)
+                    .fixedSize()
+                Color.clear.frame(width: 0, height: 0)
+            }
+            .accessibilityHidden(true)
             StatusProfilePicker()
+                .fixedSize()
         }
         .padding(.leading, Studio.Space.l)
         .padding(.trailing, Studio.Space.ml)

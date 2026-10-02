@@ -136,7 +136,8 @@ struct IconRail: View {
 
     private var expanded: some View {
         VStack(spacing: 0) {
-            ScrollView {
+            // Fades at the edge that hides rows, so a short window reads as "scroll for more".
+            EdgeFadingScrollView {
                 VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     RailFilterSections()
                     RailTagSection()
