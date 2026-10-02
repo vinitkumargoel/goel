@@ -390,13 +390,24 @@ final class AppViewModel: ObservableObject {
     /// Weak: scripting must never keep a discarded view model alive.
     static private(set) weak var shared: AppViewModel?
 
-    init(system: SystemActions = LiveSystemActions()) {
+    /// Production: opens the queue database in Application Support and builds the real engines.
+    /// Nothing starts until ``start()``.
+    convenience init(system: SystemActions = LiveSystemActions()) {
         let opened = Self.makeStore()
-        self.manager = DownloadManager(store: opened.store)
+        self.init(system: system, opened: opened, manager: DownloadManager(store: opened.store))
+    }
+
+    /// The seam behind the production init. The DEBUG snapshot harness passes an in-memory store
+    /// and a manager with inert engines, so a model can be built without touching the user's
+    /// database, Keychain or network; `start()` is what brings the engine up, and it never calls it.
+    /// `settings` seeds the model as `start()` otherwise would from the manager.
+    init(system: SystemActions, opened: OpenedStore, manager: DownloadManager, settings: AppSettings? = nil) {
+        self.manager = manager
         self.persistenceWarning = opened.warning
         self.databaseRecovery = opened.recovery
         self.isStoreEphemeral = opened.isEphemeral
         self.system = system
+        if let settings { self.settings = settings }
         Self.shared = self
     }
 
@@ -1832,3 +1843,22 @@ final class AppViewModel: ObservableObject {
     }
 }
 
+#if DEBUG
+extension AppViewModel {
+    /// Snapshot harness only (see `UI/Snapshots/SampleData.swift`): shows `snapshot` as if the
+    /// engine had published it, without the side effects of the live path — no notification
+    /// handlers, no Dock progress, no Finder progress on files, no completion banners.
+    func installSampleSnapshot(_ snapshot: [DownloadTask], selecting selected: DownloadTask.ID?) {
+        tasks = snapshot
+        recomputeVisible()
+        hasAutoSelected = true
+        hasConsumedFirstSnapshot = true
+        isRestoring = false
+        if let selected {
+            primarySelection = selected
+            selection = [selected]
+            selectionAnchor = selected
+        }
+    }
+}
+#endif

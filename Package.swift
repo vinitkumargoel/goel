@@ -171,6 +171,8 @@ targets += [
             "GoelCore",
             .product(name: "Sparkle", package: "Sparkle"),
         ],
+        // The Studio porting guide sits next to the code it describes; it isn't a resource.
+        exclude: ["UI/PORTING.md"],
         resources: [
             // The WebExtension is loaded unpacked, so it must be copied verbatim, not processed.
             .copy("BrowserExtension"),

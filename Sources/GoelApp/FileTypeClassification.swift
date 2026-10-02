@@ -1,5 +1,24 @@
 import Foundation
 
+/// Case order is the sidebar's and the Group by Type order.
+enum FileType: String, CaseIterable, Hashable {
+    case video, audio, image, iso, archive, app, doc, magnet, other
+
+    var symbol: String {
+        switch self {
+        case .iso: return "opticaldisc"
+        case .video: return "film"
+        case .audio: return "music.note"
+        case .image: return "photo"
+        case .archive: return "doc.zipper"
+        case .app: return "app.badge"
+        case .magnet: return "link"
+        case .doc: return "doc.text"
+        case .other: return "doc"
+        }
+    }
+}
+
 extension FileType {
 
     /// Checked in this order, first match wins. The original four look for the extension anywhere

@@ -447,10 +447,9 @@ struct GoelCommands: Commands {
     }
 
 
+    /// Studio has only System / Light / Dark: ⇧⌘T flips between light and dark.
     private func cycleTheme() {
-        let all = AppTheme.allCases
-        let next = (all.firstIndex(of: viewModel.theme) ?? 0) + 1
-        viewModel.theme = all[next % all.count]
+        viewModel.toggleAppearanceMode()
     }
 
     private func readTextFile() -> String? {

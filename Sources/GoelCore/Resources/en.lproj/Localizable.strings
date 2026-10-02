@@ -586,6 +586,7 @@
 "Daily download window and what happens when the queue drains" = "Daily download window and what happens when the queue drains";
 "Daily transfer totals, last 14 days" = "Daily transfer totals, last 14 days";
 "Dangerous: physical NICs may bypass an active VPN tunnel." = "Dangerous: physical NICs may bypass an active VPN tunnel.";
+"Dark" = "Dark";
 "Date" = "Date";
 "Date Added" = "Date Added";
 "Date Modified" = "Date Modified";
@@ -1031,6 +1032,7 @@
 "Licence" = "Licence";
 "Licence reference" = "Licence reference";
 "Licensed to" = "Licensed to";
+"Light" = "Light";
 "Limit" = "Limit";
 "Limited to %@ — applies on next start" = "Limited to %@ — applies on next start";
 "Link Grabber" = "Link Grabber";
@@ -1719,6 +1721,7 @@
 "Setup progress" = "Setup progress";
 "Share ratio" = "Share ratio";
 "Share…" = "Share…";
+"Shortcut %@" = "Shortcut %@";
 "Show" = "Show";
 "Show %@" = "Show %@";
 "Show %@ in Finder" = "Show %@ in Finder";
@@ -1801,6 +1804,7 @@
 "Speed Limit" = "Speed Limit";
 "Speed cap (KB/s)" = "Speed cap (KB/s)";
 "Speed graph, last %d seconds" = "Speed graph, last %d seconds";
+"Speed history" = "Speed history";
 "Speed limit" = "Speed limit";
 "Speed limit off · Unlimited" = "Speed limit off · Unlimited";
 "Speed limit on · %@" = "Speed limit on · %@";
@@ -1859,6 +1863,7 @@
 "Symbolic link to %@" = "Symbolic link to %@";
 "System" = "System";
 "TCP port the embedded server listens on." = "TCP port the embedded server listens on.";
+"Tabs" = "Tabs";
 "Tag" = "Tag";
 "Tagged %d downloads" = "Tagged %d downloads";
 "Tags" = "Tags";

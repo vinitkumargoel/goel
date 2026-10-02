@@ -257,7 +257,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         selectedProfileName: String = TrafficProfile.medium.name,
         speedLimitEnabled: Bool = true,
         defaultSaveDirectory: String = AppSettings.systemDownloadsDirectory,
-        theme: String = "frost-dark",
+        theme: String = "system",
         language: String = "English",
         launchAtLogin: Bool = false,
         launchMinimized: Bool = false,

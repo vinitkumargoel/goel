@@ -41,80 +41,6 @@ enum Theme {
     }
 }
 
-/// Which of the four system appearances a drawing pass resolved to. The high-contrast
-/// variants are what AppKit hands us when Increase Contrast is on.
-struct AppearanceVariant: Equatable {
-    let isDark: Bool
-    let isHighContrast: Bool
-
-    init(isDark: Bool, isHighContrast: Bool) {
-        self.isDark = isDark
-        self.isHighContrast = isHighContrast
-    }
-
-    init(_ name: NSAppearance.Name?) {
-        switch name {
-        case NSAppearance.Name.darkAqua, NSAppearance.Name.vibrantDark:
-            self.init(isDark: true, isHighContrast: false)
-        case NSAppearance.Name.accessibilityHighContrastDarkAqua,
-             NSAppearance.Name.accessibilityHighContrastVibrantDark:
-            self.init(isDark: true, isHighContrast: true)
-        case NSAppearance.Name.accessibilityHighContrastAqua,
-             NSAppearance.Name.accessibilityHighContrastVibrantLight:
-            self.init(isDark: false, isHighContrast: true)
-        default:
-            self.init(isDark: false, isHighContrast: false)
-        }
-    }
-
-    static let candidates: [NSAppearance.Name] = [
-        .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
-    ]
-
-    /// The workspace flag backs up the appearance match: an appearance built with
-    /// `NSAppearance(named:)` never reports the high-contrast variant, only a drawing pass does.
-    static func resolve(_ appearance: NSAppearance) -> AppearanceVariant {
-        let matched = AppearanceVariant(appearance.bestMatch(from: candidates) ?? appearance.name)
-        return AppearanceVariant(
-            isDark: matched.isDark,
-            isHighContrast: matched.isHighContrast || IncreaseContrast.isEnabled)
-    }
-
-    /// The fast path for colours that differ only between light and dark: no contrast flag needed.
-    static func isDark(_ appearance: NSAppearance) -> Bool {
-        AppearanceVariant(appearance.bestMatch(from: candidates) ?? appearance.name).isDark
-    }
-}
-
-/// System Settings ▸ Accessibility ▸ Increase contrast, read once and re-read only when the
-/// display options change: every dynamic colour resolution used to ask NSWorkspace afresh.
-enum IncreaseContrast {
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var cached: Bool?
-    private static let observer: NSObjectProtocol = NSWorkspace.shared.notificationCenter.addObserver(
-        forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
-        object: nil, queue: nil
-    ) { _ in
-        IncreaseContrast.invalidate()
-    }
-
-    static var isEnabled: Bool {
-        _ = observer
-        lock.lock()
-        defer { lock.unlock() }
-        if let cached { return cached }
-        let value = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        cached = value
-        return value
-    }
-
-    static func invalidate() {
-        lock.lock()
-        cached = nil
-        lock.unlock()
-    }
-}
-
 struct ThemeColors {
     struct Pair: Equatable { let light: UInt32; let dark: UInt32 }
     let accent, accentPress, green, orange, red, yellow, purple, teal, indigo: Pair
@@ -132,41 +58,6 @@ enum ThemePalette {
         let pair = current.colors[keyPath: key]
         return Color.adaptive(light: WCAG.ink(on: pair.light),
                               dark: WCAG.ink(on: pair.dark))
-    }
-}
-
-enum WCAG {
-
-    private static let lightInk: UInt32 = 0xFFFFFF
-    private static let darkInk:  UInt32 = 0x0E1116
-
-    /// Constants are fixed by WCAG 2.1 §1.4.3 — do not round them.
-    static func relativeLuminance(_ hex: UInt32) -> Double {
-        func channel(_ raw: UInt32) -> Double {
-            let c = Double(raw) / 255
-            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
-        }
-        return 0.2126 * channel((hex >> 16) & 0xFF)
-             + 0.7152 * channel((hex >> 8) & 0xFF)
-             + 0.0722 * channel(hex & 0xFF)
-    }
-
-    static func contrastRatio(_ a: UInt32, _ b: UInt32) -> Double {
-        let la = relativeLuminance(a), lb = relativeLuminance(b)
-        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
-    }
-
-    static func ink(on fill: UInt32) -> UInt32 {
-        contrastRatio(lightInk, fill) >= contrastRatio(darkInk, fill) ? lightInk : darkInk
-    }
-
-    /// Linear sRGB-channel blend: `t = 0` is `a`, `t = 1` is `b`.
-    static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
-        func channel(_ shift: UInt32) -> UInt32 {
-            let x = Double((a >> shift) & 0xFF), y = Double((b >> shift) & 0xFF)
-            return UInt32((x + (y - x) * t).rounded()) << shift
-        }
-        return channel(16) | channel(8) | channel(0)
     }
 }
 
@@ -229,24 +120,9 @@ extension NSColor {
     }
 }
 
-/// Case order is the sidebar's and the Group by Type order.
-enum FileType: String, CaseIterable, Hashable {
-    case video, audio, image, iso, archive, app, doc, magnet, other
-
-    var symbol: String {
-        switch self {
-        case .iso: return "opticaldisc"
-        case .video: return "film"
-        case .audio: return "music.note"
-        case .image: return "photo"
-        case .archive: return "doc.zipper"
-        case .app: return "app.badge"
-        case .magnet: return "link"
-        case .doc: return "doc.text"
-        case .other: return "doc"
-        }
-    }
-
+/// The old palette's tile colours for each file type. The type itself lives in
+/// `FileTypeClassification.swift`, so it outlives this file.
+extension FileType {
     func fillToken(in theme: AppTheme) -> ThemeColors.Pair {
         let colors = theme.colors
         switch self {
@@ -418,25 +294,5 @@ enum AppTheme: String, CaseIterable, Identifiable {
         default:
             self = AppTheme.allCases.first { $0.settingsValue == settingsValue } ?? .frostDark
         }
-    }
-}
-
-/// The only settings the `App` struct's scenes read. Kept apart so its `body` re-runs when the
-/// theme or the menu-bar switch changes, not on every published change of the view model.
-@MainActor
-final class AppAppearance: ObservableObject {
-    @Published private(set) var colorScheme: ColorScheme?
-    @Published private(set) var menuBarExtraEnabled: Bool
-
-    init(settings: AppSettings = AppSettings()) {
-        colorScheme = AppTheme(settingsValue: settings.theme).colorScheme
-        menuBarExtraEnabled = settings.menuBarExtraEnabled
-    }
-
-    /// Assigns only on change: `@Published` publishes every write, equal or not.
-    func apply(_ settings: AppSettings) {
-        let scheme = AppTheme(settingsValue: settings.theme).colorScheme
-        if scheme != colorScheme { colorScheme = scheme }
-        if settings.menuBarExtraEnabled != menuBarExtraEnabled { menuBarExtraEnabled = settings.menuBarExtraEnabled }
     }
 }
