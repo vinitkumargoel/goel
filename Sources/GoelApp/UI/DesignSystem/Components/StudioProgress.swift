@@ -117,7 +117,9 @@ struct StudioArcPercentLabel: View {
                 Text(verbatim: "\(percent)")
                     .font(StudioFonts.font(.display, size: size, weight: big ? 750 : 700, tabularNumbers: true))
                     .tracking(-size * (big ? 0.04 : 0.02))
-                if big {
+                // Room for the unit from 60 pt up (the queue ring, the detail hero); a card's
+                // 46 pt arc shows the bare number.
+                if diameter >= 60 {
                     Text(verbatim: "%")
                         .font(StudioFonts.font(.display, size: size * 0.47, weight: 600))
                 }

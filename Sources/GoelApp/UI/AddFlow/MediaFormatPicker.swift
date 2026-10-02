@@ -96,8 +96,8 @@ struct MediaFormatPicker: View {
                     .foregroundStyle(Studio.Palette.ink3)
             }
             if case .failed = phase {
-                Button(L10n.t("Retry")) { Task { await load(force: true) } }
-                    .buttonStyle(.studio(.ghost, size: .small))
+                Button(L10n.t("Retry"), systemImage: "arrow.clockwise") { Task { await load(force: true) } }
+                    .buttonStyle(.studio(.secondary, size: .small))
                     .accessibilityLabel(L10n.t("Retry loading quality options"))
             }
         }

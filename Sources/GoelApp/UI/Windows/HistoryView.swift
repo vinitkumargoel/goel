@@ -161,7 +161,7 @@ struct HistoryView: View {
                         search = ""
                         typeFilter = nil
                     }
-                    .buttonStyle(.studio(.primary))
+                    .buttonStyle(.studio(.secondary))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
