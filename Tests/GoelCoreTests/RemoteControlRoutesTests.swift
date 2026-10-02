@@ -256,12 +256,12 @@ final class RemoteControlRoutesTests: XCTestCase {
         XCTAssertTrue(before.contains(#""encryptionMode":"prefer""#), before)
 
         let ok = await send(raw("POST", "/api/settings", json: """
-            {"general":{"defaultSaveDirectory":"/srv/downloads","existingFileReaction":"overwrite","maxSimultaneousDownloads":5},
+            {"general":{"defaultSaveDirectory":"/srv/downloads","existingFileReaction":"rename","maxSimultaneousDownloads":5},
              "bittorrent":{"encryptionMode":"require","dht":false,"utp":false}}
             """), backend)
         XCTAssertTrue(ok.hasPrefix("HTTP/1.1 200"), ok)
         XCTAssertEqual(backend.appSettings.defaultSaveDirectory, "/srv/downloads")
-        XCTAssertEqual(backend.appSettings.existingFileReaction, "overwrite")
+        XCTAssertEqual(backend.appSettings.existingFileReaction, "rename")
         XCTAssertEqual(backend.appSettings.selectedProfile.maxSimultaneousDownloads, 5)
         XCTAssertEqual(backend.appSettings.btEncryptionMode, "require")
         XCTAssertFalse(backend.appSettings.btEnableDHT)
@@ -274,6 +274,8 @@ final class RemoteControlRoutesTests: XCTestCase {
                     #"{"general":{"defaultSaveDirectory":""}}"#,
                     #"{"general":{"defaultFolderRule":"nope"}}"#,
                     #"{"general":{"existingFileReaction":"delete"}}"#,
+                    // A remote client must not be able to make Adds replace files the user already has.
+                    #"{"general":{"existingFileReaction":"overwrite"}}"#,
                     #"{"bittorrent":{"encryptionMode":"maybe"}}"#,
                     #"{"bittorrent":{"dht":"yes"}}"#,
                     "not json"] {
@@ -284,6 +286,7 @@ final class RemoteControlRoutesTests: XCTestCase {
                                        json: #"{"general":{"defaultSaveDirectory":"/etc"}}"#), backend)
         XCTAssertTrue(forbidden.hasPrefix("HTTP/1.1 403"), forbidden)
         XCTAssertEqual(backend.appSettings.defaultSaveDirectory, "/srv/downloads")
+        XCTAssertEqual(backend.appSettings.existingFileReaction, "rename")
 
         let unauth = await send(raw("GET", "/api/settings", auth: false), backend)
         XCTAssertTrue(unauth.hasPrefix("HTTP/1.1 401"))

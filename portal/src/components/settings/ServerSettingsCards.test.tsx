@@ -49,6 +49,13 @@ describe('ServerSettingsCards', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('never offers overwrite remotely, so an Add cannot replace the user\'s files', async () => {
+    renderCards()
+    const group = await screen.findByRole('radiogroup', { name: en.settings.general.exists })
+    const overwrite = group.querySelector<HTMLButtonElement>('[data-value="overwrite"]')
+    expect(overwrite).toBeDisabled()
+  })
+
   it('saves only the changed fields of the card that was edited', async () => {
     const { onToast, onDirty } = renderCards()
     const toggle = await screen.findByRole('switch', { name: en.settings.bt.dht })

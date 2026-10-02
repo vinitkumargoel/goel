@@ -460,7 +460,7 @@
         "fixed": "Fixed"
       },
       "exists": "When a file exists",
-      "existsDesc": "Keep both by renaming, or replace the old file.",
+      "existsDesc": "Keep both by renaming. Replacing the old file can only be turned on in the Goel° app.",
       "reactions": {
         "rename": "Rename",
         "overwrite": "Overwrite"

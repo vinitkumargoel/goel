@@ -460,7 +460,7 @@
         "fixed": "Fest"
       },
       "exists": "Wenn eine Datei existiert",
-      "existsDesc": "Beide behalten (umbenennen) oder die alte Datei ersetzen.",
+      "existsDesc": "Beide behalten (umbenennen). Das Ersetzen der alten Datei lässt sich nur in der Goel°-App einschalten.",
       "reactions": {
         "rename": "Umbenennen",
         "overwrite": "Überschreiben"

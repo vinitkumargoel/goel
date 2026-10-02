@@ -73,7 +73,9 @@ public struct RemoteSettingsUpdate: Sendable, Equatable, Decodable {
     }
 
     static let folderRules: Set<String> = ["automatic", "byType", "bySource", "fixed"]
-    static let fileReactions: Set<String> = ["rename", "overwrite"]
+    /// "overwrite" is left out on purpose: with it a remote Add could replace any file the user
+    /// already has under home. It can only be turned on in the app; GET still reports it.
+    static let fileReactions: Set<String> = ["rename"]
     static let encryptionModes: Set<String> = ["prefer", "require", "disable"]
     static let simultaneousRange = 1...20
     static let maxPathLength = 1024
@@ -93,7 +95,9 @@ public struct RemoteSettingsUpdate: Sendable, Equatable, Decodable {
                 return "The folder rule must be automatic, byType, bySource or fixed."
             }
             if let reaction = g.existingFileReaction, !Self.fileReactions.contains(reaction) {
-                return "When a file exists: rename or overwrite."
+                return reaction == "overwrite"
+                    ? "Overwrite can only be turned on in the Goel° app."
+                    : "When a file exists must be rename."
             }
             if let n = g.maxSimultaneousDownloads, !Self.simultaneousRange.contains(n) {
                 return "Simultaneous downloads must be \(Self.simultaneousRange.lowerBound)–\(Self.simultaneousRange.upperBound)."

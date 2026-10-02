@@ -164,7 +164,8 @@ export function ServerSettingsCards({ canWrite, onToast, onDirty }: Props) {
             options={(['rename', 'overwrite'] as const).map((value) => ({
               value,
               label: t(`settings.general.reactions.${value}`),
-              disabled,
+              // The server refuses a remote switch to overwrite: an Add could then replace the user's files.
+              disabled: disabled || value === 'overwrite',
             }))}
             onChange={(existingFileReaction) => editGeneral({ existingFileReaction })}
           />
