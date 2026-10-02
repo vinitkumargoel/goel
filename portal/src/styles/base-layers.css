@@ -8,7 +8,7 @@
 
 .menu {
   position: fixed;
-  z-index: 80;
+  z-index: var(--z-menu);
   background: var(--card-raised);
   border-radius: 13px;
   box-shadow: var(--sh-float);
@@ -18,7 +18,7 @@
   max-width: min(340px, calc(100vw - 16px));
   max-height: calc(100vh - 16px);
   overflow-y: auto;
-  font-size: 13px;
+  font-size: var(--fs-md);
   animation: studio-rise 0.12s ease-out;
 }
 
@@ -76,14 +76,14 @@
 }
 
 .mi .mdetail {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   color: var(--ink-3);
 }
 
 .mi .k {
   margin-left: auto;
   color: var(--ink-3);
-  font: 500 11px var(--f-mono);
+  font: 500 var(--fs-2xs) var(--f-mono);
   padding-left: 16px;
 }
 
@@ -120,7 +120,7 @@
 .scrim {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-scrim);
   background: var(--scrim);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
@@ -259,7 +259,7 @@
   .field > input,
   .field > select,
   .field > textarea {
-    font-size: 16px;
+    font-size: var(--fs-lg);
   }
   .scrim {
     padding: 0;
@@ -357,11 +357,11 @@
 
 .srow .sl b {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .srow .sl span {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
 }
 
@@ -376,7 +376,7 @@
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  z-index: 75;
+  z-index: var(--z-pop);
   width: min(360px, calc(100vw - 24px));
   background: var(--card-raised);
   border-radius: 16px;

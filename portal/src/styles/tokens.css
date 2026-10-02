@@ -1,0 +1,37 @@
+/*
+ * Type scale and stacking order. Font sizes are rem, so the user's browser text size scales the
+ * portal; nothing is smaller than 11px (0.6875rem). The z-index tokens keep every layer's place in
+ * one list: read it top to bottom to see what covers what.
+ */
+:root {
+  --fs-2xs: 0.6875rem; /* 11px: the smallest text anywhere */
+  --fs-xs: 0.71875rem; /* 11.5px */
+  --fs-sm: 0.75rem; /* 12px */
+  --fs-sm-plus: 0.78125rem; /* 12.5px */
+  --fs-md: 0.8125rem; /* 13px */
+  --fs-md-plus: 0.84375rem; /* 13.5px */
+  --fs-base: 0.875rem; /* 14px */
+  --fs-base-plus: 0.90625rem; /* 14.5px */
+  --fs-body: 0.9375rem; /* 15px */
+  --fs-lg: 1rem; /* 16px */
+  --fs-h5: 1.125rem; /* 18px */
+  --fs-h4: 1.3125rem; /* 21px */
+  --fs-h3: 1.5rem; /* 24px */
+  --fs-h2: 1.875rem; /* 30px */
+  --fs-h1: 2.125rem; /* 34px */
+  --fs-display: 2.875rem; /* 46px */
+
+  --z-raised: 1;
+  --z-sticky: 6;
+  --z-detail-scrim: 29;
+  --z-detail-sheet: 30;
+  --z-detail-scrim-phone: 54;
+  --z-detail-sheet-phone: 55;
+  --z-scrim: 60;
+  --z-drawer-scrim: 69;
+  --z-drawer: 70;
+  --z-pop: 75;
+  --z-menu: 80;
+  --z-toast: 85;
+  --z-tip: 90;
+}
