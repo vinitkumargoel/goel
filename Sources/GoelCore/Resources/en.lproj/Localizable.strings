@@ -12,6 +12,7 @@
 "#" = "#";
 "%" = "%";
 "%1$@ %2$@" = "%1$@ %2$@";
+"%1$@ Allowed: %2$@." = "%1$@ Allowed: %2$@.";
 "%1$@ adapters will share ranged HTTP segments · %2$@ stream(s) each." = "%1$@ adapters will share ranged HTTP segments · %2$@ stream(s) each.";
 "%1$@ and %2$d more" = "%1$@ and %2$d more";
 "%1$@ attached · %2$@" = "%1$@ attached · %2$@";
@@ -19,6 +20,7 @@
 "%1$@ conns · %2$@ active" = "%1$@ conns · %2$@ active";
 "%1$@ finished · %2$@ missing" = "%1$@ finished · %2$@ missing";
 "%1$@ for %2$@: %3$@." = "%1$@ for %2$@: %3$@.";
+"%1$@ is outside %2$@. Using %3$@." = "%1$@ is outside %2$@. Using %3$@.";
 "%1$@ left · %2$@" = "%1$@ left · %2$@";
 "%1$@ of %2$@" = "%1$@ of %2$@";
 "%1$@ of %2$@ blocks complete, %3$@ in progress, %4$@ not started" = "%1$@ of %2$@ blocks complete, %3$@ in progress, %4$@ not started";
@@ -44,6 +46,7 @@
 "%1$@: %2$@." = "%1$@: %2$@.";
 "%1$@: ↓ %2$@ · ↑ %3$@" = "%1$@: ↓ %2$@ · ↑ %3$@";
 "%1$d %2$@" = "%1$d %2$@";
+"%1$d lines aren’t valid %2$@ URLs; the first is line %3$d: %4$@" = "%1$d lines aren’t valid %2$@ URLs; the first is line %3$d: %4$@";
 "%1$d of %2$d current articles match" = "%1$d of %2$d current articles match";
 "%1$d of %2$d files · %3$@" = "%1$d of %2$d files · %3$@";
 "%1$d of %2$d selected" = "%1$d of %2$d selected";
@@ -63,7 +66,7 @@
 "%@ mismatch" = "%@ mismatch";
 "%@ pending" = "%@ pending";
 "%@ per second" = "%@ per second";
-"%@ queue profile" = "%@ queue profile";
+"%@ speed profile" = "%@ speed profile";
 "%@ verified" = "%@ verified";
 "%@ was already there and wasn’t sent again" = "%@ was already there and wasn’t sent again";
 "%@ · read" = "%@ · read";
@@ -92,6 +95,7 @@
 "%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted." = "%d downloads couldn’t be read — they may have been created by a newer version of Goel°. They were kept aside, not deleted.";
 "%d downloads finished" = "%d downloads finished";
 "%d downloads selected" = "%d downloads selected";
+"%d entries removed" = "%d entries removed";
 "%d failed" = "%d failed";
 "%d file" = "%d file";
 "%d files" = "%d files";
@@ -165,6 +169,8 @@
 "A finished download keeps the link it came from." = "A finished download keeps the link it came from.";
 "A floating target for dragged links and .torrent files" = "A floating target for dragged links and .torrent files";
 "A password is set. Type a new one to change it." = "A password is set. Type a new one to change it.";
+"A private torrent needs at least one tracker." = "A private torrent needs at least one tracker.";
+"A private torrent needs at least one tracker: peers come only from trackers. Add one above or turn Private off." = "A private torrent needs at least one tracker: peers come only from trackers. Add one above or turn Private off.";
 "A quick look at what Goel° can use on this Mac." = "A quick look at what Goel° can use on this Mac.";
 "A redacted support report to copy or export" = "A redacted support report to copy or export";
 "A small always-on-top target for dragging links onto" = "A small always-on-top target for dragging links onto";
@@ -186,6 +192,7 @@
 "Activate to open." = "Activate to open.";
 "Activate to reverse the order." = "Activate to reverse the order.";
 "Activate to select." = "Activate to select.";
+"Activate to show failed downloads." = "Activate to show failed downloads.";
 "Activate to show the conversion cards." = "Activate to show the conversion cards.";
 "Activate to show the last 5 minutes." = "Activate to show the last 5 minutes.";
 "Activate to sort by this column." = "Activate to sort by this column.";
@@ -201,6 +208,7 @@
 "Add Download" = "Add Download";
 "Add Download…" = "Add Download…";
 "Add Feed" = "Add Feed";
+"Add Feed…" = "Add Feed…";
 "Add Label…" = "Add Label…";
 "Add Login" = "Add Login";
 "Add Note…" = "Add Note…";
@@ -210,7 +218,6 @@
 "Add Selected" = "Add Selected";
 "Add Server…" = "Add Server…";
 "Add Tags…" = "Add Tags…";
-"Add Trackers" = "Add Trackers";
 "Add a URL or magnet link to get started." = "Add a URL or magnet link to get started.";
 "Add a feed" = "Add a feed";
 "Add a feed to see its articles" = "Add a feed to see its articles";
@@ -219,15 +226,18 @@
 "Add an SFTP server to browse and transfer files." = "Add an SFTP server to browse and transfer files.";
 "Add copied link to downloads" = "Add copied link to downloads";
 "Add download" = "Add download";
+"Add every link in a text file" = "Add every link in a text file";
+"Add feed" = "Add feed";
 "Add from Clipboard" = "Add from Clipboard";
+"Add from clipboard" = "Add from clipboard";
 "Add from your phone" = "Add from your phone";
-"Add items paused" = "Add items paused";
 "Add paused" = "Add paused";
 "Add sheet ▸ Checksum — MD5/SHA-1/SHA-256, checked when the download finishes" = "Add sheet ▸ Checksum — MD5/SHA-1/SHA-256, checked when the download finishes";
 "Add sheet ▸ Mirrors — segments spread across alternate URLs and fail over" = "Add sheet ▸ Mirrors — segments spread across alternate URLs and fail over";
 "Add sheet ▸ Sign-in cookies — for files behind a login" = "Add sheet ▸ Sign-in cookies — for files behind a login";
 "Add tags to %d downloads" = "Add tags to %d downloads";
 "Add the link from your browser to downloads" = "Add the link from your browser to downloads";
+"Add the links from a list you exported" = "Add the links from a list you exported";
 "Add to Download Queue" = "Add to Download Queue";
 "Add tracker URLs to this torrent" = "Add tracker URLs to this torrent";
 "Add trackers" = "Add trackers";
@@ -242,6 +252,7 @@
 "Added “%@”" = "Added “%@”";
 "Adding" = "Adding";
 "Adds public trackers to every new public torrent. The list refreshes daily." = "Adds public trackers to every new public torrent. The list refreshes daily.";
+"Adds the link on the clipboard to the queue." = "Adds the link on the clipboard to the queue.";
 "Add…" = "Add…";
 "Admin" = "Admin";
 "Advanced" = "Advanced";
@@ -277,7 +288,6 @@
 "An item already exists" = "An item already exists";
 "Antivirus" = "Antivirus";
 "Antivirus flagged a file" = "Antivirus flagged a file";
-"Any title" = "Any title";
 "Appearance" = "Appearance";
 "Appearance, startup, where files land, and sleep." = "Appearance, startup, where files land, and sleep.";
 "Append trackers from a list" = "Append trackers from a list";
@@ -289,6 +299,7 @@
 "Archives" = "Archives";
 "Argument template" = "Argument template";
 "Arguments" = "Arguments";
+"Arrow keys move between hours. Space paints the hour with the brush, Delete clears it. Shift with an arrow paints as it moves." = "Arrow keys move between hours. Space paints the hour with the brush, Delete clears it. Shift with an arrow paints as it moves.";
 "Ascending" = "Ascending";
 "Asking yt-dlp what’s available" = "Asking yt-dlp what’s available";
 "Asking yt-dlp what’s available…" = "Asking yt-dlp what’s available…";
@@ -305,7 +316,6 @@
 "Audio · M4A" = "Audio · M4A";
 "Audio · MP3" = "Audio · MP3";
 "Audit Log" = "Audit Log";
-"Audit log" = "Audit log";
 "Audit log is off — nothing written yet" = "Audit log is off — nothing written yet";
 "Auto" = "Auto";
 "Auto-add new torrents that appear in a folder." = "Auto-add new torrents that appear in a folder.";
@@ -344,11 +354,12 @@
 "Board" = "Board";
 "Bookmarklet" = "Bookmarklet";
 "Bought a commercial licence? You can note the details here so they travel with the install for your own audit or asset records. Goel° never reads these fields, never checks them, and never sends them anywhere — leaving them blank changes nothing." = "Bought a commercial licence? You can note the details here so they travel with the install for your own audit or asset records. Goel° never reads these fields, never checks them, and never sends them anywhere — leaving them blank changes nothing.";
+"Bring links from aria2, JDownloader, IDM or a browser export" = "Bring links from aria2, JDownloader, IDM or a browser export";
 "Browse this SFTP server" = "Browse this SFTP server";
 "Browser" = "Browser";
 "Browser Extension" = "Browser Extension";
 "Browser extension" = "Browser extension";
-"Browsers read the helper’s manifest only at startup, so quit and reopen the browser fully — otherwise the extension reports that it can’t reach this app." = "Browsers read the helper’s manifest only at startup, so quit and reopen the browser fully — otherwise the extension reports that it can’t reach this app.";
+"Browsers read the helper’s manifest only at startup, so quit and reopen the browser fully — otherwise the extension reports that it can’t reach this app. Firefox: do this before loading the add-on in step 2; restarting afterwards unloads it." = "Browsers read the helper’s manifest only at startup, so quit and reopen the browser fully — otherwise the extension reports that it can’t reach this app. Firefox: do this before loading the add-on in step 2; restarting afterwards unloads it.";
 "Brush" = "Brush";
 "Brush: %@" = "Brush: %@";
 "Brush: leave alone" = "Brush: leave alone";
@@ -425,7 +436,7 @@
 "Choose which of the feed’s articles download, and where they go." = "Choose which of the feed’s articles download, and where they go.";
 "Choose…" = "Choose…";
 "Chrome, Edge, Brave & Firefox" = "Chrome, Edge, Brave & Firefox";
-"Chrome/Edge/Brave/Vivaldi/Arc: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox 128+: about:debugging → Load Temporary Add-on → the folder’s manifest.json (Firefox forgets it on quit)." = "Chrome/Edge/Brave/Vivaldi/Arc: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox 128+: about:debugging → Load Temporary Add-on → the folder’s manifest.json (Firefox forgets it on quit).";
+"Chrome/Edge/Brave/Vivaldi/Arc: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox 128+: about:debugging → Load Temporary Add-on → the folder’s manifest.json. A temporary add-on lasts until Firefox quits, so reload it each launch until a signed add-on ships." = "Chrome/Edge/Brave/Vivaldi/Arc: chrome://extensions → Developer mode → Load unpacked → this folder. Firefox 128+: about:debugging → Load Temporary Add-on → the folder’s manifest.json. A temporary add-on lasts until Firefox quits, so reload it each launch until a signed add-on ships.";
 "Clear" = "Clear";
 "Clear All" = "Clear All";
 "Clear Completed" = "Clear Completed";
@@ -433,9 +444,9 @@
 "Clear Finished" = "Clear Finished";
 "Clear History" = "Clear History";
 "Clear History…" = "Clear History…";
+"Clear Hour" = "Clear Hour";
 "Clear Search" = "Clear Search";
 "Clear Search and Filter" = "Clear Search and Filter";
-"Clear completed" = "Clear completed";
 "Clear filter" = "Clear filter";
 "Clear finished transfers" = "Clear finished transfers";
 "Clear pasted link" = "Clear pasted link";
@@ -526,6 +537,7 @@
 "Copy Fingerprint" = "Copy Fingerprint";
 "Copy Host" = "Copy Host";
 "Copy IP Address" = "Copy IP Address";
+"Copy Install Command" = "Copy Install Command";
 "Copy Link" = "Copy Link";
 "Copy Local Path" = "Copy Local Path";
 "Copy Magnet Link" = "Copy Magnet Link";
@@ -540,6 +552,7 @@
 "Copy error message" = "Copy error message";
 "Copy sftp:// Link" = "Copy sftp:// Link";
 "Copy source link for %@" = "Copy source link for %@";
+"Copy the install command for %@" = "Copy the install command for %@";
 "Copy tracker URL" = "Copy tracker URL";
 "Copy web portal link" = "Copy web portal link";
 "Copying" = "Copying";
@@ -605,9 +618,10 @@
 "Couldn’t write the diagnostics report to that location." = "Couldn’t write the diagnostics report to that location.";
 "Couldn’t write the helper script" = "Couldn’t write the helper script";
 "Create" = "Create";
-"Create Torrent" = "Create Torrent";
 "Create Torrent…" = "Create Torrent…";
-"Created “%@”" = "Created “%@”";
+"Create torrent" = "Create torrent";
+"Created %@" = "Created %@";
+"Created %@ · Seeding" = "Created %@ · Seeding";
 "Create…" = "Create…";
 "Current folder, %@" = "Current folder, %@";
 "Currently active" = "Currently active";
@@ -773,9 +787,8 @@
 "Edit Note…" = "Edit Note…";
 "Edit Profile…" = "Edit Profile…";
 "Edit Rule…" = "Edit Rule…";
-"Edit SFTP Server" = "Edit SFTP Server";
+"Edit SFTP server" = "Edit SFTP server";
 "Edit Tags…" = "Edit Tags…";
-"Edit Tracker" = "Edit Tracker";
 "Edit Tracker…" = "Edit Tracker…";
 "Edit rule" = "Edit rule";
 "Edit server" = "Edit server";
@@ -862,7 +875,6 @@
 "Failed. %@" = "Failed. %@";
 "Fall back to machine-generated captions when no human subtitles exist." = "Fall back to machine-generated captions when no human subtitles exist.";
 "Feed URL" = "Feed URL";
-"Feed added" = "Feed added";
 "Feed removed" = "Feed removed";
 "Feeds" = "Feeds";
 "Fetch" = "Fetch";
@@ -870,7 +882,6 @@
 "Fetching details" = "Fetching details";
 "Fetching details…" = "Fetching details…";
 "Fetching metadata" = "Fetching metadata";
-"Fetching metadata · %@" = "Fetching metadata · %@";
 "Fetching…" = "Fetching…";
 "Fewer than 2 selected adapters are up" = "Fewer than 2 selected adapters are up";
 "Field" = "Field";
@@ -900,6 +911,8 @@
 "Finished, file missing" = "Finished, file missing";
 "Finished. Saved %@" = "Finished. Saved %@";
 "Fix the port to save." = "Fix the port to save.";
+"Fix the tracker URLs to create." = "Fix the tracker URLs to create.";
+"Fix the web seed URLs to create." = "Fix the web seed URLs to create.";
 "Fixed folder" = "Fixed folder";
 "Fixed folder…" = "Fixed folder…";
 "Flip between light and dark" = "Flip between light and dark";
@@ -1094,7 +1107,6 @@
 "Learn more" = "Learn more";
 "Leave alone" = "Leave alone";
 "Leave empty for Application Support/GoelDownloader/Audit. File names and hosts are recorded; URLs are reduced to their host." = "Leave empty for Application Support/GoelDownloader/Audit. File names and hosts are recorded; URLs are reduced to their host.";
-"Leave empty to take every item." = "Leave empty to take every item.";
 "Leave none selected to use every eligible adapter. Two NICs on the same home router usually will not double speed." = "Leave none selected to use every eligible adapter. Two NICs on the same home router usually will not double speed.";
 "Leechers" = "Leechers";
 "Let clients view and stream, but not add, remove, or change downloads." = "Let clients view and stream, but not add, remove, or change downloads.";
@@ -1108,7 +1120,9 @@
 "Licensed to" = "Licensed to";
 "Light" = "Light";
 "Limit" = "Limit";
+"Limit on" = "Limit on";
 "Limited to %@ — applies on next start" = "Limited to %@ — applies on next start";
+"Line %1$d isn’t a valid %2$@ URL: %3$@" = "Line %1$d isn’t a valid %2$@ URL: %3$@";
 "Link Grabber" = "Link Grabber";
 "Link copied" = "Link copied";
 "Link from your browser" = "Link from your browser";
@@ -1145,6 +1159,7 @@
 "MD5, SHA-1, or SHA-256 hex" = "MD5, SHA-1, or SHA-256 hex";
 "MIME type" = "MIME type";
 "Magnet link" = "Magnet link";
+"Magnet link (%@…)" = "Magnet link (%@…)";
 "Magnet links" = "Magnet links";
 "Make a .torrent from a file or folder, and seed it" = "Make a .torrent from a file or folder, and seed it";
 "Managed by your organisation." = "Managed by your organisation.";
@@ -1399,6 +1414,7 @@
 "Open web portal in browser" = "Open web portal in browser";
 "Opens a small floating window that accepts dragged links and torrent files. Activating again closes it." = "Opens a small floating window that accepts dragged links and torrent files. Activating again closes it.";
 "Opens an ssh session in your terminal, outside Goel°’s host-key pinning." = "Opens an ssh session in your terminal, outside Goel°’s host-key pinning.";
+"Opens the RSS reader’s sheet: it previews what the feed would download, and tells you if the feed is already added." = "Opens the RSS reader’s sheet: it previews what the feed would download, and tells you if the feed is already added.";
 "Opens the main window with them listed." = "Opens the main window with them listed.";
 "Opens the main window’s add sheet." = "Opens the main window’s add sheet.";
 "Opens this folder in the SFTP browser." = "Opens this folder in the SFTP browser.";
@@ -1420,7 +1436,8 @@
 "Owner" = "Owner";
 "Page URL" = "Page URL";
 "Page URL (https://…)" = "Page URL (https://…)";
-"Paint hours with a traffic profile. A manual change holds until the next painted hour." = "Paint hours with a traffic profile. A manual change holds until the next painted hour.";
+"Paint Hour" = "Paint Hour";
+"Paint hours with a speed profile. A manual change holds until the next painted hour." = "Paint hours with a speed profile. A manual change holds until the next painted hour.";
 "Panels" = "Panels";
 "Parallel range connections targeted on each adapter (1–8)." = "Parallel range connections targeted on each adapter (1–8).";
 "Parent folder" = "Parent folder";
@@ -1529,7 +1546,7 @@
 "Prompt for a username and password (recommended). Off = open access — only safe on localhost." = "Prompt for a username and password (recommended). Off = open access — only safe on localhost.";
 "Protocol" = "Protocol";
 "Protocol encryption for peer connections." = "Protocol encryption for peer connections.";
-"Protocol, privacy, and watch-folder behavior." = "Protocol, privacy, and watch-folder behavior.";
+"Protocol, privacy, and watch-folder behaviour." = "Protocol, privacy, and watch-folder behaviour.";
 "Proxy" = "Proxy";
 "Proxy Settings" = "Proxy Settings";
 "Proxy host" = "Proxy host";
@@ -1544,7 +1561,6 @@
 "Queue" = "Queue";
 "Queue order" = "Queue order";
 "Queue overview" = "Queue overview";
-"Queue profile" = "Queue profile";
 "Queue progress" = "Queue progress";
 "Queued" = "Queued";
 "Queued · #%d" = "Queued · #%d";
@@ -1556,7 +1572,6 @@
 "Quitting now stops it. Unfinished downloads are kept and pick up where they left off the next time you open Goel°; a conversion in progress is cancelled and its partial file removed." = "Quitting now stops it. Unfinished downloads are kept and pick up where they left off the next time you open Goel°; a conversion in progress is cancelled and its partial file removed.";
 "Quitting now stops them. They’re kept and pick up where they left off the next time you open Goel°." = "Quitting now stops them. They’re kept and pick up where they left off the next time you open Goel°.";
 "RSS" = "RSS";
-"RSS 2.0 or Atom." = "RSS 2.0 or Atom.";
 "RSS Feeds" = "RSS Feeds";
 "RSS feeds" = "RSS feeds";
 "Range support" = "Range support";
@@ -1564,6 +1579,7 @@
 "Ratio" = "Ratio";
 "Re-announce to Trackers" = "Re-announce to Trackers";
 "Re-announcing to trackers…" = "Re-announcing to trackers…";
+"Re-check" = "Re-check";
 "Re-download when remote changes" = "Re-download when remote changes";
 "Reach your queue from a phone or another machine" = "Reach your queue from a phone or another machine";
 "Read" = "Read";
@@ -1621,6 +1637,7 @@
 "Remove the saved login for %@?" = "Remove the saved login for %@?";
 "Remove the source file after completion." = "Remove the source file after completion.";
 "Remove the tag “%@” from every download?" = "Remove the tag “%@” from every download?";
+"Remove them and trash their files, after asking" = "Remove them and trash their files, after asking";
 "Remove tracker" = "Remove tracker";
 "Remove “%@”?" = "Remove “%@”?";
 "Removed %d downloads" = "Removed %d downloads";
@@ -1648,6 +1665,7 @@
 "Renamed to “%@”" = "Renamed to “%@”";
 "Renames the download and its file on disk." = "Renames the download and its file on disk.";
 "Rename…" = "Rename…";
+"Reopen the first-run checks and browser setup" = "Reopen the first-run checks and browser setup";
 "Repair Helper" = "Repair Helper";
 "Replace it, or keep both by appending “(1)”." = "Replace it, or keep both by appending “(1)”.";
 "Request Options…" = "Request Options…";
@@ -1669,7 +1687,9 @@
 "Resolved by yt-dlp — the stream URL may expire; start the download soon." = "Resolved by yt-dlp — the stream URL may expire; start the download soon.";
 "Resolving %d videos with yt-dlp…" = "Resolving %d videos with yt-dlp…";
 "Resolving media formats" = "Resolving media formats";
+"Restart Firefox before loading the add-on, not after: quitting unloads it. A temporary add-on lasts until Firefox quits; reload it each launch until a signed one ships." = "Restart Firefox before loading the add-on, not after: quitting unloads it. A temporary add-on lasts until Firefox quits; reload it each launch until a signed one ships.";
 "Restart the browser" = "Restart the browser";
+"Restore the list and settings from a backup" = "Restore the list and settings from a backup";
 "Restored %d downloads" = "Restored %d downloads";
 "Restored %d downloads to the list — their files are still in the Trash" = "Restored %d downloads to the list — their files are still in the Trash";
 "Restored “%@”" = "Restored “%@”";
@@ -1692,7 +1712,10 @@
 "Retry %@ now" = "Retry %@ now";
 "Retry %d" = "Retry %d";
 "Retry %d Selected" = "Retry %d Selected";
+"Retry All" = "Retry All";
 "Retry All Failed" = "Retry All Failed";
+"Retry Failed" = "Retry Failed";
+"Retry Selected" = "Retry Selected";
 "Retry Selected (%d)" = "Retry Selected (%d)";
 "Retry count" = "Retry count";
 "Retry in %@" = "Retry in %@";
@@ -1712,7 +1735,6 @@
 "Review Selected…" = "Review Selected…";
 "Review and add %d links" = "Review and add %d links";
 "Review every link on the pasteboard, one per line" = "Review every link on the pasteboard, one per line";
-"Review matches before any bytes move." = "Review matches before any bytes move.";
 "Rotate at (MB)" = "Rotate at (MB)";
 "Rotated files older than this are deleted. 0 keeps them forever." = "Rotated files older than this are deleted. 0 keeps them forever.";
 "Rotated files to keep" = "Rotated files to keep";
@@ -1743,9 +1765,12 @@
 "Safari has no downloads API, so capture works by catching link clicks: a download a page starts from its own script or a form still goes to Safari. No signed-in downloads either: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for those." = "Safari has no downloads API, so capture works by catching link clicks: a download a page starts from its own script or a form still goes to Safari. No signed-in downloads either: its sandbox can only reach this app through a URL, which macOS logs, so a session cookie is refused rather than written there. Use Chrome or Firefox for those.";
 "Save" = "Save";
 "Save Rule" = "Save Rule";
+"Save a server to browse and transfer files" = "Save a server to browse and transfer files";
+"Save every link in the list to a text file" = "Save every link in the list to a text file";
 "Save is unavailable. %@" = "Save is unavailable. %@";
 "Save path" = "Save path";
 "Save path: %@" = "Save path: %@";
+"Save the list and settings to a file" = "Save the list and settings to a file";
 "Save to" = "Save to";
 "Saved — ignored reserved header: %@" = "Saved — ignored reserved header: %@";
 "Saved — ignored reserved headers: %@" = "Saved — ignored reserved headers: %@";
@@ -1792,16 +1817,15 @@
 "Select" = "Select";
 "Select All" = "Select All";
 "Select Completed" = "Select Completed";
+"Select Failed" = "Select Failed";
 "Select None" = "Select None";
 "Select a link in any app → right-click → Services → “Download with Goel°”." = "Select a link in any app → right-click → Services → “Download with Goel°”.";
 "Select a torrent to set per-file priority" = "Select a torrent to set per-file priority";
 "Select a torrent, then the detail panel’s Files tab — skip, low, normal, high" = "Select a torrent, then the detail panel’s Files tab — skip, low, normal, high";
-"Select all" = "Select all";
 "Select an article" = "Select an article";
-"Select completed" = "Select completed";
+"Select every finished download in the list" = "Select every finished download in the list";
 "Select files" = "Select files";
 "Select items to download" = "Select items to download";
-"Select none" = "Select none";
 "Select to show details." = "Select to show details.";
 "Selection" = "Selection";
 "Send Test" = "Send Test";
@@ -1837,7 +1861,9 @@
 "Set the priority of %d downloads" = "Set the priority of %d downloads";
 "Settings" = "Settings";
 "Settings: %@" = "Settings: %@";
+"Settings…" = "Settings…";
 "Setup progress" = "Setup progress";
+"Several links" = "Several links";
 "Share a file or folder: hashing runs here, so the list stays free." = "Share a file or folder: hashing runs here, so the list stays free.";
 "Share ratio" = "Share ratio";
 "Share…" = "Share…";
@@ -1847,15 +1873,15 @@
 "Show %@ in Finder" = "Show %@ in Finder";
 "Show Audit Folder" = "Show Audit Folder";
 "Show Details" = "Show Details";
-"Show Drop Basket" = "Show Drop Basket";
 "Show Extension" = "Show Extension";
+"Show Failed" = "Show Failed";
 "Show Folder" = "Show Folder";
 "Show Hidden Files" = "Show Hidden Files";
 "Show Host Key…" = "Show Host Key…";
 "Show Remote Folder" = "Show Remote Folder";
-"Show all downloads" = "Show all downloads";
+"Show Setup Again…" = "Show Setup Again…";
 "Show all types" = "Show all types";
-"Show drop basket" = "Show drop basket";
+"Show failed downloads" = "Show failed downloads";
 "Show in Finder" = "Show in Finder";
 "Show in Goel°" = "Show in Goel°";
 "Show in Toolbar" = "Show in Toolbar";
@@ -1900,6 +1926,7 @@
 "Some servers block clients that open too many." = "Some servers block clients that open too many.";
 "Some settings here are managed by your organisation and can’t be changed." = "Some settings here are managed by your organisation and can’t be changed.";
 "Something else is already at “%@”" = "Something else is already at “%@”";
+"Something went wrong. Retry, and if it keeps failing, copy the error details." = "Something went wrong. Retry, and if it keeps failing, copy the error details.";
 "Sort" = "Sort";
 "Sort & display options" = "Sort & display options";
 "Sort By" = "Sort By";
@@ -1923,6 +1950,7 @@
 "Speed" = "Speed";
 "Speed & Connections" = "Speed & Connections";
 "Speed Limit" = "Speed Limit";
+"Speed Profile: %@" = "Speed Profile: %@";
 "Speed cap (KB/s)" = "Speed cap (KB/s)";
 "Speed graph, last %d seconds" = "Speed graph, last %d seconds";
 "Speed history" = "Speed history";
@@ -1931,6 +1959,7 @@
 "Speed limit on · %@" = "Speed limit on · %@";
 "Speed limit on · ↓ %1$@ ↑ %2$@" = "Speed limit on · ↓ %1$@ ↑ %2$@";
 "Speed over the last 5 minutes" = "Speed over the last 5 minutes";
+"Speed profile" = "Speed profile";
 "Speed · last %ds" = "Speed · last %ds";
 "Speed · last 5 min" = "Speed · last 5 min";
 "Speed: Unlimited" = "Speed: Unlimited";
@@ -1938,8 +1967,6 @@
 "Split large HTTP downloads across selected adapters using byte ranges. Default off." = "Split large HTTP downloads across selected adapters using byte ranges. Default off.";
 "Split one file across more connections when the server allows it." = "Split one file across more connections when the server allows it.";
 "Start" = "Start";
-"Start All" = "Start All";
-"Start All Downloads" = "Start All Downloads";
 "Start Download" = "Start Download";
 "Start Goel° when you log in." = "Start Goel° when you log in.";
 "Start Using Goel°" = "Start Using Goel°";
@@ -1980,11 +2007,11 @@
 "Subtitles: %@" = "Subtitles: %@";
 "Suggestion: %@" = "Suggestion: %@";
 "Support report" = "Support report";
-"Switch between Unlimited and the active traffic profile" = "Switch between Unlimited and the active traffic profile";
+"Switch between Unlimited and the active speed profile" = "Switch between Unlimited and the active speed profile";
 "Switch profiles by the hour" = "Switch profiles by the hour";
+"Switch speed profiles while the window is open (restored after)." = "Switch speed profiles while the window is open (restored after).";
 "Switch the global speed and connection limits" = "Switch the global speed and connection limits";
 "Switch the whole app to this appearance" = "Switch the whole app to this appearance";
-"Switch traffic profiles while the window is open (restored after)." = "Switch traffic profiles while the window is open (restored after).";
 "Symbolic link" = "Symbolic link";
 "Symbolic link to %@" = "Symbolic link to %@";
 "System" = "System";
@@ -1997,6 +2024,7 @@
 "Tags for “%@”" = "Tags for “%@”";
 "Tags updated" = "Tags updated";
 "Take finished rows off the list — files stay on disk" = "Take finished rows off the list — files stay on disk";
+"Take them off the list — files stay on disk" = "Take them off the list — files stay on disk";
 "Teal" = "Teal";
 "Technical detail" = "Technical detail";
 "Test" = "Test";
@@ -2063,7 +2091,10 @@
 "The server had a problem. Try again later." = "The server had a problem. Try again later.";
 "The server is busy or limiting requests. Wait a few minutes, then retry." = "The server is busy or limiting requests. Wait a few minutes, then retry.";
 "The server is presenting the key Goel pinned. Connections to this server are verified against it." = "The server is presenting the key Goel pinned. Connections to this server are verified against it.";
+"The server refused the request. Check the link, or try again later." = "The server refused the request. Check the link, or try again later.";
 "The server refused “%1$@” without a login. Attach the cookies your browser sends to %2$@." = "The server refused “%1$@” without a login. Attach the cookies your browser sends to %2$@.";
+"The server rejected the request. The link may be incomplete or malformed; check it on the page you got it from." = "The server rejected the request. The link may be incomplete or malformed; check it on the page you got it from.";
+"The server rejected the resume point. Retry starts the download from the beginning." = "The server rejected the resume point. Retry starts the download from the beginning.";
 "The server sent an item named “%@”, which Goel° won’t write to disk." = "The server sent an item named “%@”, which Goel° won’t write to disk.";
 "The server stopped answering. Check your connection, then retry." = "The server stopped answering. Check your connection, then retry.";
 "The server those items came from is no longer set up." = "The server those items came from is no longer set up.";
@@ -2092,6 +2123,7 @@
 "This Week" = "This Week";
 "This deletes the saved connection and its Keychain password. Files on the server are not touched." = "This deletes the saved connection and its Keychain password. Files on the server are not touched.";
 "This download is a single file." = "This download is a single file.";
+"This feed is already in your list." = "This feed is already in your list.";
 "This feed’s rule would download it" = "This feed’s rule would download it";
 "This file’s video or audio track uses a codec macOS can’t decode." = "This file’s video or audio track uses a codec macOS can’t decode.";
 "This folder is empty" = "This folder is empty";
@@ -2109,13 +2141,12 @@
 "This settings change applies now but won’t be saved: your saved settings couldn’t be read or backed up. Restart Goel° to try again." = "This settings change applies now but won’t be saved: your saved settings couldn’t be read or backed up. Restart Goel° to try again.";
 "This transfer can’t be retried." = "This transfer can’t be retried.";
 "Those trackers are already on this torrent" = "Those trackers are already on this torrent";
-"Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile." = "Three switchable profiles. The status-bar snail toggles Unlimited vs the active profile.";
 "Three switchable speed and connection profiles" = "Three switchable speed and connection profiles";
+"Three switchable speed profiles. The status-bar speed toggle switches between Unlimited and the active profile." = "Three switchable speed profiles. The status-bar speed toggle switches between Unlimited and the active profile.";
 "Throughput" = "Throughput";
 "Throughput graph, last %d seconds" = "Throughput graph, last %d seconds";
 "Time left" = "Time left";
 "Timed out" = "Timed out";
-"Title contains" = "Title contains";
 "Titles containing “%@”" = "Titles containing “%@”";
 "Titles containing “%@” · added paused" = "Titles containing “%@” · added paused";
 "To" = "To";
@@ -2123,8 +2154,10 @@
 "To Top" = "To Top";
 "To · %@" = "To · %@";
 "Today" = "Today";
+"Today %@" = "Today %@";
 "Today ↑" = "Today ↑";
 "Today ↓" = "Today ↓";
+"Toggle" = "Toggle";
 "Toggle Compact Rows" = "Toggle Compact Rows";
 "Toggle Detail Panel" = "Toggle Detail Panel";
 "Toggle Drop Basket" = "Toggle Drop Basket";
@@ -2132,6 +2165,7 @@
 "Toggle Speed Limit" = "Toggle Speed Limit";
 "Toggle Theme" = "Toggle Theme";
 "Toggle detail panel" = "Toggle detail panel";
+"Toggle drop basket" = "Toggle drop basket";
 "Toggle global speed limit" = "Toggle global speed limit";
 "Tomorrow at 8 AM" = "Tomorrow at 8 AM";
 "Tonight at 2 AM" = "Tonight at 2 AM";
@@ -2151,7 +2185,6 @@
 "Trackers" = "Trackers";
 "Trackers · %d" = "Trackers · %d";
 "Traffic Limits" = "Traffic Limits";
-"Traffic Profile: %@" = "Traffic Profile: %@";
 "Traffic profile forbids extra connections" = "Traffic profile forbids extra connections";
 "Transfer cancelled" = "Transfer cancelled";
 "Transfer list" = "Transfer list";
@@ -2313,8 +2346,8 @@
 "Yellow" = "Yellow";
 "Yes" = "Yes";
 "Yes (Accept-Ranges)" = "Yes (Accept-Ranges)";
-"Yest %@" = "Yest %@";
 "Yesterday" = "Yesterday";
+"Yesterday %@" = "Yesterday %@";
 "You are a charity, school, university, or public research, safety or health body." = "You are a charity, school, university, or public research, safety or health body.";
 "You are a company, partnership or sole trader and Goel° is used for that business." = "You are a company, partnership or sole trader and Goel° is used for that business.";
 "You are a contractor or consultant using it in work you bill to a client." = "You are a contractor or consultant using it in work you bill to a client.";
@@ -2341,7 +2374,7 @@
 "about %d minutes remaining" = "about %d minutes remaining";
 "about %d second remaining" = "about %d second remaining";
 "about %d seconds remaining" = "about %d seconds remaining";
-"about:debugging → This Firefox → Load Temporary Add-on → the folder’s manifest.json." = "about:debugging → This Firefox → Load Temporary Add-on → the folder’s manifest.json.";
+"about:debugging → This Firefox → Load Temporary Add-on → the folder’s manifest.json. Reload it after each Firefox restart." = "about:debugging → This Firefox → Load Temporary Add-on → the folder’s manifest.json. Reload it after each Firefox restart.";
 "active" = "active";
 "all" = "all";
 "and %d more" = "and %d more";
@@ -2390,7 +2423,6 @@
 "goel.home" = "goel.home";
 "goeldownloader://add?url=… opens and queues the link (packaged app)." = "goeldownloader://add?url=… opens and queues the link (packaged app).";
 "https://api.github.com/…" = "https://api.github.com/…";
-"https://…/feed.xml" = "https://…/feed.xml";
 "https://…/trackers.txt" = "https://…/trackers.txt";
 "idle" = "idle";
 "is" = "is";
@@ -2446,6 +2478,7 @@
 "the scanner stopped unexpectedly" = "the scanner stopped unexpectedly";
 "the scanner took longer than 5 minutes and was stopped" = "the scanner took longer than 5 minutes and was stopped";
 "this Mac" = "this Mac";
+"tracker" = "tracker";
 "uid %1$@ · gid %2$@" = "uid %1$@ · gid %2$@";
 "unknown size" = "unknown size";
 "unlimited" = "unlimited";
@@ -2458,6 +2491,7 @@
 "upload unlimited" = "upload unlimited";
 "uploaded %@" = "uploaded %@";
 "user" = "user";
+"web seed" = "web seed";
 "write" = "write";
 "your download folders" = "your download folders";
 "yt-dlp" = "yt-dlp";
