@@ -192,7 +192,9 @@ extension Studio {
                                          highContrast: (C(1, 0, 0), C(0.14, 0.03, 170)))
         static let accentSoft = accent.opacity(0.11, 0.15, highContrast: (0.20, 0.26))
         static let accentLine = accent.opacity(0.35, 0.45, highContrast: (0.8, 0.8))
-        static let focusRing = accent.opacity(0.5, 0.6, highContrast: (1, 1))
+        // 0.8 in light: at 0.5 the ring measured about 2:1 on the light surfaces, under the 3:1
+        // a focus indicator needs (FocusRingContrastTests).
+        static let focusRing = accent.opacity(0.8, 0.6, highContrast: (1, 1))
 
         static let good = StudioColorToken(C(0.56, 0.13, 150), C(0.77, 0.14, 150),
                                      highContrast: (C(0.42, 0.12, 150), C(0.86, 0.13, 150)))
