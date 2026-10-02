@@ -53,7 +53,7 @@ enum OnboardingBrowserChoice: String, CaseIterable, Identifiable {
         switch self {
         case .firefox:
             return L10n.t("about:debugging → This Firefox → Load Temporary Add-on → "
-                + "the folder’s manifest.json.")
+                + "the folder’s manifest.json. Reload it after each Firefox restart.")
         case .safari, .other:
             return ""
         default:

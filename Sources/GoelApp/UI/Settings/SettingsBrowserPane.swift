@@ -53,7 +53,8 @@ struct BrowserSettingsPane: View {
             SettingRow(L10n.t("2. Load the extension"),
                        detail: L10n.t("Chrome/Edge/Brave/Vivaldi/Arc: chrome://extensions → Developer mode → "
                            + "Load unpacked → this folder. Firefox 128+: about:debugging → Load Temporary "
-                           + "Add-on → the folder’s manifest.json (Firefox forgets it on quit).")) {
+                           + "Add-on → the folder’s manifest.json. A temporary add-on lasts until Firefox "
+                           + "quits, so reload it each launch until a signed add-on ships.")) {
                 Button(L10n.t("Show Folder"), systemImage: "folder") {
                     if let folder = BrowserIntegrationService.extensionFolder {
                         NSWorkspace.shared.activateFileViewerSelecting([folder])
@@ -67,7 +68,8 @@ struct BrowserSettingsPane: View {
             }
             SettingRow(L10n.t("3. Restart the browser"),
                        detail: L10n.t("Browsers read the helper’s manifest only at startup, so quit and reopen the "
-                           + "browser fully — otherwise the extension reports that it can’t reach this app.")) {
+                           + "browser fully — otherwise the extension reports that it can’t reach this app. "
+                           + "Firefox: do this before loading the add-on in step 2; restarting afterwards unloads it.")) {
                 EmptyView()
             }
             SettingRow(L10n.t("4. Capture"),

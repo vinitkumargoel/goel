@@ -88,7 +88,10 @@ struct OnboardingBrowserPane: View {
                 .buttonStyle(.studio(.secondary, size: .small))
                 .accessibilityLabel(L10n.t("Show the browser extension folder in Finder"))
         }
-        Text(L10n.t("Then quit and reopen %@ once so it reads the helper.", choice.title))
+        Text(choice == .firefox
+             ? L10n.t("Restart Firefox before loading the add-on, not after: quitting unloads it. "
+                 + "A temporary add-on lasts until Firefox quits; reload it each launch until a signed one ships.")
+             : L10n.t("Then quit and reopen %@ once so it reads the helper.", choice.title))
             .studioFont(.small)
             .foregroundStyle(Studio.Palette.ink2)
     }
