@@ -141,7 +141,7 @@ struct DownloadsNoMatch: View {
             : L10n.t("Try a different filter or search term.")
         StudioEmptyState(symbol: "magnifyingglass", title: title, message: message) {
             if narrowed {
-                Button(L10n.t("Clear search and filter")) {
+                Button(L10n.t("Clear Search and Filter")) {
                     vm.search = ""
                     vm.filter = .all
                 }

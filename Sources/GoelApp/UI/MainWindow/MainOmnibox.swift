@@ -179,7 +179,7 @@ struct OmniboxRecognisedRow: View {
 }
 
 /// The copied-link suggestion, inside the omnibox rather than as a banner: Options… opens the Add
-/// sheet with the link, Add queues it (Choose quality… for a video page), ✕ dismisses it.
+/// sheet with the link, Add queues it (Choose Quality… for a video page), ✕ dismisses it.
 struct OmniboxClipboardRow: View {
     @EnvironmentObject private var vm: AppViewModel
     let link: String
@@ -209,7 +209,7 @@ struct OmniboxClipboardRow: View {
                 .buttonStyle(.studio(.ghost, size: .small))
                 .accessibilityLabel(L10n.t("Choose where and how to save the copied link"))
         }
-        Button(vm.suggestionIsMediaPage ? L10n.t("Choose quality…") : L10n.t("Add"), systemImage: "arrow.right") {
+        Button(vm.suggestionIsMediaPage ? L10n.t("Choose Quality…") : L10n.t("Add"), systemImage: "arrow.right") {
             vm.acceptClipboardSuggestion()
         }
         .buttonStyle(.studio(.primary, size: .small))

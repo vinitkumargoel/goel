@@ -196,13 +196,14 @@ struct LicenceSettingsPane: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             SettingRow(L10n.t("Licensed to"), detail: L10n.t("The legal entity named on your licence.")) {
-                SettingsTextField(text: $holder, width: 180, accessibilityName: L10n.t("Licensed to"))
+                SettingsTextField(text: $holder, width: 180, placeholder: L10n.t("Optional"), accessibilityName: L10n.t("Licensed to"))
                     .onChange(of: holder) { _, new in LicenseNotes.holder = new }
             }
             SettingRow(L10n.t("Licence reference"),
                        detail: L10n.t("Whatever your invoice or agreement calls it. Free text — no format is "
                            + "expected.")) {
-                SettingsTextField(text: $reference, width: 180, isMonospaced: true,
+                SettingsTextField(text: $reference, width: 180, placeholder: L10n.t("Optional"), isMonospaced: true,
+                                  placeholderIsMonospaced: false,
                                   accessibilityName: L10n.t("Licence reference"))
                     .onChange(of: reference) { _, new in LicenseNotes.reference = new }
             }

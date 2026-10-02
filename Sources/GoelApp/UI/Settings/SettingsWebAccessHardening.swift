@@ -84,7 +84,8 @@ struct WebAccessHardeningCard: View {
                        detail: L10n.t("Its passphrase is read from the GOEL_PORTAL_TLS_PASSPHRASE "
                            + "environment variable — Goel° never stores it."),
                        isIndented: true) {
-                SettingsTextField(text: setting(vm, \.remoteTLSIdentityPath), width: 180, isMonospaced: true)
+                SettingsTextField(text: setting(vm, \.remoteTLSIdentityPath), width: 180,
+                                  placeholder: L10n.t("/path/to/identity.p12"), isMonospaced: true)
                     .managed(.remoteTLSIdentityPath, vm.managedPolicy)
             }
         }
@@ -93,14 +94,22 @@ struct WebAccessHardeningCard: View {
                        + "portal answers only to IP addresses, localhost and .local names unless a name is listed "
                        + "here.")) {
             StudioFocusedField(size: .small) { focus in
-                TextField("", text: allowedHostNamesBinding)
-                    .textFieldStyle(.plain)
-                    .focused(focus)
-                    .studioFont(.monoBody)
-                    .onSubmit(commitHostNames)
-                    .onChange(of: focus.wrappedValue) { _, focused in
-                        if !focused { commitHostNames() }
+                ZStack(alignment: .leading) {
+                    if allowedHostNamesBinding.wrappedValue.isEmpty {
+                        Text(L10n.t("goel.home"))
+                            .foregroundStyle(Studio.Palette.ink3)
+                            .lineLimit(1)
+                            .accessibilityHidden(true)
                     }
+                    TextField("", text: allowedHostNamesBinding)
+                        .textFieldStyle(.plain)
+                        .focused(focus)
+                        .onSubmit(commitHostNames)
+                        .onChange(of: focus.wrappedValue) { _, focused in
+                            if !focused { commitHostNames() }
+                        }
+                }
+                .studioFont(.monoBody)
             }
             .frame(width: 180)
             .accessibilityLabel(L10n.t("Extra host names"))
@@ -133,14 +142,16 @@ struct WebAccessHardeningCard: View {
         }
         if vm.settings.remoteTrustedHeaderAuthEnabled {
             SettingRow(L10n.t("Header name"), detail: L10n.t("e.g. X-Forwarded-User."), isIndented: true) {
-                SettingsTextField(text: setting(vm, \.remoteTrustedHeaderName), width: 170, isMonospaced: true)
+                SettingsTextField(text: setting(vm, \.remoteTrustedHeaderName), width: 170,
+                                  placeholder: L10n.t("X-Forwarded-User"), isMonospaced: true)
                     .managed(.remoteTrustedHeaderName, vm.managedPolicy)
             }
             SettingRow(L10n.t("Trusted proxies"),
                        detail: L10n.t("Comma-separated IPs/CIDRs. Checked against the kernel-supplied peer address. "
-                           + "EMPTY MEANS TRUST NOBODY — the header is ignored until you list one."),
+                           + "Empty means trust nobody — the header is ignored until you list one."),
                        isIndented: true) {
-                SettingsTextField(text: trustedProxiesBinding, width: 180, isMonospaced: true)
+                SettingsTextField(text: trustedProxiesBinding, width: 180,
+                                  placeholder: L10n.t("10.0.0.1, 10.0.0.0/8"), isMonospaced: true)
                     .managed(.remoteTrustedProxies, vm.managedPolicy)
             }
         }

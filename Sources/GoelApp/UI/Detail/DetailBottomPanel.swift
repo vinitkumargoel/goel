@@ -145,12 +145,15 @@ struct DetailBottomPanel: View {
             }
             Spacer(minLength: 0)
             HStack(alignment: .top, spacing: Studio.Space.m) {
+                // Speed and ETA keep their full width; the swarm summary is the one that scales down.
                 telStat(L10n.t("Up")) {
                     DetailSpeedText(direction: .up, speed: speed.up, style: .monoBody.weight(600))
                 }
+                .fixedSize()
                 telStat(L10n.t("ETA")) {
                     Text(task.etaText ?? "—").studioFont(.monoBody.weight(600)).foregroundStyle(Studio.Palette.ink)
                 }
+                .fixedSize()
                 telStat(task.swarmSummary.label) {
                     Text(task.swarmSummary.value)
                         .studioFont(.monoBody.weight(600))

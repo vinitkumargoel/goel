@@ -115,7 +115,7 @@ struct FailureCard: View {
             Button(L10n.t("Show Folder"), systemImage: "folder") { showFolder() }
                 .buttonStyle(.studio(.secondary, size: .small))
         }
-        DetailMenuButton(title: compact ? L10n.t("More") : L10n.t("More actions"),
+        DetailMenuButton(title: compact ? L10n.t("More") : L10n.t("More Actions"),
                          accessibilityLabel: L10n.t("More actions for %@", task.name)) {
             if compact {
                 Button(L10n.t("Copy Details")) { copyDetails() }

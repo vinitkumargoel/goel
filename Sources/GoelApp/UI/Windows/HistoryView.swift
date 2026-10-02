@@ -157,7 +157,7 @@ struct HistoryView: View {
             } else if visible.isEmpty {
                 StudioEmptyState(symbol: "magnifyingglass", title: L10n.t("No matches"),
                                  message: L10n.t("Nothing in your history matches this search and filter.")) {
-                    Button(L10n.t("Clear search and filter")) {
+                    Button(L10n.t("Clear Search and Filter")) {
                         search = ""
                         typeFilter = nil
                     }

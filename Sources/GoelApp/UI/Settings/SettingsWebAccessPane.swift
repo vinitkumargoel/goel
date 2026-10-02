@@ -103,7 +103,7 @@ struct WebAccessSettingsPane: View {
     }
 
     @ViewBuilder private var portalButtons: some View {
-        Button(L10n.t("Open portal"), systemImage: "arrow.up.right.square") {
+        Button(L10n.t("Open Portal"), systemImage: "arrow.up.right.square") {
             if let url = controlURL { NSWorkspace.shared.open(url) }
         }
         .buttonStyle(.studio(.secondary, size: .small))
@@ -136,7 +136,7 @@ struct WebAccessSettingsPane: View {
             }
             if vm.settings.remoteRequireAuth {
                 SettingRow(L10n.t("Username"), isIndented: true) {
-                    SettingsTextField(text: setting(vm, \.remoteUsername), width: 150)
+                    SettingsTextField(text: setting(vm, \.remoteUsername), width: 150, placeholder: L10n.t("Required"))
                 }
                 SettingRow(L10n.t("Password"),
                            detail: vm.hasRemotePassword
@@ -144,7 +144,7 @@ struct WebAccessSettingsPane: View {
                                : L10n.t("No password set yet — sign-in will fail until you set one."),
                            isIndented: true) {
                     HStack(spacing: Studio.Space.xs) {
-                        SettingsSecureField(text: $newPassword, width: 130,
+                        SettingsSecureField(text: $newPassword, width: 130, placeholder: L10n.t("New password"),
                                             accessibilityName: L10n.t("New portal password"))
                         Button(L10n.t("Set")) {
                             vm.setRemotePassword(newPassword)
@@ -180,7 +180,7 @@ struct WebAccessSettingsPane: View {
                                       + "from this app’s appearance.")) {
                 SettingsSelect(selection: $vm.remoteTheme,
                                options: RemotePortalTheme.allCases.map { SettingsOption($0, $0.title) },
-                               width: 140, accessibilityName: L10n.t("Web portal theme"))
+                               width: 170, accessibilityName: L10n.t("Web portal theme"))
             }
             SettingRow(L10n.t("API token"),
                        detail: L10n.t("For scripts and the browser extension. People should use the sign-in above.")) {

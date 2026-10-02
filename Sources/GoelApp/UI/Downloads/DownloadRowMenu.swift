@@ -70,7 +70,7 @@ struct DownloadMenuBuilder {
             return [
                 .button(L10n.t("Locate…"), symbol: "magnifyingglass") { vm.locateMissingFile(task) },
                 .button(L10n.t("Download Again"), symbol: "arrow.down.circle") { vm.downloadAgain(task) },
-                .button(L10n.t("Remove from List"), role: .destructive) { vm.remove(task.id, deleteData: false) },
+                .button(L10n.t("Remove from List"), symbol: "minus.circle", role: .destructive) { vm.remove(task.id, deleteData: false) },
             ]
         }
         return fullNodes()
@@ -104,7 +104,7 @@ struct DownloadMenuBuilder {
         nodes.append(.divider)
         nodes += queueNodes
         nodes.append(.divider)
-        nodes.append(.button(L10n.t("Remove %d from List", count), role: .destructive) {
+        nodes.append(.button(L10n.t("Remove %d from List", count), symbol: "minus.circle", role: .destructive) {
             vm.removeSelected(deleteData: false)
         })
         nodes.append(.button(L10n.t("Remove %d and Move Files to Trash", count), symbol: "trash", role: .destructive) {
@@ -142,7 +142,7 @@ struct DownloadMenuBuilder {
         if task.status.isFailed {
             nodes.append(.button(L10n.t("Retry"), symbol: "arrow.clockwise") { vm.retry(task.id) })
         }
-        nodes.append(.button(L10n.t("Open folder"), symbol: "folder") { vm.revealInFinder(task) })
+        nodes.append(.button(L10n.t("Open Folder"), symbol: "folder") { vm.revealInFinder(task) })
         if task.status == .completed || playableWhileDownloading {
             nodes.append(.button(L10n.t("Open in Player"), symbol: "play.rectangle") { vm.openFile(task) })
         }
@@ -165,7 +165,7 @@ struct DownloadMenuBuilder {
         if task.status == .completed, task.isMediaFile {
             nodes.append(DownloadMenuNode(title: "", kind: .media(task, vm)))
         }
-        nodes.append(.button(L10n.t("Copy source link"), symbol: "link") { vm.copyToPasteboard(task.sourceLocator) })
+        nodes.append(.button(L10n.t("Copy Source Link"), symbol: "link") { vm.copyToPasteboard(task.sourceLocator) })
         if let prefix = context.streamLinkPrefix, RemoteStreamService.streamPlan(for: task) != nil {
             nodes.append(.button(L10n.t("Copy Stream Link"), symbol: "dot.radiowaves.left.and.right") {
                 vm.copyToPasteboard("\(prefix)&id=\(task.id.uuidString)")
@@ -252,7 +252,7 @@ struct DownloadMenuBuilder {
     private func removalNodes() -> [DownloadMenuNode] {
         let task = self.task, vm = self.vm
         return [
-            .button(L10n.t("Remove from List"), role: .destructive) { vm.remove(task.id, deleteData: false) },
+            .button(L10n.t("Remove from List"), symbol: "minus.circle", role: .destructive) { vm.remove(task.id, deleteData: false) },
             .button(L10n.t("Remove and Move File to Trash"), symbol: "trash", role: .destructive) {
                 vm.requestConfirm(
                     title: L10n.t("Move “%@” to the Trash?", task.compactDisplayName),

@@ -189,10 +189,11 @@ struct RSSSettingsPane: View {
             }
             SettingsCard(title: L10n.t("Add a feed"), symbol: "plus.circle") {
                 SettingRow(L10n.t("Feed URL"), detail: L10n.t("RSS 2.0 or Atom.")) {
-                    SettingsTextField(text: $newURL, width: 220, isMonospaced: true)
+                    SettingsTextField(text: $newURL, width: 220, placeholder: L10n.t("https://…/feed.xml"),
+                                      isMonospaced: true)
                 }
                 SettingRow(L10n.t("Title contains"), detail: L10n.t("Leave empty to take every item.")) {
-                    SettingsTextField(text: $newPattern, width: 160)
+                    SettingsTextField(text: $newPattern, width: 160, placeholder: L10n.t("Any title"))
                 }
                 SettingRow(L10n.t("Add items paused"), detail: L10n.t("Review matches before any bytes move."),
                            isOn: $newStartPaused)

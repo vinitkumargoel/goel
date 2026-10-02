@@ -222,7 +222,7 @@ struct OnboardingClipboardPane: View {
                            detail: L10n.t("Give it a page URL and it lists every file linked from it to pick from.")) {
                 StudioKeyCaps("⇧⌘L")
             }
-            OnboardingItem(symbol: "command", tone: .neutral, title: L10n.t("Command palette"),
+            OnboardingItem(symbol: "command", tone: .neutral, title: L10n.t("Command Palette"),
                            detail: L10n.t("Every action and settings pane in one search field.")) {
                 StudioKeyCaps("⌘K")
             }

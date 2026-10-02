@@ -145,7 +145,8 @@ struct NetworkSettingsPane: View {
                 }
                 SettingRow(L10n.t("Proxy host"), detail: L10n.t("Hostname or IP of the proxy server."),
                            isIndented: true) {
-                    SettingsTextField(text: setting(vm, \.proxyHost), width: 160, isMonospaced: true)
+                    SettingsTextField(text: setting(vm, \.proxyHost), width: 160,
+                                      placeholder: L10n.t("proxy.example.com"), isMonospaced: true)
                         .managed(.proxyHost, vm.managedPolicy)
                 }
                 SettingRow(L10n.t("Proxy port"), detail: L10n.t("Port the proxy listens on."), isIndented: true) {
@@ -179,7 +180,7 @@ struct NetworkSettingsPane: View {
                 }
             }
             SettingRow(L10n.t("Custom user-agent"), detail: L10n.t("Sent with HTTP requests.")) {
-                SettingsTextField(text: setting(vm, \.userAgent), width: 160)
+                SettingsTextField(text: setting(vm, \.userAgent), width: 160, placeholder: L10n.t("Default"))
             }
             SettingRow(L10n.t("Cookie / auth handling"), detail: L10n.t("Reuse cookies for protected downloads."),
                        isOn: setting(vm, \.cookieAuthEnabled))

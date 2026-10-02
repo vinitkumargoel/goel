@@ -41,7 +41,8 @@ struct BackupUpdatesSettingsPane: View {
                 }
                 SettingRow(L10n.t("Release feed URL"),
                            detail: L10n.t("A GitHub releases API URL (or compatible JSON feed).")) {
-                    SettingsTextField(text: setting(vm, \.updateFeedURL), width: 200, isMonospaced: true)
+                    SettingsTextField(text: setting(vm, \.updateFeedURL), width: 200,
+                                      placeholder: L10n.t("https://api.github.com/…"), isMonospaced: true)
                         .managed(.updateFeedURL, vm.managedPolicy)
                 }
                 SettingsActionRow {
@@ -76,7 +77,9 @@ struct AuditLogSettingsPane: View {
                                detail: L10n.t("Leave empty for Application Support/GoelDownloader/Audit. File names "
                                               + "and hosts are recorded; URLs are reduced to their host."),
                                isIndented: true) {
-                        SettingsTextField(text: setting(vm, \.auditLogDirectory), width: 160, isMonospaced: true)
+                        SettingsTextField(text: setting(vm, \.auditLogDirectory), width: 160,
+                                          placeholder: L10n.t("Default folder"), isMonospaced: true,
+                                          placeholderIsMonospaced: false)
                             .managed(.auditLogDirectory, vm.managedPolicy)
                     }
                     SettingRow(L10n.t("Reveal in Finder"),

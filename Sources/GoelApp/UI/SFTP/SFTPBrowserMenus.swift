@@ -69,7 +69,7 @@ extension SFTPBrowserView {
     func moveMenu(_ entry: SFTPEntry) -> some View {
         Menu(L10n.t("Move to")) {
             if !model.isAtRoot {
-                Button(L10n.t("⬆︎ Parent folder")) { move(entry, toParent: true, folder: nil) }
+                Button(L10n.t("⬆︎ Parent Folder")) { move(entry, toParent: true, folder: nil) }
                 Divider()
             }
             // `folder.name` is server-supplied: an entry named "../.." must not escape the tree.

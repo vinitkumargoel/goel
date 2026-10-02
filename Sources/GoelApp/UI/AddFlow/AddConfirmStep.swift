@@ -92,12 +92,12 @@ struct AddConfirmStep: View {
         if let failure = unreachable {
             AddCallout(tone: .warn, symbol: "exclamationmark.triangle.fill", message: failure,
                        accessibilityLabel: L10n.t("Error. %@", failure)) {
-                Button(L10n.t("Try again")) { model.retryResolve() }
+                Button(L10n.t("Try Again")) { model.retryResolve() }
                     .buttonStyle(.studio(.secondary, size: .small))
-                Button(L10n.t("Continue anyway")) { model.start(preview) }
+                Button(L10n.t("Continue Anyway")) { model.start(preview) }
                     .buttonStyle(.studio(.ghost, size: .small))
                     .disabled(model.isResolvingMedia || model.allFilesDeselected(preview))
-                    .help(L10n.t("Continue anyway adds it straight to the queue — the name and size fill in as it "
+                    .help(L10n.t("Continue Anyway adds it straight to the queue — the name and size fill in as it "
                                  + "starts."))
             }
         } else if let note = preview.note {
@@ -144,7 +144,7 @@ struct AddConfirmStep: View {
             Button(L10n.t("Cancel")) { model.finish() }
                 .keyboardShortcut(.cancelAction)
                 .buttonStyle(.studio(.secondary))
-            Button(unreachable == nil ? L10n.t("Start download") : L10n.t("Continue anyway"),
+            Button(unreachable == nil ? L10n.t("Start Download") : L10n.t("Continue Anyway"),
                    systemImage: "arrow.down") {
                 model.start(preview)
             }

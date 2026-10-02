@@ -53,7 +53,7 @@ extension SFTPConnectionEditor {
                         in: RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous))
         } else {
             VStack(alignment: .leading, spacing: Studio.Space.xxs) {
-                Button(L10n.t("Reset pinned host key"), systemImage: "key.slash") {
+                Button(L10n.t("Reset Pinned Host Key"), systemImage: "key.slash") {
                     confirmingHostKeyReset = true
                 }
                 .buttonStyle(.studio(.ghost, size: .small))
@@ -247,7 +247,7 @@ struct SFTPTestFailureCard: View {
                     .accessibilityLabel(L10n.t("Connection test failed. %@", message))
                 HStack(spacing: Studio.Space.xs) {
                     if let onRetry {
-                        Button(L10n.t("Try again"), systemImage: "arrow.clockwise", action: onRetry)
+                        Button(L10n.t("Try Again"), systemImage: "arrow.clockwise", action: onRetry)
                             .buttonStyle(.studio(.secondary, size: .small))
                             .disabled(!retryEnabled)
                     }

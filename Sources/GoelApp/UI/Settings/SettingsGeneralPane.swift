@@ -30,7 +30,7 @@ struct GeneralSettingsPane: View {
             }
             // Only languages that ship a strings table: anything else silently resolves to English.
             SettingRow(L10n.t("Language"),
-                       detail: L10n.t("%@ ship translations today.",
+                       detail: L10n.t("Available languages: %@.",
                                       L10n.supportedLanguages.map(\.name).joined(separator: ", "))) {
                 SettingsSelect(selection: setting(vm, \.language),
                                options: L10n.supportedLanguages.map { SettingsOption($0.name, $0.name) },

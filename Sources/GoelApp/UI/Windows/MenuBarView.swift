@@ -228,7 +228,7 @@ struct MenuBarPopover: View {
         let snapshot = commands.snapshot
         let pausing = snapshot.pauseAllPauses
         return HStack(spacing: Studio.Space.s) {
-            Button(L10n.t("Add download"), systemImage: "plus", action: addDownload)
+            Button(L10n.t("Add Download"), systemImage: "plus", action: addDownload)
                 .buttonStyle(.studio(.primary, size: .small))
                 .a11yButton(L10n.t("Add download"), hint: L10n.t("Opens the main window’s add sheet."))
             Button(L10n.t("Open Goel°"), action: activateMainWindow)

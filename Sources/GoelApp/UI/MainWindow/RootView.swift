@@ -119,7 +119,7 @@ struct RootView: View {
                 let search = OmniboxInput.classify(text).searchText
                 if vm.search != search { vm.search = search }
             }
-            // Someone else changed the search ("Clear search and filter", the palette).
+            // Someone else changed the search ("Clear Search and Filter", the palette).
             .onChange(of: vm.search) { _, search in
                 if OmniboxInput.classify(omniboxText).searchText != search { omniboxText = search }
             }

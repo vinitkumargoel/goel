@@ -20,12 +20,14 @@ struct ExtractScriptsSettingsPane: View {
                 if vm.settings.postDownloadScriptEnabled {
                     SettingRow(L10n.t("Script path"), detail: L10n.t("Must be executable (not “bash script.sh”)."),
                                isIndented: true) {
-                        SettingsTextField(text: setting(vm, \.postDownloadScriptPath), width: 200, isMonospaced: true)
+                        SettingsTextField(text: setting(vm, \.postDownloadScriptPath), width: 200,
+                                          placeholder: L10n.t("/path/to/script"), isMonospaced: true)
                     }
                     SettingRow(L10n.t("Arguments"),
                                detail: L10n.t("Passed to the script; %path% becomes the finished file."),
                                isIndented: true) {
-                        SettingsTextField(text: setting(vm, \.postDownloadScriptArgs), width: 160, isMonospaced: true)
+                        SettingsTextField(text: setting(vm, \.postDownloadScriptArgs), width: 160,
+                                          placeholder: L10n.t("%path%"), isMonospaced: true)
                     }
                 }
             }
@@ -54,10 +56,12 @@ struct AntivirusSettingsPane: View {
                 }
                 SettingRow(L10n.t("Executable path"),
                            detail: L10n.t("Full path to the scanner, e.g. /opt/homebrew/bin/clamscan.")) {
-                    SettingsTextField(text: setting(vm, \.antivirusExecutablePath), width: 200, isMonospaced: true)
+                    SettingsTextField(text: setting(vm, \.antivirusExecutablePath), width: 200,
+                                      placeholder: L10n.t("/path/to/scanner"), isMonospaced: true)
                 }
                 SettingRow(L10n.t("Argument template"), detail: L10n.t("%path% is replaced with the file.")) {
-                    SettingsTextField(text: setting(vm, \.antivirusArgumentTemplate), width: 140, isMonospaced: true)
+                    SettingsTextField(text: setting(vm, \.antivirusArgumentTemplate), width: 140,
+                                      placeholder: L10n.t("%path%"), isMonospaced: true)
                 }
             }
         }
@@ -91,7 +95,8 @@ struct MediaToolsSettingsPane: View {
                     SettingRow(L10n.t("Subtitle languages"),
                                detail: L10n.t("Comma-separated codes, e.g. “en, es”."),
                                isIndented: true) {
-                        SettingsTextField(text: setting(vm, \.subtitleLanguages), width: 130, isMonospaced: true)
+                        SettingsTextField(text: setting(vm, \.subtitleLanguages), width: 130,
+                                          placeholder: L10n.t("en, es"), isMonospaced: true)
                     }
                     SettingRow(L10n.t("Include auto-captions"),
                                detail: L10n.t("Fall back to machine-generated captions when no human subtitles exist."),
@@ -102,7 +107,9 @@ struct MediaToolsSettingsPane: View {
                 SettingRow(L10n.t("ffmpeg path"),
                            detail: L10n.t("Optional. Leave empty to use the copy included with Goel°. Enables "
                                + "Convert / Extract-audio on finished media.")) {
-                    SettingsTextField(text: setting(vm, \.ffmpegPath), width: 180, isMonospaced: true)
+                    SettingsTextField(text: setting(vm, \.ffmpegPath), width: 180,
+                                      placeholder: L10n.t("Included copy"), isMonospaced: true,
+                                      placeholderIsMonospaced: false)
                 }
                 SettingsCardBlock(showsDivider: false, verticalPadding: 0) {
                     SettingsFootnote(text: vm.ffmpegResolutionSummary,

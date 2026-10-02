@@ -209,7 +209,9 @@ private struct LinkReviewRow: View {
                 .frame(width: 70, alignment: .trailing)
             status
                 .fixedSize()
-                .frame(minWidth: 128, alignment: .trailing)
+                // Wide enough for the longest pill ("In list · Downloading"), so the badge and
+                // size columns stay put on every row.
+                .frame(width: 144, alignment: .trailing)
                 .padding(.leading, Studio.Space.xs)
         }
         .padding(.horizontal, Studio.Space.sm)

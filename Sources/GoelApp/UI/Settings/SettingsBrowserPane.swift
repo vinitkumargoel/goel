@@ -194,13 +194,13 @@ struct SiteLoginsCard: View {
                 }
             }
             SettingRow(L10n.t("Host"), detail: L10n.t("e.g. files.example.com")) {
-                SettingsTextField(text: $newHost, width: 180, isMonospaced: true)
+                SettingsTextField(text: $newHost, width: 180, placeholder: L10n.t("files.example.com"), isMonospaced: true)
             }
             SettingRow(L10n.t("Username")) {
-                SettingsTextField(text: $newUser, width: 180)
+                SettingsTextField(text: $newUser, width: 180, placeholder: L10n.t("Required"))
             }
             SettingRow(L10n.t("Password")) {
-                SettingsSecureField(text: $newPassword, width: 180,
+                SettingsSecureField(text: $newPassword, width: 180, placeholder: L10n.t("Optional"),
                                     accessibilityName: L10n.t("Password for the new site login"))
             }
             SettingsActionRow {

@@ -10,6 +10,9 @@ struct SettingsTextField: View {
     var width: CGFloat? = 180
     var placeholder: String = ""
     var isMonospaced = false
+    /// A word placeholder ("Optional") in a mono field stays in the UI font so it can't pass for a
+    /// typed value; format examples ("/path/to/script") keep the field's mono.
+    var placeholderIsMonospaced: Bool?
     /// Overrides the row title as the spoken name.
     var accessibilityName: String?
     var size: StudioFieldSize = .small
@@ -21,6 +24,7 @@ struct SettingsTextField: View {
                 // Drawn by hand: the field's ink colour would otherwise make the prompt look typed.
                 if text.isEmpty {
                     Text(placeholder)
+                        .studioFont((placeholderIsMonospaced ?? isMonospaced) ? .monoBody.weight(400) : size.text)
                         .foregroundStyle(Studio.Palette.ink3)
                         .lineLimit(1)
                         .accessibilityHidden(true)
@@ -28,8 +32,8 @@ struct SettingsTextField: View {
                 TextField("", text: $text)
                     .textFieldStyle(.plain)
                     .focused(focus)
+                    .studioFont(isMonospaced ? .monoBody.weight(400) : size.text)
             }
-            .studioFont(isMonospaced ? .monoBody.weight(400) : size.text)
         }
         .frame(width: width)
         .accessibilityLabel(accessibilityName ?? rowName)
@@ -40,13 +44,23 @@ struct SettingsTextField: View {
 struct SettingsSecureField: View {
     @Binding var text: String
     var width: CGFloat? = 180
+    var placeholder: String = ""
     let accessibilityName: String
 
     var body: some View {
         StudioFocusedField(size: .small) { focus in
-            SecureField("", text: $text)
-                .textFieldStyle(.plain)
-                .focused(focus)
+            ZStack(alignment: .leading) {
+                if text.isEmpty {
+                    Text(placeholder)
+                        .foregroundStyle(Studio.Palette.ink3)
+                        .lineLimit(1)
+                        .accessibilityHidden(true)
+                }
+                SecureField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .focused(focus)
+            }
+            .studioFont(StudioFieldSize.small.text)
         }
         .frame(width: width)
         .accessibilityLabel(accessibilityName)

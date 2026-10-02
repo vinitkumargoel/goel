@@ -102,13 +102,13 @@ struct OnboardingView: View {
                     .accessibilityLabel(L10n.t("Back to the previous step"))
             }
             // Esc always means "leave setup", on every step; Back is a plain button.
-            Button(L10n.t("Skip setup"), action: finish)
+            Button(L10n.t("Skip Setup"), action: finish)
                 .buttonStyle(.studio(.ghost, size: .small))
                 .keyboardShortcut(.cancelAction)
             Spacer(minLength: Studio.Space.s)
             WindowsStepDots(count: Step.allCases.count, current: step.rawValue)
             Spacer(minLength: Studio.Space.s)
-            Button(step == .ready ? L10n.t("Start using Goel°") : L10n.t("Continue"), action: advance)
+            Button(step == .ready ? L10n.t("Start Using Goel°") : L10n.t("Continue"), action: advance)
                 .buttonStyle(.studio(.primary))
                 .keyboardShortcut(.defaultAction)
         }

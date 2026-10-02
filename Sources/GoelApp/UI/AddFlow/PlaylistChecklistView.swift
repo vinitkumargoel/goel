@@ -149,7 +149,7 @@ struct PlaylistChecklistView: View {
                 sheetActions.back()
             }
             .buttonStyle(.studio(.ghost))
-            Button(L10n.t("Download this video only")) {
+            Button(L10n.t("Download This Video Only")) {
                 loadTask?.cancel()
                 sheetActions.singleVideo()
             }

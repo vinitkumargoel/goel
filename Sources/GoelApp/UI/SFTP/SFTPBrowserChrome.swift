@@ -35,7 +35,7 @@ extension SFTPBrowserView {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityLabel(L10n.t("Error. %@", message))
             if isLong {
-                Button(errorExpanded ? L10n.t("Hide details") : L10n.t("Show details")) {
+                Button(errorExpanded ? L10n.t("Hide Details") : L10n.t("Show Details")) {
                     errorExpanded.toggle()
                 }
                 .buttonStyle(.studio(.ghost, size: .small))

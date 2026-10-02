@@ -25,7 +25,7 @@ struct RailServerSection: View {
                     .padding(.horizontal, Studio.Space.sm)
                     .padding(.vertical, Studio.Space.xxs)
                 if !showsHeader {
-                    Button(L10n.t("Add SFTP server"), systemImage: "plus") { vm.presentNewServer(); onPick() }
+                    Button(L10n.t("Add SFTP Server"), systemImage: "plus") { vm.presentNewServer(); onPick() }
                         .buttonStyle(.studio(.soft, size: .small))
                         .padding(.horizontal, Studio.Space.sm)
                         .padding(.top, Studio.Space.xs)

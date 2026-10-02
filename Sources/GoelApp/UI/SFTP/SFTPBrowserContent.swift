@@ -72,7 +72,7 @@ extension SFTPBrowserView {
             if isFiltering {
                 StudioEmptyState(symbol: "magnifyingglass", title: L10n.t("No matches"),
                                  message: L10n.t("Nothing here matches “%@”.", searchText)) {
-                    Button(L10n.t("Clear filter")) { searchText = "" }
+                    Button(L10n.t("Clear Filter")) { searchText = "" }
                         .buttonStyle(.studio(.secondary))
                 }
             } else {

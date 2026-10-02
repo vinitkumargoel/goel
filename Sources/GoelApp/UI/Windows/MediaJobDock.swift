@@ -165,9 +165,9 @@ struct MediaJobCard: View {
             }
         case .failed:
             actions {
-                Button(showsDetail ? L10n.t("Hide details") : L10n.t("Show details")) { showsDetail.toggle() }
+                Button(showsDetail ? L10n.t("Hide Details") : L10n.t("Show Details")) { showsDetail.toggle() }
                     .buttonStyle(.studio(.ghost, size: .small))
-                Button(L10n.t("Copy details"), systemImage: "doc.on.doc") {
+                Button(L10n.t("Copy Details"), systemImage: "doc.on.doc") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(job.log, forType: .string)
                 }
@@ -175,12 +175,12 @@ struct MediaJobCard: View {
             }
         case .running where job.isStalled():
             actions {
-                Button(L10n.t("Cancel this job")) { center.cancel(job.id) }
+                Button(L10n.t("Cancel Job")) { center.cancel(job.id) }
                     .buttonStyle(.studio(.destructive, size: .small))
             }
         case .cancelling where job.isStopStuck():
             actions {
-                Button(L10n.t("Stop waiting")) { center.forceDismiss(job.id) }
+                Button(L10n.t("Stop Waiting")) { center.forceDismiss(job.id) }
                     .buttonStyle(.studio(.destructive, size: .small))
             }
         default:

@@ -143,7 +143,7 @@ struct AddRecognizedList: View {
     }
 }
 
-/// While the link's name and size are fetched. Continue anyway skips the preview.
+/// While the link's name and size are fetched. Continue Anyway skips the preview.
 struct AddResolvingStep: View {
     @ObservedObject var model: AddSheetModel
 
@@ -167,11 +167,11 @@ struct AddResolvingStep: View {
                 HStack(spacing: Studio.Space.sm) {
                     Button(L10n.t("Cancel")) { model.cancelResolving() }
                         .buttonStyle(.studio(.secondary))
-                    Button(L10n.t("Continue anyway")) { model.continueWithoutPreview() }
+                    Button(L10n.t("Continue Anyway")) { model.continueWithoutPreview() }
                         .buttonStyle(.studio(.primary))
                 }
                 .padding(.top, Studio.Space.xxs)
-                Text(L10n.t("Continue anyway adds it straight to the queue — the name and size fill in "
+                Text(L10n.t("Continue Anyway adds it straight to the queue — the name and size fill in "
                             + "as it starts."))
                     .studioFont(.caption)
                     .foregroundStyle(Studio.Palette.ink3)

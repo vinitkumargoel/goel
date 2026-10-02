@@ -133,7 +133,7 @@ struct SFTPConnectionEditor: View {
 
     private var testButton: some View {
         HStack(spacing: Studio.Space.s) {
-            Button(testResult == nil ? L10n.t("Test") : L10n.t("Test again"), systemImage: "bolt.horizontal.circle") {
+            Button(testResult == nil ? L10n.t("Test") : L10n.t("Test Again"), systemImage: "bolt.horizontal.circle") {
                 runTest()
             }
             .buttonStyle(.studio(.ghost))

@@ -33,7 +33,10 @@ struct MediaJobPresentation {
             return job.isStalled(now: now) ? L10n.t("%@ — not progressing", job.kind.activeTitle)
                                            : job.kind.activeTitle
         case .finished:  return job.kind.finishedTitle
-        case .failed:    return L10n.t("Couldn’t finish %@", L10n.midSentence(job.kind.activeTitle))
+        case .failed:
+            // Only the leading word drops its capital: "Converting to MP4" keeps its "MP4".
+            let active = job.kind.activeTitle
+            return L10n.t("Couldn’t finish %@", L10n.midSentence(String(active.prefix(1))) + active.dropFirst())
         case .cancelled: return L10n.t("Cancelled")
         }
     }
@@ -57,7 +60,7 @@ struct MediaJobPresentation {
         case .running:
             if job.isStalled(now: now) {
                 let since = MediaJobCenter.Job.durationText(from: job.lastAdvance, to: now)
-                return L10n.t("no progress for %@ · ffmpeg may be stuck", since)
+                return L10n.t("No progress for %@ · ffmpeg may be stuck", since)
             }
             var pieces: [String] = []
             if let fraction = job.fraction {

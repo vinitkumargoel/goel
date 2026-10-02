@@ -146,7 +146,7 @@ struct SettingsView: View {
         StudioEmptyState(symbol: "magnifyingglass",
                          title: L10n.t("No settings match"),
                          message: L10n.t("Try a different word, or clear the search to see every pane.")) {
-            Button(L10n.t("Clear search")) { searchText = "" }
+            Button(L10n.t("Clear Search")) { searchText = "" }
                 .buttonStyle(.studio(.secondary, size: .small))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

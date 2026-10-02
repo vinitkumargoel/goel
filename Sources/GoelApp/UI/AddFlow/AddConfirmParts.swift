@@ -84,7 +84,7 @@ struct AddDiskSpaceRow: View {
                            message: DiskSpaceCheck.message(for: verdict) + "\n"
                                + L10n.t("There isn’t enough free space on this disk. The download would stop partway."),
                            accessibilityLabel: DiskSpaceCheck.spokenMessage(for: verdict)) {
-                    Button(L10n.t("Choose another folder…"), systemImage: "folder") {
+                    Button(L10n.t("Choose Another Folder…"), systemImage: "folder") {
                         model.chooseAnotherFolder()
                     }
                     .buttonStyle(.studio(.secondary, size: .small))
