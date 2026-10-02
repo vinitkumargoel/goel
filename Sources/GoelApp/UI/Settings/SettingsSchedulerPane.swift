@@ -161,9 +161,6 @@ struct SchedulerSettingsPane: View {
 /// RSS Feeds: how often feeds are checked, the feed list, and adding one.
 struct RSSSettingsPane: View {
     @EnvironmentObject private var vm: AppViewModel
-    @State private var newURL = ""
-    @State private var newPattern = ""
-    @State private var newStartPaused = false
 
     var body: some View {
         SettingsPane(title: L10n.t("RSS Feeds"),
@@ -188,19 +185,15 @@ struct RSSSettingsPane: View {
                 }
             }
             SettingsCard(title: L10n.t("Add a feed"), symbol: "plus.circle") {
-                SettingRow(L10n.t("Feed URL"), detail: L10n.t("RSS 2.0 or Atom.")) {
-                    SettingsTextField(text: $newURL, width: 220, placeholder: L10n.t("https://…/feed.xml"),
-                                      isMonospaced: true)
-                }
-                SettingRow(L10n.t("Title contains"), detail: L10n.t("Leave empty to take every item.")) {
-                    SettingsTextField(text: $newPattern, width: 160, placeholder: L10n.t("Any title"))
-                }
-                SettingRow(L10n.t("Add items paused"), detail: L10n.t("Review matches before any bytes move."),
-                           isOn: $newStartPaused)
-                SettingsActionRow {
-                    Button(L10n.t("Add Feed"), systemImage: "plus") { addFeed() }
-                        .buttonStyle(.studio(.primary, size: .small))
-                        .disabled(URL(string: newURL.trimmingCharacters(in: .whitespaces))?.host == nil)
+                SettingRow(L10n.t("Add a feed"),
+                           detail: L10n.t("Opens the RSS reader’s sheet: it previews what the feed would "
+                               + "download, and tells you if the feed is already added.")) {
+                    Button(L10n.t("Add Feed…"), systemImage: "plus") {
+                        vm.closeServerBrowser()
+                        RSSReaderModel.shared.requestAddFeed()
+                        MainWindowPresenter.activate()
+                    }
+                    .buttonStyle(.studio(.primary, size: .small))
                 }
             }
             .settingsColumn(.trailing)
@@ -258,18 +251,5 @@ struct RSSSettingsPane: View {
                 }
             }
         )
-    }
-
-    private func addFeed() {
-        let url = newURL.trimmingCharacters(in: .whitespaces)
-        guard !url.isEmpty else { return }
-        let feed = RSSFeed(url: url,
-                           titlePattern: newPattern.trimmingCharacters(in: .whitespaces),
-                           startPaused: newStartPaused)
-        vm.update { $0.rssFeeds.append(feed) }
-        newURL = ""
-        newPattern = ""
-        newStartPaused = false
-        vm.toastSuccess(L10n.t("Feed added"))
     }
 }

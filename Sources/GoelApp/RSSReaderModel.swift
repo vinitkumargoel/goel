@@ -10,6 +10,8 @@ final class RSSReaderModel: ObservableObject {
     @Published var isOpen = false
     @Published var selectedFeed: RSSFeed.ID?
     @Published var selectedArticle: String?
+    /// Set by Settings ▸ RSS Feeds ▸ Add Feed…; the reader shows its Add Feed sheet and clears it.
+    @Published var wantsAddFeed = false
     @Published private(set) var articles: [RSSFeed.ID: [RSSItem]] = [:]
     @Published private(set) var errors: [RSSFeed.ID: String] = [:]
     @Published private(set) var loading: Set<RSSFeed.ID> = []
@@ -30,6 +32,12 @@ final class RSSReaderModel: ObservableObject {
     }
 
     func close() { isOpen = false }
+
+    /// The one way to add a feed: the reader's rule sheet fetches and previews it. Used by Settings.
+    func requestAddFeed() {
+        open()
+        wantsAddFeed = true
+    }
 
     func unreadCount(_ feed: RSSFeed.ID) -> Int {
         (articles[feed] ?? []).filter { !readKeys.contains($0.key) }.count

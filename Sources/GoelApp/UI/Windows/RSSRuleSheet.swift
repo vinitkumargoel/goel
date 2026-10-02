@@ -22,6 +22,13 @@ struct RSSRuleSheet: View {
         URL(string: draft.url.trimmingCharacters(in: .whitespaces))?.host != nil
     }
 
+    /// Adding a feed that is already in the list would poll and queue everything twice.
+    private var isDuplicate: Bool {
+        guard original == nil else { return false }
+        let url = draft.url.trimmingCharacters(in: .whitespaces).lowercased()
+        return !url.isEmpty && vm.settings.rssFeeds.contains { $0.url.lowercased() == url }
+    }
+
     private var episodeFilterValid: Bool {
         draft.episodeFilter.trimmingCharacters(in: .whitespaces).isEmpty
             || RSSRuleMatcher.EpisodeFilter(draft.episodeFilter) != nil
@@ -34,10 +41,14 @@ struct RSSRuleSheet: View {
                         : L10n.t("Choose which of the feed’s articles download, and where they go."),
                     symbol: "dot.radiowaves.up.forward", width: 470) {
             form
+            if isDuplicate {
+                StudioNote(tone: .warn, symbol: "exclamationmark.triangle",
+                           message: L10n.t("This feed is already in your list."))
+            }
             RSSRulePreview(draft: draft, previewItems: previewItems)
         } footer: {
             StudioSheetFooter(onCancel: { dismiss() }, primaryTitle: L10n.t("Save"),
-                              primaryEnabled: isValidURL && episodeFilterValid, onPrimary: save) {
+                              primaryEnabled: isValidURL && episodeFilterValid && !isDuplicate, onPrimary: save) {
                 if let original {
                     Button(L10n.t("Remove Feed"), role: .destructive) {
                         vm.update { $0.rssFeeds.removeAll { $0.id == original.id } }

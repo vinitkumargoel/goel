@@ -96,8 +96,7 @@ extension SettingsView.Pane {
                     "Weekly profile schedule", "Switch profiles by the hour"]
         case .rss:
             return ["Watch feeds and queue new items automatically (podcasts, releases, torrent feeds).",
-                    "Check feeds every", "Feeds", "Add a feed", "Feed URL", "Title contains",
-                    "Add items paused", "Rules and articles"]
+                    "Check feeds every", "Feeds", "Add a feed", "Rules and articles"]
         case .afterDownload:
             return ["What happens to a file once it finishes.",
                     "Extract", "Auto-extract archives", "Script", "Run a script on completion",
