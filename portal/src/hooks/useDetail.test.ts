@@ -3,10 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '../lib/api'
 import { createLatest } from '../lib/latest'
 import type { TaskDetail, TaskRow } from '../lib/types'
-import { useDetail } from './useDetail'
+import { DETAIL_POLL_MS, useDetail } from './useDetail'
 
 function detail(id: string, name = `${id}.iso`): TaskDetail {
-  return { row: { id, name } as TaskRow } as TaskDetail
+  return { row: { id, name } as TaskRow, files: [], trackers: [], connections: [], pieces: [] } as unknown as TaskDetail
 }
 
 function deferred<T>() {
@@ -87,5 +87,27 @@ describe('useDetail', () => {
     rerender({ id: null })
     await act(async () => slow.resolve(detail('a')))
     expect(result.current.detail).toBeNull()
+  })
+
+  it('does not poll while the tab is hidden, and catches up when it is shown', async () => {
+    vi.useFakeTimers()
+    try {
+      const spy = vi.spyOn(api, 'task').mockResolvedValue(detail('a'))
+      const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+      renderHook(() => useDetail('a', [], true, noop))
+      await act(async () => {})
+      const initial = spy.mock.calls.length
+      await act(async () => {
+        vi.advanceTimersByTime(DETAIL_POLL_MS * 3)
+      })
+      expect(spy.mock.calls.length).toBe(initial)
+      hidden.mockReturnValue(false)
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      expect(spy.mock.calls.length).toBe(initial + 1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

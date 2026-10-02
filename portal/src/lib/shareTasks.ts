@@ -1,11 +1,17 @@
 import type { TaskRow } from './types'
 
-/** Every `TaskRow` field is a primitive, so a shallow compare is a full compare. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  // `tags` is the one array field (of strings): every JSON parse hands out a fresh one.
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => Object.is(v, b[i]))
+}
+
+/** Every `TaskRow` field is a primitive or a flat array of them, so a shallow compare is a full compare. */
 export function sameTask(a: TaskRow, b: TaskRow): boolean {
   if (a === b) return true
   const keys = Object.keys(a) as (keyof TaskRow)[]
   if (keys.length !== Object.keys(b).length) return false
-  return keys.every((k) => Object.is(a[k], b[k]))
+  return keys.every((k) => sameValue(a[k], b[k]))
 }
 
 /**

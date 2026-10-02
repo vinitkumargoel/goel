@@ -661,7 +661,8 @@
     "noMatch": "No files match.",
     "folderToggle": "Download everything in {{name}}",
     "expand": "Open {{name}}",
-    "collapse": "Close {{name}}"
+    "collapse": "Close {{name}}",
+    "showMore": "Show {{count}} more of {{remaining}} remaining"
   },
   "queue": {
     "edit": "Edit",

@@ -162,4 +162,12 @@ describe('FilesTree', () => {
     finish()
     await vi.waitFor(() => expect(screen.getByRole('tree')).toHaveAttribute('aria-busy', 'false'))
   })
+
+  it('draws a long list in pages and adds more on request', async () => {
+    const many = Array.from({ length: 450 }, (_, i) => file(i, `Pack/e${String(i).padStart(3, '0')}.mkv`))
+    renderTree(many)
+    expect(screen.getAllByRole('treeitem')).toHaveLength(200)
+    await userEvent.click(screen.getByRole('button', { name: /Show 200 more of 250 remaining/ }))
+    expect(screen.getAllByRole('treeitem')).toHaveLength(400)
+  })
 })

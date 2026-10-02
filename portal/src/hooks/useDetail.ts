@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, failureMessage } from '../lib/api'
 import { createLatest } from '../lib/latest'
+import { shareDetail } from '../lib/shareDetail'
 import type { FilePriority, TaskDetail, TaskRow } from '../lib/types'
 
 export const DETAIL_POLL_MS = 4000
@@ -30,7 +31,7 @@ export function useDetail(
     const stamp = latest.current.begin()
     try {
       const next = await api.task(id)
-      if (latest.current.isCurrent(stamp) && idRef.current === id) setDetail(next)
+      if (latest.current.isCurrent(stamp) && idRef.current === id) setDetail((prev) => shareDetail(prev, next))
     } catch {
       if (!latest.current.isCurrent(stamp) || idRef.current !== id) return
       setDetail((d) => (d && d.row.id === id ? d : null))
@@ -56,13 +57,19 @@ export function useDetail(
 
   const pollRef = useRef<() => void>(() => {})
   pollRef.current = () => {
-    if (detailId == null || !polling) return
+    // A hidden tab repaints nothing: skip the request, and catch up when it is shown again.
+    if (detailId == null || !polling || document.hidden) return
     const row = tasks.find((t) => t.id === detailId)
     if (!row || row.statusToken !== 'completed') void load(detailId)
   }
   useEffect(() => {
     const timer = setInterval(() => pollRef.current(), DETAIL_POLL_MS)
-    return () => clearInterval(timer)
+    const onShow = () => pollRef.current()
+    document.addEventListener('visibilitychange', onShow)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onShow)
+    }
   }, [])
 
   /** Refetch now, e.g. after changing a file's priority. */

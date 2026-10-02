@@ -661,7 +661,8 @@
     "noMatch": "Keine Dateien passen.",
     "folderToggle": "Alles in {{name}} herunterladen",
     "expand": "{{name}} öffnen",
-    "collapse": "{{name}} schließen"
+    "collapse": "{{name}} schließen",
+    "showMore": "{{count}} weitere von {{remaining}} anzeigen"
   },
   "queue": {
     "edit": "Ändern",
