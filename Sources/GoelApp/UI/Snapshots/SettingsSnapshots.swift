@@ -181,7 +181,7 @@ enum SettingsSnapshotModel {
         AutoSortRule(name: "Linux ISOs", conditions: [
             .init(field: .domain, op: .isAnyOf, value: "releases.ubuntu.com, cdimage.debian.org, getfedora.org"),
             .init(field: .fileExtension, op: .isEqual, value: "iso"),
-        ], folder: NSHomeDirectory() + "/Downloads/Disc images/Linux", tag: "linux"),
+        ], folder: StudioSampleData.downloads + "/Disc images/Linux", tag: "linux"),
         AutoSortRule(name: "Big videos wait for night", conditions: [
             .init(field: .size, op: .largerThan, value: "4 GB"),
         ], startPaused: true),
@@ -237,7 +237,7 @@ enum SettingsSnapshotModel {
         settings.proxyPort = 3128
         settings.autoRetryEnabled = true
         settings.btWatchFolderEnabled = true
-        settings.btWatchFolderPath = NSHomeDirectory() + "/Downloads/Torrents"
+        settings.btWatchFolderPath = StudioSampleData.downloads + "/Torrents"
         settings.extraTrackersEnabled = true
         settings.extraTrackersURL = "https://ngosang.github.io/trackerslist/trackers_best.txt"
         settings.scheduleEnabled = true

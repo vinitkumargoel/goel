@@ -18,7 +18,7 @@ enum WindowsSnapshots {
             StudioSnapshotEntry("windows.menubar", width: MenuBarPopover.width) { context in
                 let model = context.model
                 MenuBarPopover(center: model.mediaJobs, commands: model.commandState,
-                               transfersOverride: WindowsSampleData.transfers,
+                               transfersOverride: SFTPSampleFixture.activeTransfers(),
                                jobsOverride: [WindowsSampleData.job(.running)])
                     .studioSampleEnvironment(model)
             },
@@ -27,7 +27,7 @@ enum WindowsSnapshots {
                 let _ = model.installSampleSnapshot([StudioSampleData.task(.ubuntu), StudioSampleData.task(.bunny),
                                                      StudioSampleData.task(.boardPack)], selecting: nil)
                 MenuBarPopover(center: model.mediaJobs, commands: model.commandState,
-                               transfersOverride: WindowsSampleData.transfers,
+                               transfersOverride: SFTPSampleFixture.activeTransfers(),
                                jobsOverride: [WindowsSampleData.job(.running)])
                     .studioSampleEnvironment(model)
             },

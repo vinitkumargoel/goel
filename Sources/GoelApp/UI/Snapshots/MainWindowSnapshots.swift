@@ -57,7 +57,7 @@ enum MainWindowSnapshots {
             },
             StudioSnapshotEntry("main.statusbar", width: 1280) { context in
                 prepare(context.model)
-                context.model.sftpTransfers = sampleTransfers()
+                context.model.sftpTransfers = SFTPSampleFixture.activeTransfers()
                 return StatusBarGallery(model: context.model)
                     .studioSampleEnvironment(context.model)
             },
@@ -98,28 +98,15 @@ enum MainWindowSnapshots {
         model.detailPanelVisible = true
         model.detailDockForcedBottom = false
         model.sftpTransfers = []
-        let nas = SFTPConnection(id: serverID(1), name: "nas.home", host: "nas.home", username: "vinit")
-        let seedbox = SFTPConnection(id: serverID(2), name: "Seedbox", host: "seedbox.example.net", username: "goel")
+        let nas = SFTPSampleFixture.nas
+        let seedbox = SFTPSampleFixture.seedbox
         model.servers = [nas, seedbox]
+        // The rail shows both reachability states, so the seedbox is offline here.
         model.serverMeta = [
             nas.id: ServerMeta(reachability: .online, ip: "192.168.0.234", latencyMS: 4,
                                os: ServerOS(id: "ubuntu", pretty: "Ubuntu 24.04 LTS")),
             seedbox.id: ServerMeta(reachability: .offline, offlineDetail: "Connection refused"),
         ]
-    }
-
-    private static func serverID(_ n: Int) -> UUID {
-        UUID(uuidString: String(format: "5E7E7000-0000-0000-0000-%012d", n))!
-    }
-
-    fileprivate static func sampleTransfers() -> [SFTPTransfer] {
-        var upload = SFTPTransfer(connectionID: serverID(1), name: "holiday-photos.zip", direction: .upload,
-                                  isDirectory: false, localURL: nil, remotePath: "/srv/backup/holiday-photos.zip",
-                                  total: 1_800_000_000)
-        upload.bytes = 1_100_000_000
-        upload.speed = 9_400_000
-        upload.state = .running
-        return [upload]
     }
 }
 

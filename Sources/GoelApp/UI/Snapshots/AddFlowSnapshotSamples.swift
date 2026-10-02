@@ -32,7 +32,7 @@ enum AddFlowSamples {
     }
 
     static var torrentPreview: DownloadPreview {
-        let mb: Int64 = 1_000_000
+        let mb = StudioSampleData.mb
         return DownloadPreview(
             source: .magnet("magnet:?xt=urn:btih:5c1a9d3e8f7b6a5c4d3e2f1a0b9c8d7e6f5a4b3c&dn=Sprite.Fright.2021.4K"),
             suggestedName: "Sprite.Fright.2021.4K",

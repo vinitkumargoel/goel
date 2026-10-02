@@ -140,7 +140,7 @@ enum DownloadsSnapshots {
         let arch = DownloadTask(
             source: .url(URL(string: "https://geo.mirror.pkgbuild.com/iso/archlinux-2026.10.01-x86_64.iso")!),
             name: "archlinux-2026.10.01-x86_64.iso",
-            saveDirectory: "\(NSHomeDirectory())/Downloads/Disc images",
+            saveDirectory: "\(StudioSampleData.downloads)/Disc images",
             totalBytes: 1_200_000_000, bytesDownloaded: 1_200_000_000,
             status: .verifying, addedAt: Date().addingTimeInterval(-50 * 60))
         return StudioSampleData.tasks + [arch, missingFile]
@@ -150,7 +150,7 @@ enum DownloadsSnapshots {
         var blender = DownloadTask(
             source: .url(URL(string: "https://download.blender.org/release/Blender-4.2.3-macos-arm64.dmg")!),
             name: "Blender-4.2.3-macos-arm64.dmg",
-            saveDirectory: "\(NSHomeDirectory())/Downloads/Apps",
+            saveDirectory: "\(StudioSampleData.downloads)/Apps",
             totalBytes: 398_000_000, bytesDownloaded: 398_000_000,
             status: .completed, addedAt: Date().addingTimeInterval(-26 * 3600))
         blender.completedAt = Date().addingTimeInterval(-25 * 3600)

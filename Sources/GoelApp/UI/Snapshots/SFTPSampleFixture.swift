@@ -2,7 +2,8 @@
 import Foundation
 import GoelCore
 
-/// Sample servers, a remote folder and transfers for the SFTP snapshots (`--studio-snapshots`).
+/// Sample servers, a remote folder and transfers for the SFTP snapshots (`--studio-snapshots`),
+/// and the one set of servers and transfers every other area's snapshots draw from too.
 /// Fixed ids and dates, so renders are stable. Nothing here reaches a server or the Keychain.
 @MainActor
 enum SFTPSampleFixture {
@@ -21,8 +22,7 @@ enum SFTPSampleFixture {
 
     static let volume = SFTPVolumeSpace(totalBytes: 4_000_000_000_000, freeBytes: 1_200_000_000_000)
 
-    private static let gb: Int64 = 1_000_000_000
-    private static let mb: Int64 = 1_000_000
+    private static let mb = StudioSampleData.mb
 
     /// 2026-10-01 18:00 UTC, and days before it.
     private static func day(_ daysAgo: Double, hour: Double = 0) -> Date {
@@ -72,7 +72,7 @@ enum SFTPSampleFixture {
 
     // MARK: - Transfers
 
-    private static let downloads = "\(NSHomeDirectory())/Downloads"
+    private static let downloads = StudioSampleData.downloads
 
     static func transfers() -> [SFTPTransfer] {
         let now = Date()
@@ -116,6 +116,12 @@ enum SFTPSampleFixture {
 
         deck.state = .waiting
         return [backup, deck, bunny, logs, dump]
+    }
+
+    /// The running download and the paused upload: one of each direction and state, for the
+    /// menu bar's and status bar's transfer rows.
+    static func activeTransfers() -> [SFTPTransfer] {
+        transfers().filter { $0.state == .running || $0.state == .paused }
     }
 
     /// A minute of throughput for the running download, for the panel's graph.

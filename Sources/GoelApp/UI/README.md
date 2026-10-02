@@ -191,8 +191,11 @@ stubs and whose power/folder-watch/scanner/credential ports are no-ops, and neve
 `start()`. A DEBUG-only `installSampleSnapshot(_:selecting:)` (in `AppViewModel.swift`) sets
 `tasks` and recomputes the list without the live path's side effects (no notification handlers,
 Dock/Finder progress, banners). Actions you trigger in a snapshot reach the inert manager and
-go nowhere. Area-specific sample state (SFTP servers, RSS feeds, history rows) is built in that
-area's snapshot file from public model types.
+go nowhere. Area-specific sample state lives beside it in `UI/Snapshots/`, built from public
+model types: `SFTPSampleFixture` (the one set of servers, a remote folder and transfers — other
+areas take subsets, e.g. `activeTransfers()`), `WindowsSampleData` (conversion jobs, stats,
+history rows, RSS) and `AddFlowSnapshotSamples`. `StudioSampleData.gb` / `.mb` / `.downloads`
+are the shared units and folder.
 
 Known renderer artefact: `cacheDisplay` draws a plain-style `TextField`'s placeholder in the
 label colour, so placeholders look like real text in snapshots. On screen they draw in the

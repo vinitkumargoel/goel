@@ -27,9 +27,10 @@ enum StudioSampleData {
         tasks.first { $0.id == id.uuid } ?? tasks[0]
     }
 
-    private static let gb: Int64 = 1_000_000_000
-    private static let mb: Int64 = 1_000_000
-    private static let downloads = "\(NSHomeDirectory())/Downloads"
+    /// Decimal units and the Downloads folder, shared by every area's sample data.
+    static let gb: Int64 = 1_000_000_000
+    static let mb: Int64 = 1_000_000
+    static let downloads = "\(NSHomeDirectory())/Downloads"
 
     /// In the order the board shows them: active, up next, needs you, done.
     static var tasks: [DownloadTask] {

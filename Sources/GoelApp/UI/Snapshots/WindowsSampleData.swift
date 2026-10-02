@@ -10,7 +10,7 @@ enum WindowsSampleData {
     enum JobSample { case running, finished, failed, queued, stalled, cancelled, cancelling, stuck }
 
     static func job(_ sample: JobSample) -> MediaJobCenter.Job {
-        let movies = URL(fileURLWithPath: "\(NSHomeDirectory())/Downloads/Video")
+        let movies = URL(fileURLWithPath: "\(StudioSampleData.downloads)/Video")
         let now = Date()
         switch sample {
         case .running:
@@ -47,23 +47,9 @@ enum WindowsSampleData {
         }
     }
 
-    static var transfers: [SFTPTransfer] {
-        var running = SFTPTransfer(connectionID: UUID(), name: "project-backup-2026-07.tar.zst", direction: .download,
-                                   isDirectory: false, localURL: nil,
-                                   remotePath: "/srv/backups/project-backup-2026-07.tar.zst", total: 2_100_000_000)
-        running.bytes = 1_640_000_000
-        running.state = .running
-        running.sampledSpeed = 18_000_000
-        var paused = SFTPTransfer(connectionID: UUID(), name: "site-photos", direction: .upload, isDirectory: true,
-                                  localURL: nil, remotePath: "/var/www/photos", total: 840_000_000)
-        paused.bytes = 310_000_000
-        paused.state = .paused
-        return [running, paused]
-    }
-
     static var stats: TransferStats {
         var perDay: [String: TransferStats.DayTotals] = [:]
-        let gb: Int64 = 1_000_000_000
+        let gb = StudioSampleData.gb
         let downs: [Int64] = [22, 31, 18, 40, 12, 9, 27, 35, 44, 19, 26, 33, 48, 38]
         let ups: [Int64] = [3, 4, 2, 5, 1, 1, 3, 4, 6, 2, 3, 4, 5, 4]
         for offset in 0..<14 {
@@ -83,7 +69,7 @@ enum WindowsSampleData {
             let date = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: base) ?? base
             return offset == 0 ? min(date, now.addingTimeInterval(-Double(60 * (24 - hour)))) : date
         }
-        let downloads = "\(NSHomeDirectory())/Downloads"
+        let downloads = StudioSampleData.downloads
         let rows: [(String, String, DownloadKind, Int64, Date, Bool)] = [
             ("BigBuckBunny-1080p.mp4", "https://test-streams.mux.dev/bbb/master.m3u8", .hls, 340_000_000, day(0, 20, 12), true),
             ("Q3-board-pack.pdf", "https://drive.company.com/files/Q3-board-pack.pdf", .http, 8_400_000, day(0, 18, 40), true),
@@ -106,7 +92,7 @@ enum WindowsSampleData {
 
     static let linuxFeed = RSSFeed(id: UUID(uuidString: "5D1A0000-0000-4000-A000-000000000001") ?? UUID(),
                                    url: "https://distrowatch.example/releases.rss", titlePattern: "ubuntu|fedora",
-                                   mustNotContain: "beta|rc", saveDirectory: "\(NSHomeDirectory())/Downloads/Disc images/Linux",
+                                   mustNotContain: "beta|rc", saveDirectory: "\(StudioSampleData.downloads)/Disc images/Linux",
                                    tag: "linux", name: "Linux ISO releases")
     static let blenderFeed = RSSFeed(id: UUID(uuidString: "5D1A0000-0000-4000-A000-000000000002") ?? UUID(),
                                      url: "https://studio.blender.example/films.rss", name: "Blender Studio")
