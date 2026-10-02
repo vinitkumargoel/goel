@@ -35,12 +35,15 @@ final class StudioDesignSystemTests: XCTestCase {
         for theme in RemotePortalTheme.allCases {
             XCTAssertEqual(RemotePortalTheme(storedValue: theme.storedValue), theme)
         }
-        XCTAssertEqual(RemotePortalTheme.allCases.map(\.storedValue),
-                       ["frost-light", "frost-dark", "dracula", "nord"])
-        XCTAssertEqual(RemotePortalTheme(storedValue: "light"), .frostLight)
-        XCTAssertEqual(RemotePortalTheme(storedValue: "system"), .frostDark)
-        XCTAssertEqual(RemotePortalTheme(storedValue: "aurora"), .frostDark)
-        XCTAssertEqual(RemotePortalTheme(storedValue: AppSettings().remoteTheme), .frostDark)
+        XCTAssertEqual(RemotePortalTheme.allCases.map(\.storedValue), ["auto", "light", "dark"])
+        // Pre-Studio values read back the way the portal treats them.
+        XCTAssertEqual(RemotePortalTheme(storedValue: "frost-light"), .auto)
+        XCTAssertEqual(RemotePortalTheme(storedValue: "frost-dark"), .auto)
+        XCTAssertEqual(RemotePortalTheme(storedValue: "dracula"), .dark)
+        XCTAssertEqual(RemotePortalTheme(storedValue: "nord"), .dark)
+        XCTAssertEqual(RemotePortalTheme(storedValue: "system"), .auto)
+        XCTAssertEqual(RemotePortalTheme(storedValue: "aurora"), .auto)
+        XCTAssertEqual(RemotePortalTheme(storedValue: AppSettings().remoteTheme), .auto)
     }
 
     func testToggleFlipsTheLookOnScreen() {

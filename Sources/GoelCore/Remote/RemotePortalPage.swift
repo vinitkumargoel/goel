@@ -13,7 +13,7 @@ extension RemoteRouter {
         <link rel="icon" type="image/svg+xml" href="\#(faviconDataURI)">
         <link rel="manifest" href="\#(manifestPath)">
         <link rel="apple-touch-icon" href="\#(iconPrefix)apple-touch-icon.png">
-        <meta name="theme-color" content="\#(themeColor(theme))">
+        \#(themeColorMeta(theme))
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-title" content="Goel°">
         <link rel="stylesheet" href="\#(PortalBundle.cssPath)">
@@ -110,8 +110,9 @@ extension RemoteRouter {
 
 /// Allowlists the theme token embedded into the page so a persisted value can't inject markup.
 enum AppThemeToken {
-    static let known: Set<String> = ["frost-light", "frost-dark", "dracula", "nord"]
+    /// Studio's `light` / `dark` / `auto`, plus the pre-Studio tokens the portal still maps.
+    static let known: Set<String> = ["light", "dark", "auto", "frost-light", "frost-dark", "dracula", "nord"]
     static func sanitize(_ token: String) -> String {
-        known.contains(token) ? token : "frost-dark"
+        known.contains(token) ? token : "auto"
     }
 }

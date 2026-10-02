@@ -34,18 +34,33 @@ extension RemoteRouter {
 
     static let manifestJSON = #"""
     {"name":"Goel° downloads","short_name":"Goel°","start_url":"/","scope":"/","display":"standalone",\#
-    "background_color":"#15171d","theme_color":"#15171d",\#
+    "background_color":"#f1f7f2","theme_color":"#f1f7f2",\#
     "icons":[{"src":"/icons/icon-192.png","sizes":"192x192","type":"image/png"},\#
     {"src":"/icons/icon-512.png","sizes":"512x512","type":"image/png"}]}
     """#
 
-    /// Matches each theme's `--bg-app`, so the installed app's title bar blends with the page.
+    /// Studio's canvas in each palette, so an installed app's title bar blends with the page.
+    static let lightCanvas = "#f1f7f2"
+    static let darkCanvas = "#121e18"
+
+    /// The palette a theme token paints with: the legacy light token is light, every other
+    /// legacy token is dark. `auto` has no single colour; see ``themeColorMeta(_:)``.
     static func themeColor(_ theme: String) -> String {
         switch theme {
-        case "frost-light": return "#dfe3ee"
-        case "dracula": return "#21222c"
-        case "nord": return "#2b303b"
-        default: return "#15171d"
+        case "light", "frost-light": return lightCanvas
+        default: return darkCanvas
+        }
+    }
+
+    /// `auto` (and the Frost pair, which the portal treats as auto) follows the device, so it
+    /// gets one `theme-color` per colour scheme instead of a fixed one.
+    static func themeColorMeta(_ theme: String) -> String {
+        switch theme {
+        case "auto", "frost-light", "frost-dark":
+            return #"<meta name="theme-color" media="(prefers-color-scheme: light)" content="\#(lightCanvas)">"#
+                + #"<meta name="theme-color" media="(prefers-color-scheme: dark)" content="\#(darkCanvas)">"#
+        default:
+            return #"<meta name="theme-color" content="\#(themeColor(theme))">"#
         }
     }
 }

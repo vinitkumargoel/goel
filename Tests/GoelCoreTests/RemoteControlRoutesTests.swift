@@ -348,8 +348,24 @@ final class RemoteControlRoutesTests: XCTestCase {
     func testPageShellLinksTheManifestAndCarriesTheLanguage() {
         let page = RemoteRouter.page(config: .init(token: "secret", theme: "nord"))
         XCTAssertTrue(page.contains(#"rel="manifest""#))
-        XCTAssertTrue(page.contains(##"name="theme-color" content="#2b303b""##))
+        XCTAssertTrue(page.contains(##"name="theme-color" content="#121e18""##))
         XCTAssertTrue(page.contains(#""language":"#) || page.contains(#""language" :"#))
+    }
+
+    /// `auto` follows the device, so the title-bar colour is given per colour scheme; an unknown
+    /// token can't reach the markup and falls back to `auto`.
+    func testPageShellThemeColourFollowsTheDeviceForAuto() {
+        let auto = RemoteRouter.page(config: .init(token: "secret", theme: "auto"))
+        XCTAssertTrue(auto.contains(#"data-theme="auto""#))
+        XCTAssertTrue(auto.contains(##"media="(prefers-color-scheme: light)" content="#f1f7f2""##))
+        XCTAssertTrue(auto.contains(##"media="(prefers-color-scheme: dark)" content="#121e18""##))
+
+        let light = RemoteRouter.page(config: .init(token: "secret", theme: "light"))
+        XCTAssertTrue(light.contains(##"name="theme-color" content="#f1f7f2""##))
+
+        let hostile = RemoteRouter.page(config: .init(token: "secret", theme: #""><script>x</script>"#))
+        XCTAssertTrue(hostile.contains(#"data-theme="auto""#))
+        XCTAssertFalse(hostile.contains("<script>x</script>"))
     }
 }
 

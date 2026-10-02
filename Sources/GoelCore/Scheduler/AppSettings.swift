@@ -346,7 +346,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         remotePasswordHash: String = "",
         remoteReadOnly: Bool = false,
         remoteSessionMinutes: Int = 120,
-        remoteTheme: String = "frost-dark",
+        remoteTheme: String = "auto",
         rssFeeds: [RSSFeed] = [],
         rssPollIntervalMinutes: Int = 30,
         backupKeepCount: Int = 20,
@@ -622,7 +622,7 @@ public struct AppSettings: Codable, Sendable, Hashable {
         remotePasswordHash = try c.decodeIfPresent(String.self, forKey: .remotePasswordHash) ?? ""
         remoteReadOnly = try c.decodeIfPresent(Bool.self, forKey: .remoteReadOnly) ?? false
         remoteSessionMinutes = try c.decodeIfPresent(Int.self, forKey: .remoteSessionMinutes) ?? 120
-        remoteTheme = try c.decodeIfPresent(String.self, forKey: .remoteTheme) ?? "frost-dark"
+        remoteTheme = try c.decodeIfPresent(String.self, forKey: .remoteTheme) ?? "auto"
         rssFeeds = try c.decodeIfPresent([RSSFeed].self, forKey: .rssFeeds) ?? []
         rssPollIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .rssPollIntervalMinutes) ?? 30
         backupKeepCount = try c.decodeIfPresent(Int.self, forKey: .backupKeepCount) ?? 20

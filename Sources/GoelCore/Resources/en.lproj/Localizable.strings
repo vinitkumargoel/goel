@@ -1145,6 +1145,7 @@
 "Manual" = "Manual";
 "Mark All as Read" = "Mark All as Read";
 "Match all or any conditions" = "Match all or any conditions";
+"Match the device" = "Match the device";
 "Matches" = "Matches";
 "Matches the rule" = "Matches the rule";
 "Matches · %@" = "Matches · %@";
@@ -2046,7 +2047,6 @@
 "The old database was moved aside as “%@”. Quit and reopen Goel° to start fresh." = "The old database was moved aside as “%@”. Quit and reopen Goel° to start fresh.";
 "The page couldn’t be loaded: %@" = "The page couldn’t be loaded: %@";
 "The partial file was moved or deleted. Retry starts the download from the beginning." = "The partial file was moved or deleted. Retry starts the download from the beginning.";
-"The portal’s look. Independent of the app theme — the desktop and the browser each keep their own." = "The portal’s look. Independent of the app theme — the desktop and the browser each keep their own.";
 "The post-download script failed or couldn’t be started for “%@”." = "The post-download script failed or couldn’t be started for “%@”.";
 "The remote file changed since the download started" = "The remote file changed since the download started";
 "The response was larger than %@ — refused." = "The response was larger than %@ — refused.";
@@ -2269,6 +2269,7 @@
 "Welcome to Goel°" = "Welcome to Goel°";
 "What Safari can’t do" = "What Safari can’t do";
 "What happens to a file once it finishes." = "What happens to a file once it finishes.";
+"What the portal shows until someone picks a theme in their browser. Separate from this app’s appearance." = "What the portal shows until someone picks a theme in their browser. Separate from this app’s appearance.";
 "What this app never does" = "What this app never does";
 "What to do with %@" = "What to do with %@";
 "What you may do with Goel°, and how to license it for work." = "What you may do with Goel°, and how to license it for work.";

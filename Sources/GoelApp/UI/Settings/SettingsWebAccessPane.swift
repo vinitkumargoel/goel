@@ -174,7 +174,7 @@ struct WebAccessSettingsPane: View {
     private var lookCard: some View {
         SettingsCard(title: L10n.t("Theme & API"), symbol: "paintpalette") {
             SettingRow(L10n.t("Web theme"),
-                       detail: L10n.t("The portal’s look. Independent of the app theme — the desktop and the browser each keep their own.")) {
+                       detail: L10n.t("What the portal shows until someone picks a theme in their browser. Separate from this app’s appearance.")) {
                 SettingsSelect(selection: $vm.remoteTheme,
                                options: RemotePortalTheme.allCases.map { SettingsOption($0, $0.title) },
                                width: 140, accessibilityName: L10n.t("Web portal theme"))
