@@ -75,9 +75,10 @@ private struct RSSFeedRow: View {
                     shape.fill(Studio.Palette.segment)
                 }
             }
+            .studioButtonFocusRing(shape: RoundedRectangle(cornerRadius: Studio.Radius.artSmall, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.studioPlain)
         .onHover { hovered = $0 }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(feed.displayName)
@@ -102,16 +103,21 @@ struct RSSArticleColumn: View {
             ScrollView {
                 LazyVStack(spacing: Studio.Space.xs) {
                     ForEach(items, id: \.key) { item in
-                        RSSArticleRow(item: item,
-                                      matches: feed.map {
-                                          RSSRuleMatcher.matches(title: item.title, feed: $0)
-                                      } ?? false,
-                                      unread: !data.readKeys.contains(item.key),
-                                      isSelected: data.selectedArticle == item.key,
-                                      ruleName: feed?.displayName)
-                            .onTapGesture { actions.selectArticle(item.key) }
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityAction { actions.selectArticle(item.key) }
+                        // A button, so Tab and Space reach an article as well as a click does.
+                        Button { actions.selectArticle(item.key) } label: {
+                            RSSArticleRow(item: item,
+                                          matches: feed.map {
+                                              RSSRuleMatcher.matches(title: item.title, feed: $0)
+                                          } ?? false,
+                                          unread: !data.readKeys.contains(item.key),
+                                          isSelected: data.selectedArticle == item.key,
+                                          ruleName: feed?.displayName)
+                                .studioButtonFocusRing(shape: RoundedRectangle(cornerRadius: Studio.Radius.compactCard,
+                                                                               style: .continuous))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.studioPlain)
+                        .accessibilityAddTraits(.isButton)
                     }
                 }
                 .padding(Studio.Space.sm)

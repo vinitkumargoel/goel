@@ -200,12 +200,19 @@ struct SettingsSelect<Value: Hashable>: View {
 
     @State private var isOpen = false
     @State private var hovered = false
+    @State private var highlighted: Int?
     @Environment(\.settingRowName) private var rowName
     @Environment(\.isEnabled) private var isEnabled
     @FocusState private var focused: Bool
 
     private var currentTitle: String {
         options.first { $0.value == selection }?.title ?? ""
+    }
+
+    private func pick(_ value: Value) {
+        selection = value
+        isOpen = false
+        onSelect(value)
     }
 
     private var spokenName: String {
@@ -242,24 +249,32 @@ struct SettingsSelect<Value: Hashable>: View {
         .focused($focused)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovered = isEnabled && $0 }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spokenName)
-        .accessibilityValue(currentTitle)
+        // VoiceOver meets a pop-up button, as it would on an NSPopUpButton.
+        .accessibilityRepresentation {
+            Picker(spokenName, selection: Binding(get: { selection }, set: pick)) {
+                ForEach(options) { option in
+                    Text(option.title).tag(option.value)
+                }
+            }
+        }
         .accessibilityHint(L10n.t("Activate to choose a different option."))
-        .accessibilityAddTraits(.isButton)
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 1) {
-                ForEach(options) { option in
-                    StudioMenuRow(title: option.title, isChecked: option.value == selection) {
-                        selection = option.value
-                        isOpen = false
-                        onSelect(option.value)
+                ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+                    StudioMenuRow(title: option.title, isChecked: option.value == selection,
+                                  isHighlighted: highlighted == index) {
+                        pick(option.value)
                     }
                 }
             }
             .padding(Studio.Space.xs)
             .frame(minWidth: max(170, width ?? 0), alignment: .leading)
             .background(Studio.Palette.cardRaised)
+            .studioMenuKeyboard(titles: options.map(\.title),
+                                initial: options.firstIndex { $0.value == selection },
+                                highlighted: $highlighted,
+                                onActivate: { pick(options[$0].value) },
+                                onClose: { isOpen = false })
         }
     }
 }
@@ -290,7 +305,6 @@ private struct SettingsRadioButton: View {
     let action: () -> Void
     @State private var hovered = false
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         Button(action: action) {
@@ -305,14 +319,14 @@ private struct SettingsRadioButton: View {
                     }
                 }
                 .frame(width: 17, height: 17)
-                .studioFocusRing(isFocused, shape: Circle())
+                .studioButtonFocusRing(shape: Circle())
                 Text(title)
                     .studioFont(.small)
                     .foregroundStyle(Studio.Palette.ink)
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.studioPlain)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovered = isEnabled && $0 }
         .accessibilityLabel(title)

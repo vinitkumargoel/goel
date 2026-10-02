@@ -196,7 +196,6 @@ private struct StudioSegmentButton<Value: Hashable>: View {
     let action: () -> Void
 
     @State private var hovered = false
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size == .small ? 7 : Studio.Radius.small, style: .continuous)
@@ -223,12 +222,13 @@ private struct StudioSegmentButton<Value: Hashable>: View {
                         .matchedGeometryEffect(id: "studio.segment.selection", in: namespace)
                 }
             }
-            .contentShape(shape)
+            .studioButtonFocusRing(shape: shape)
+            // Reaches over the track's padding: a small segment is 22 pt to see, 26 to click.
+            .studioHitOutset(2)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.studioPlain)
         .disabled(!segment.isEnabled)
         .opacity(segment.isEnabled ? 1 : 0.45)
-        .studioFocusRing(isFocused, shape: shape)
         .onHover { hovered = segment.isEnabled && $0 }
         .modifier(StudioOptionalHelp(text: segment.help))
         .modifier(StudioSegmentActions(actions: segment.actions))

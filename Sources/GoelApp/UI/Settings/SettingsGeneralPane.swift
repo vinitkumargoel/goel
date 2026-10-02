@@ -158,7 +158,6 @@ private struct SettingsAppearanceTile: View {
     let action: () -> Void
 
     @State private var hovered = false
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.well, style: .continuous)
@@ -172,7 +171,7 @@ private struct SettingsAppearanceTile: View {
                                            : hovered ? Studio.Palette.accentLine : Studio.Palette.hairline,
                                            lineWidth: isSelected ? 2 : 1)
                     }
-                    .studioFocusRing(isFocused, shape: shape)
+                    .studioButtonFocusRing(shape: shape)
                 HStack(spacing: Studio.Space.xxs) {
                     Image(systemName: mode.symbol)
                         .studioFont(.ui, size: 11, weight: 650)
@@ -184,7 +183,7 @@ private struct SettingsAppearanceTile: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.studioPlain)
         .onHover { hovered = $0 }
         .accessibilityLabel(mode.title)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)

@@ -145,6 +145,7 @@ struct StudioToggleRow: View {
     var subtitle: String?
     var isIndented = false
     @Binding var isOn: Bool
+    @Environment(\.isEnabled) private var isEnabled
 
     init(_ title: String, subtitle: String? = nil, isIndented: Bool = false, isOn: Binding<Bool>) {
         self.title = title
@@ -160,6 +161,9 @@ struct StudioToggleRow: View {
                 .toggleStyle(.studioSwitch)
                 .accessibilityLabel(title)
         }
+        // A click on the title or subtitle flips the switch, as on a native toggle's label.
+        .contentShape(Rectangle())
+        .onTapGesture { if isEnabled { isOn.toggle() } }
     }
 }
 
@@ -173,19 +177,17 @@ struct StudioSwitchToggleStyle: ToggleStyle {
 private struct StudioSwitchBody: View {
     let configuration: ToggleStyleConfiguration
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.isFocused) private var isFocused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: Studio.Space.s) {
+            // The label flips the switch too, as a native toggle's does.
             configuration.label
                 .studioFont(.body)
                 .foregroundStyle(Studio.Palette.ink)
-            Button {
-                if reduceMotion { configuration.isOn.toggle() } else {
-                    withAnimation(Studio.Motion.quick) { configuration.isOn.toggle() }
-                }
-            } label: {
+                .contentShape(Rectangle())
+                .onTapGesture { if isEnabled { toggle() } }
+            Button(action: toggle) {
                 ZStack(alignment: configuration.isOn ? .trailing : .leading) {
                     Capsule().fill(configuration.isOn ? Studio.Palette.accent : Studio.Palette.hairlineStrong)
                     Circle()
@@ -194,14 +196,21 @@ private struct StudioSwitchBody: View {
                         .padding(2)
                 }
                 .frame(width: 34, height: 20)
-                .studioFocusRing(isFocused, shape: Capsule())
-                .contentShape(Capsule())
+                .studioButtonFocusRing(shape: Capsule())
+                // 34 × 20 to see, 38 × 24 to click.
+                .studioHitOutset(2)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.studioPlain)
             .opacity(isEnabled ? 1 : 0.45)
             .accessibilityRepresentation {
                 Toggle(isOn: configuration.$isOn) { configuration.label }
             }
+        }
+    }
+
+    private func toggle() {
+        if reduceMotion { configuration.isOn.toggle() } else {
+            withAnimation(Studio.Motion.quick) { configuration.isOn.toggle() }
         }
     }
 }

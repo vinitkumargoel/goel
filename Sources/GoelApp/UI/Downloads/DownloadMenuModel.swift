@@ -110,70 +110,116 @@ private struct DownloadMenuItem: View {
 
 /// Draws nodes in the Studio menu look (`.menu` / `.mi`): the header's popover menus, and the
 /// still rendition of a context menu in snapshots. `onPick` runs after an item's action, to
-/// close the popover.
+/// close the popover. The keyboard steps through the items that act (``MenuKeyboard``).
 struct DownloadStudioMenu: View {
     let nodes: [DownloadMenuNode]
     /// The narrowest the menu draws; it grows to fit its longest item.
     var width: CGFloat? = 240
     var onPick: () -> Void = {}
 
+    @State private var highlighted: Int?
+
     var body: some View {
+        let lines = DownloadStudioMenuLine.flatten(nodes)
+        let actionable = lines.indices.filter { lines[$0].isActionable }
         VStack(alignment: .leading, spacing: 0) {
-            DownloadStudioMenuRows(nodes: nodes, onPick: onPick)
+            ForEach(lines.indices, id: \.self) { index in
+                line(lines[index], isHighlighted: highlighted.map { actionable[$0] == index } ?? false)
+            }
         }
         .padding(Studio.Space.xs)
         // A minimum, not a cap: a long item ("Remove 3 and Move Files to Trash") widens the menu
         // instead of truncating.
         .frame(minWidth: width, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
-    }
-}
-
-private struct DownloadStudioMenuRows: View {
-    let nodes: [DownloadMenuNode]
-    let onPick: () -> Void
-
-    var body: some View {
-        ForEach(nodes.indices, id: \.self) { index in
-            row(nodes[index], isFirst: index == 0)
-        }
+        // A pull-down menu: nothing is highlighted until the first arrow, as in a native menu.
+        .studioMenuKeyboard(titles: actionable.map { lines[$0].title }, initial: nil,
+                            highlighted: $highlighted,
+                            onActivate: { lines[actionable[$0]].activate(onPick: onPick) },
+                            onClose: onPick)
     }
 
     @ViewBuilder
-    private func row(_ node: DownloadMenuNode, isFirst: Bool) -> some View {
-        switch node.kind {
-        case .button(_, let isEnabled, let action):
-            DownloadStudioMenuRow(node: node, isChecked: false, showsCheckColumn: false) {
-                action()
-                onPick()
-            }
-            .disabled(!isEnabled)
-        case .toggle(let isOn, let set):
-            DownloadStudioMenuRow(node: node, isChecked: isOn, showsCheckColumn: true) {
-                set(!isOn)
-                onPick()
-            }
-        case .submenu:
-            DownloadStudioMenuRow(node: node, isChecked: false, showsCheckColumn: false,
-                                  trailingOverride: "›") {}
-        case .section(let children):
-            Text(node.title)
+    private func line(_ line: DownloadStudioMenuLine, isHighlighted: Bool) -> some View {
+        switch line {
+        case .header(let title, let isFirst):
+            Text(title)
                 .studioFont(.eyebrow)
                 .foregroundStyle(Studio.Palette.ink3)
                 .padding(.horizontal, Studio.Space.sm)
                 .padding(.top, isFirst ? 5 : 7)
                 .padding(.bottom, 3)
                 .accessibilityAddTraits(.isHeader)
-            AnyView(DownloadStudioMenuRows(nodes: children, onPick: onPick))
         case .divider:
             // Strong: menus sit on `cardRaised`, where the plain hairline vanishes in dark.
             StudioDivider(strong: true)
                 .padding(.vertical, 5)
                 .padding(.horizontal, Studio.Space.xs)
-        case .media(let task, let vm):
-            AnyView(DownloadStudioMenuRows(nodes: MediaMenuNodes.make(task: task, vm: vm, center: vm.mediaJobs),
-                                           onPick: onPick))
+        case .row(let node):
+            switch node.kind {
+            case .button(_, let isEnabled, _):
+                DownloadStudioMenuRow(node: node, isChecked: false, showsCheckColumn: false,
+                                      isHighlighted: isHighlighted) { line.activate(onPick: onPick) }
+                .disabled(!isEnabled)
+            case .toggle(let isOn, _):
+                DownloadStudioMenuRow(node: node, isChecked: isOn, showsCheckColumn: true,
+                                      isHighlighted: isHighlighted) { line.activate(onPick: onPick) }
+            default:
+                DownloadStudioMenuRow(node: node, isChecked: false, showsCheckColumn: false,
+                                      trailingOverride: "›") {}
+            }
         }
+    }
+}
+
+/// One drawn line of a ``DownloadStudioMenu``: sections and media items flattened in order.
+enum DownloadStudioMenuLine {
+    case header(String, isFirst: Bool)
+    case divider
+    /// A button, a toggle, or a submenu (drawn with a › and no action in a popover).
+    case row(DownloadMenuNode)
+
+    @MainActor
+    static func flatten(_ nodes: [DownloadMenuNode]) -> [DownloadStudioMenuLine] {
+        nodes.enumerated().flatMap { index, node -> [DownloadStudioMenuLine] in
+            switch node.kind {
+            case .section(let children): return [.header(node.title, isFirst: index == 0)] + flatten(children)
+            case .divider: return [.divider]
+            case .media(let task, let vm):
+                return flatten(MediaMenuNodes.make(task: task, vm: vm, center: vm.mediaJobs))
+            case .button, .toggle, .submenu: return [.row(node)]
+            }
+        }
+    }
+
+    var title: String {
+        if case .row(let node) = self { return node.title }
+        return ""
+    }
+
+    /// An enabled button or a toggle: something ↩ can pick.
+    var isActionable: Bool {
+        guard case .row(let node) = self else { return false }
+        switch node.kind {
+        case .button(_, let isEnabled, _): return isEnabled
+        case .toggle: return true
+        default: return false
+        }
+    }
+
+    var isChecked: Bool {
+        if case .row(let node) = self, case .toggle(let isOn, _) = node.kind { return isOn }
+        return false
+    }
+
+    func activate(onPick: () -> Void) {
+        guard case .row(let node) = self else { return }
+        switch node.kind {
+        case .button(_, true, let action): action()
+        case .toggle(let isOn, let set): set(!isOn)
+        default: return
+        }
+        onPick()
     }
 }
 
@@ -183,27 +229,28 @@ private struct DownloadStudioMenuRow: View {
     let isChecked: Bool
     let showsCheckColumn: Bool
     var trailingOverride: String?
+    var isHighlighted = false
     let action: () -> Void
 
     @State private var hovered = false
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let tint = node.isDestructive ? Studio.Palette.bad : Studio.Palette.ink
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
+        let lit = hovered || isHighlighted
         Button(action: action) {
             HStack(spacing: Studio.Space.sm) {
                 if showsCheckColumn {
                     Image(systemName: "checkmark")
                         .font(StudioFonts.font(.ui, size: 11.5, weight: 700))
-                        .foregroundStyle(hovered ? Studio.Palette.onAccent : Studio.Palette.accent)
+                        .foregroundStyle(lit ? Studio.Palette.onAccent : Studio.Palette.accent)
                         .opacity(isChecked ? 1 : 0)
                         .frame(width: 15)
                 } else if let symbol = node.symbol {
                     Image(systemName: symbol)
                         .font(StudioFonts.font(.ui, size: 12.5, weight: 600))
-                        .foregroundStyle(hovered ? Studio.Palette.onAccent
+                        .foregroundStyle(lit ? Studio.Palette.onAccent
                                          : node.isDestructive ? Studio.Palette.bad : Studio.Palette.ink3)
                         .frame(width: 15)
                 }
@@ -214,17 +261,17 @@ private struct DownloadStudioMenuRow: View {
                 if let trailing = trailingOverride ?? node.trailing {
                     Text(trailing)
                         .studioFont(.monoSmall)
-                        .foregroundStyle(hovered ? Studio.Palette.onAccent : Studio.Palette.ink3)
+                        .foregroundStyle(lit ? Studio.Palette.onAccent : Studio.Palette.ink3)
                 }
             }
-            .foregroundStyle(hovered ? Studio.Palette.onAccent : tint)
+            .foregroundStyle(lit ? Studio.Palette.onAccent : tint)
             .padding(.horizontal, Studio.Space.sm)
             .frame(minHeight: 28)
-            .background(hovered ? Studio.Palette.accent : .clear, in: shape)
-            .studioFocusRing(isFocused, shape: shape)
+            .background(lit ? Studio.Palette.accent : .clear, in: shape)
+            .studioButtonFocusRing(shape: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.studioPlain)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovered = isEnabled && $0 }
         .accessibilityLabel(node.title)

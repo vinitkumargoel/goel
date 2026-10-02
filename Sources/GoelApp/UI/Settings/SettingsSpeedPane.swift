@@ -131,7 +131,6 @@ private struct ProfileCard: View {
     let action: () -> Void
 
     @State private var hovered = false
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
@@ -173,10 +172,10 @@ private struct ProfileCard: View {
                     shape.strokeBorder(Studio.Palette.accentLine, lineWidth: 1)
                 }
             }
-            .studioFocusRing(isFocused, shape: shape)
+            .studioButtonFocusRing(shape: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.studioPlain)
         .onHover { hovered = $0 }
         .accessibilityLabel(profile.name)
         .accessibilityValue(speedLine)

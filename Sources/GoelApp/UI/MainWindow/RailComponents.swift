@@ -34,7 +34,6 @@ struct RailRow<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     @State private var hovered = false
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
@@ -62,10 +61,10 @@ struct RailRow<Trailing: View>: View {
                     shape.fill(Studio.Palette.segment)
                 }
             }
+            .studioButtonFocusRing(shape: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
-        .studioFocusRing(isFocused, shape: shape)
+        .buttonStyle(.studioPlain)
         .onHover { hovered = $0 }
         .help(help ?? title)
         .accessibilityElement(children: .ignore)
@@ -172,6 +171,16 @@ extension ServerReachability {
         case .unknown: return Studio.Palette.ink3
         case .online: return Studio.Palette.good
         case .offline: return Studio.Palette.bad
+        }
+    }
+
+    /// The glyph that says the same as the colour, for Differentiate Without Colour: each state
+    /// has its own shape.
+    var studioSymbol: String {
+        switch self {
+        case .unknown: return "ellipsis.circle"
+        case .online: return "checkmark.circle.fill"
+        case .offline: return "xmark.circle.fill"
         }
     }
 }

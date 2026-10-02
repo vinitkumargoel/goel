@@ -55,6 +55,8 @@ struct DownloadsContent: View {
             // `defaultFocus` alone is not enough: the queue is restored from disk asynchronously, so
             // this view mounts after the window's first-appearance focus pass has already run.
             .task { listFocused = true }
+            // The confirm dialog took the keyboard; give it back once it closes.
+            .onChange(of: vm.confirmRequest == nil) { _, closed in if closed { listFocused = true } }
             .quickLookPreview($quickLookItem)
             .environment(\.quickLookAction, QuickLookAction(item: $quickLookItem))
             .accessibilityElement(children: .contain)
@@ -73,11 +75,22 @@ struct DownloadsContent: View {
             .focused($listFocused)
             .onKeyPress { press in handleKey(press) }
             // Delete removes from the list (undoable); ⌘⌫ (see `handleKey`) is the one that trashes files.
-            .onDeleteCommand { vm.removeSelected(deleteData: false) }
+            .onDeleteCommand { if vm.confirmRequest == nil { vm.removeSelected(deleteData: false) } }
             .accessibilityHidden(true)
     }
 
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        // The confirm dialog is modal: nothing reaches the queue behind it.
+        guard vm.confirmRequest == nil else { return .ignored }
+        let result = handleNavigationKey(press)
+        // Only a move speaks: the hidden key target gives VoiceOver nothing to follow.
+        if result == .handled, [.upArrow, .downArrow, .leftArrow, .rightArrow, .home, .end].contains(press.key) {
+            A11yAnnouncer.announce(vm.keyboardSelectionAnnouncement)
+        }
+        return result
+    }
+
+    private func handleNavigationKey(_ press: KeyPress) -> KeyPress.Result {
         let extending = press.modifiers.contains(.shift)
         switch press.key {
         case .upArrow, .downArrow:

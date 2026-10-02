@@ -167,7 +167,6 @@ private struct EmptyStateWay: View {
     let action: () -> Void
 
     @State private var hovering = false
-    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Studio.Radius.boardCard, style: .continuous)
@@ -199,10 +198,10 @@ private struct EmptyStateWay: View {
             .background(shape.fill(Studio.Palette.card).studioElevation(hovering ? .floating : .card))
             .overlay(shape.strokeBorder(isPrimary || hovering ? Studio.Palette.accentLine : Studio.Palette.cardEdge,
                                         lineWidth: isPrimary ? 1.5 : 1))
+            .studioButtonFocusRing(shape: shape)
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
-        .studioFocusRing(isFocused, shape: shape)
+        .buttonStyle(.studioPlain)
         .onHover { hovering = $0 }
         .animation(Studio.Motion.quick, value: hovering)
         .accessibilityElement(children: .ignore)

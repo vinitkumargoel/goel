@@ -54,6 +54,15 @@ extension AppViewModel {
         return true
     }
 
+    /// What VoiceOver says after an arrow, Home or End key moves the selection: the keyboard
+    /// target is a hidden view, so nothing else would speak. The row it landed on, by identity
+    /// only (no ticking progress), and the count once several are selected.
+    var keyboardSelectionAnnouncement: String {
+        guard let task = selectedTask else { return "" }
+        let count = selection.count
+        return A11y.sentence(task.accessibilityIdentityLabel, count > 1 ? L10n.t("%d selected", count) : nil)
+    }
+
     /// Double-click and Return: a finished file opens, anything else shows its folder.
     func openOrReveal(_ task: DownloadTask) {
         if task.status == .completed { openFile(task) } else { revealInFinder(task) }

@@ -17,6 +17,8 @@ struct DownloadTableRow: DownloadHoverable {
     let isSelected: Bool
     /// Selection is dimmer while focus is elsewhere (the omnibox), so it's clear where arrows go.
     let listFocused: Bool
+    /// The row the arrow keys are on, while the list has keyboard focus.
+    var showsFocusRing = false
     var isHovered = false
     let speed: SpeedSample
     /// Non-nil only for a selected row; `count > 1` means the context menu acts on the selection.
@@ -34,6 +36,7 @@ struct DownloadTableRow: DownloadHoverable {
             && lhs.reorderable == rhs.reorderable
             && lhs.isSelected == rhs.isSelected
             && lhs.listFocused == rhs.listFocused
+            && lhs.showsFocusRing == rhs.showsFocusRing
             && lhs.isHovered == rhs.isHovered
             && lhs.speed == rhs.speed
             && lhs.summary == rhs.summary
@@ -149,7 +152,9 @@ struct DownloadTableRow: DownloadHoverable {
         } else {
             fill = .clear
         }
+        // The ring sits inside the row, so the neighbours drawn after it cannot cover it.
         return shape.fill(fill)
+            .studioFocusRing(showsFocusRing, shape: shape.inset(by: 3))
     }
 
     // MARK: Name

@@ -7,7 +7,8 @@ import GoelCore
 ///     Dropdown(selection: $start, items: [.option("now", "Now"), .separator, .option("later", "Later")],
 ///              accessibilityName: "Start") { picked in … }
 ///
-/// Settings panes use ``SettingsSelect``, which draws the same field.
+/// Settings panes use ``SettingsSelect``, which draws the same field. The open menu follows
+/// ``MenuKeyboard``; VoiceOver meets it as a pop-up button (a `Picker` stands in for it).
 struct Dropdown<Value: Hashable>: View {
     enum Item {
         case option(Value, String)
@@ -24,6 +25,7 @@ struct Dropdown<Value: Hashable>: View {
 
     @State private var isOpen = false
     @State private var hovered = false
+    @State private var highlighted: Int?
     @FocusState private var focused: Bool
 
     @Environment(\.settingRowName) private var rowName
@@ -44,6 +46,17 @@ struct Dropdown<Value: Hashable>: View {
             return title
         }
         return ""
+    }
+
+    /// The pickable options, in order: what the keyboard steps through.
+    private var options: [(value: Value, title: String)] {
+        items.compactMap { if case let .option(value, title) = $0 { return (value, title) } else { return nil } }
+    }
+
+    private func pick(_ value: Value) {
+        selection = value
+        isOpen = false
+        onSelect(value)
     }
 
     private var spokenName: String {
@@ -82,31 +95,48 @@ struct Dropdown<Value: Hashable>: View {
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovered = isEnabled && $0 }
         .help(currentLabel)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spokenName)
-        .accessibilityValue(currentLabel)
+        .accessibilityRepresentation {
+            Picker(spokenName, selection: Binding(get: { selection }, set: pick)) {
+                ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                    Text(option.title).tag(option.value)
+                }
+            }
+        }
         .accessibilityHint(L10n.t("Activate to choose a different option."))
-        .accessibilityAddTraits(.isButton)
-        .popover(isPresented: $isOpen, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 1) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    switch item {
-                    case .separator:
-                        StudioDivider(strong: true)
-                            .padding(.vertical, Studio.Space.xxs)
-                    case let .option(value, title):
-                        StudioMenuRow(title: title, isChecked: value == selection) {
-                            selection = value
-                            isOpen = false
-                            onSelect(value)
-                        }
+        .popover(isPresented: $isOpen, arrowEdge: .bottom) { menu }
+    }
+
+    private var menu: some View {
+        let options = self.options
+        // Each item's place among the options, or nil for a separator.
+        var next = 0
+        let ordinals: [Int?] = items.map { item in
+            guard case .option = item else { return nil }
+            defer { next += 1 }
+            return next
+        }
+        return VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                switch item {
+                case .separator:
+                    StudioDivider(strong: true)
+                        .padding(.vertical, Studio.Space.xxs)
+                case let .option(value, title):
+                    StudioMenuRow(title: title, isChecked: value == selection,
+                                  isHighlighted: highlighted != nil && highlighted == ordinals[index]) {
+                        pick(value)
                     }
                 }
             }
-            .padding(Studio.Space.xs)
-            .frame(minWidth: max(170, width ?? 0), alignment: .leading)
-            .background(Studio.Palette.cardRaised)
         }
+        .padding(Studio.Space.xs)
+        .frame(minWidth: max(170, width ?? 0), alignment: .leading)
+        .background(Studio.Palette.cardRaised)
+        .studioMenuKeyboard(titles: options.map(\.title),
+                            initial: options.firstIndex { $0.value == selection },
+                            highlighted: $highlighted,
+                            onActivate: { pick(options[$0].value) },
+                            onClose: { isOpen = false })
     }
 }
 

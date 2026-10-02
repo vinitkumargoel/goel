@@ -80,6 +80,7 @@ private struct RailServerRow: View {
     var onPick: () -> Void
 
     @State private var hovered = false
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     var body: some View {
         let selected = vm.selectedServer == server.id
@@ -148,20 +149,38 @@ private struct RailServerRow: View {
         .contextMenu { RailServerMenu(server: server) }
     }
 
+    /// Online, offline and checking differ in shape as well as colour: a haloed dot, a cross, a
+    /// hollow ring; with Differentiate Without Colour on, a tick, a cross and an ellipsis.
+    @ViewBuilder
     private func liveDot(_ reachability: ServerReachability, detail: String?) -> some View {
         let help = reachability == .offline
             ? (detail.map { L10n.t("Offline — %@", $0) } ?? L10n.t("Offline"))
             : reachability.help
-        return Circle()
-            .fill(reachability.studioTint)
-            .frame(width: 7, height: 7)
-            .background {
-                if reachability == .online {
-                    Circle().fill(Studio.Palette.goodSoft).frame(width: 13, height: 13)
+        Group {
+            if differentiateWithoutColor {
+                Image(systemName: reachability.studioSymbol)
+                    .font(StudioFonts.font(.ui, size: 11, weight: 650))
+                    .foregroundStyle(reachability.studioTint)
+            } else {
+                switch reachability {
+                case .online:
+                    Circle()
+                        .fill(reachability.studioTint)
+                        .frame(width: 7, height: 7)
+                        .background { Circle().fill(Studio.Palette.goodSoft).frame(width: 13, height: 13) }
+                case .offline:
+                    Image(systemName: "xmark")
+                        .font(StudioFonts.font(.ui, size: 9, weight: 800))
+                        .foregroundStyle(reachability.studioTint)
+                case .unknown:
+                    Circle()
+                        .strokeBorder(reachability.studioTint, lineWidth: 1.5)
+                        .frame(width: 7, height: 7)
                 }
             }
-            .frame(width: 13, height: 13)
-            .help(help)
+        }
+        .frame(width: 13, height: 13)
+        .help(help)
     }
 
     @ViewBuilder

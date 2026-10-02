@@ -184,7 +184,7 @@ struct DownloadTableHeader: View {
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, Studio.Space.m)
-        .frame(height: 32)
+        .frame(minHeight: 32)
         .studioFont(Studio.TextStyle.tiny.weight(650))
         .foregroundStyle(Studio.Palette.ink3)
         .contentShape(Rectangle())

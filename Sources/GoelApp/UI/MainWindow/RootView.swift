@@ -50,6 +50,10 @@ struct RootView: View {
             .onGeometryChange(for: CGFloat.self) { ($0.size.width / 10).rounded() * 10 } action: { windowWidth = $0 }
             .onChange(of: forcedBottom, initial: true) { _, forced in vm.detailDockForcedBottom = forced }
             .studioWindowBackground()
+            // The confirm dialog is modal: the window behind it takes no clicks, keys or focus,
+            // and VoiceOver stays inside the dialog.
+            .disabled(vm.confirmRequest != nil)
+            .accessibilityHidden(vm.confirmRequest != nil)
         return withSheets(withObservers(withOverlays(framed)))
     }
 
