@@ -28,8 +28,8 @@ enum DetailPanelHeight {
     }
 }
 
-/// The divider above the bottom panel doubles as its resize grip: drag it, arrow-key it when
-/// focused, or adjust it with VoiceOver.
+/// The hairline above the bottom dock doubles as its resize grip: drag it, arrow-key it when
+/// focused, or adjust it with VoiceOver. A small grabber appears on hover and focus.
 struct DetailPanelResizeHandle: View {
     /// The stored preference; written once per drag, not on every frame.
     @Binding var storedHeight: Double
@@ -40,31 +40,41 @@ struct DetailPanelResizeHandle: View {
 
     @State private var dragStartHeight: Double?
     @State private var isCursorPushed = false
+    @State private var hovered = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        Divider()
+        StudioDivider(strong: hovered || isFocused || liveHeight != nil)
             .overlay {
-                Rectangle()
-                    .fill(isFocused ? Theme.accent.opacity(0.6) : Color.clear)
-                    .frame(height: isFocused ? 3 : 9)
-                    .frame(height: 9)
-                    .contentShape(Rectangle())
-                    .onHover { setCursor($0) }
-                    .onDisappear { setCursor(false) }
-                    .gesture(drag)
-                    .focusable()
-                    .focusEffectDisabled()
-                    .focused($isFocused)
-                    .onKeyPress(.upArrow) { nudge(by: DetailPanelHeight.step); return .handled }
-                    .onKeyPress(.downArrow) { nudge(by: -DetailPanelHeight.step); return .handled }
-                    .accessibilityElement()
-                    .accessibilityLabel(L10n.t("Detail panel height"))
-                    .accessibilityValue(L10n.t("%d points", Int(displayedHeight)))
-                    .accessibilityAdjustableAction { direction in
-                        nudge(by: direction == .increment ? DetailPanelHeight.step : -DetailPanelHeight.step)
+                ZStack {
+                    Rectangle().fill(Color.clear)
+                    if hovered || isFocused || liveHeight != nil {
+                        Capsule()
+                            .fill(isFocused ? Studio.Palette.accent : Studio.Palette.hairlineStrong)
+                            .frame(width: 36, height: 4)
+                            .accessibilityHidden(true)
                     }
-                    .help(L10n.t("Drag to resize the detail panel"))
+                }
+                .frame(height: 11)
+                .contentShape(Rectangle())
+                .onHover { inside in
+                    hovered = inside
+                    setCursor(inside)
+                }
+                .onDisappear { setCursor(false) }
+                .gesture(drag)
+                .focusable()
+                .focusEffectDisabled()
+                .focused($isFocused)
+                .onKeyPress(.upArrow) { nudge(by: DetailPanelHeight.step); return .handled }
+                .onKeyPress(.downArrow) { nudge(by: -DetailPanelHeight.step); return .handled }
+                .accessibilityElement()
+                .accessibilityLabel(L10n.t("Detail panel height"))
+                .accessibilityValue(L10n.t("%d points", Int(displayedHeight)))
+                .accessibilityAdjustableAction { direction in
+                    nudge(by: direction == .increment ? DetailPanelHeight.step : -DetailPanelHeight.step)
+                }
+                .help(L10n.t("Drag to resize the detail panel"))
             }
     }
 
