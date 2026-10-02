@@ -52,8 +52,9 @@ struct WebAccessSettingsPane: View {
                     .managed(.remoteAccessEnabled, vm.managedPolicy)
             }
             if vm.settings.remoteAccessEnabled {
-                SettingRow(L10n.t("Port"), detail: L10n.t("TCP port the embedded server listens on.")) {
-                    SettingsIntField(value: setting(vm, \.remotePort), width: 90)
+                SettingRow(L10n.t("Port"), detail: SettingsRangeText.detail(L10n.t("TCP port the embedded server listens on."),
+                    SettingsBounds.remotePort)) {
+                    SettingsIntField(value: setting(vm, \.remotePort), width: 90, range: SettingsBounds.remotePort)
                 }
                 if let failure = vm.remotePortalFailure {
                     SettingRow(L10n.t("Web access is not running"), detail: failure) { EmptyView() }
@@ -167,8 +168,10 @@ struct WebAccessSettingsPane: View {
                     .managed(.remoteReadOnly, vm.managedPolicy)
             }
             SettingRow(L10n.t("Session timeout"),
-                       detail: L10n.t("Minutes a browser stays signed in before re-login.")) {
-                SettingsIntField(value: setting(vm, \.remoteSessionMinutes), unit: L10n.t("min"), width: 100)
+                       detail: SettingsRangeText.detail(L10n.t("Minutes a browser stays signed in before re-login."),
+                           SettingsBounds.remoteSessionMinutes)) {
+                SettingsIntField(value: setting(vm, \.remoteSessionMinutes), unit: L10n.t("min"), width: 100,
+                                 range: SettingsBounds.remoteSessionMinutes)
             }
         }
     }

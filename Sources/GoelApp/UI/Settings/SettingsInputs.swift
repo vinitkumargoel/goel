@@ -69,21 +69,40 @@ struct SettingsSecureField: View {
 
 /// A whole-number field in mono with an optional unit (`.field.sm.mono` + `.unit`).
 /// Ungrouped: `.number` would render port 8899 as "8,899", which won't type back.
+/// With `range` (from `SettingsBounds`), a value typed outside it is pulled in and says so.
 struct SettingsIntField: View {
     @Binding var value: Int
     var unit: String?
     var width: CGFloat? = 90
+    var range: ClosedRange<Int>?
     var accessibilityName: String?
     @Environment(\.settingRowName) private var rowName
+    @State private var clampNote: String?
+    @State private var reformat = 0
 
     var body: some View {
-        SettingsNumberChrome(unit: unit) { focus in
-            TextField("", value: $value, format: .number.grouping(.never))
+        SettingsNumberChrome(unit: unit, note: clampNote) { focus in
+            TextField("", value: typed, format: .number.grouping(.never))
                 .textFieldStyle(.plain)
                 .focused(focus)
+                .id(reformat)
         }
         .frame(width: width)
         .accessibilityLabel(accessibilityName ?? rowName)
+    }
+
+    private var typed: Binding<Int> {
+        Binding(
+            get: { value },
+            set: { new in
+                guard let range else { value = new; return }
+                let result = SettingsBounds.clamp(new, to: range)
+                clampNote = result.wasClamped ? SettingsRangeText.clampNote(typed: "\(new)", range: range,
+                                                                           using: "\(result.value)") : nil
+                value = result.value
+                // A clamp to the value already stored changes nothing, so the field would keep the typed text.
+                if result.wasClamped { reformat += 1 }
+            })
     }
 }
 
@@ -92,36 +111,67 @@ struct SettingsDoubleField: View {
     @Binding var value: Double
     var unit: String?
     var width: CGFloat? = 90
+    var range: ClosedRange<Double>?
     var accessibilityName: String?
     @Environment(\.settingRowName) private var rowName
+    @State private var clampNote: String?
+    @State private var reformat = 0
 
     var body: some View {
-        SettingsNumberChrome(unit: unit) { focus in
-            TextField("", value: $value, format: .number.grouping(.never))
+        SettingsNumberChrome(unit: unit, note: clampNote) { focus in
+            TextField("", value: typed, format: .number.grouping(.never))
                 .textFieldStyle(.plain)
                 .focused(focus)
+                .id(reformat)
         }
         .frame(width: width)
         .accessibilityLabel(accessibilityName ?? rowName)
+    }
+
+    private var typed: Binding<Double> {
+        Binding(
+            get: { value },
+            set: { new in
+                guard let range, new.isFinite else { value = new; return }
+                let result = SettingsBounds.clamp(new, to: range)
+                clampNote = result.wasClamped ? SettingsRangeText.clampNote(typed: SettingsRangeText.number(new),
+                                                                           range: range,
+                                                                           using: SettingsRangeText.number(result.value))
+                                              : nil
+                value = result.value
+                if result.wasClamped { reformat += 1 }
+            })
     }
 }
 
 private struct SettingsNumberChrome<Field: View>: View {
     var unit: String?
+    /// Shown under the field when the typed value was pulled into range.
+    var note: String?
     @ViewBuilder var field: (FocusState<Bool>.Binding) -> Field
 
     var body: some View {
-        StudioFocusedField(size: .small) { focus in
-            HStack(spacing: Studio.Space.xs) {
-                field(focus)
-                    .studioFont(.monoBody.weight(400))
-                if let unit {
-                    Text(unit)
-                        .studioFont(.small)
-                        .foregroundStyle(Studio.Palette.ink3)
-                        .fixedSize()
-                        .accessibilityHidden(true)
+        VStack(alignment: .trailing, spacing: Studio.Space.xxs) {
+            StudioFocusedField(size: .small) { focus in
+                HStack(spacing: Studio.Space.xs) {
+                    field(focus)
+                        .studioFont(.monoBody.weight(400))
+                    if let unit {
+                        Text(unit)
+                            .studioFont(.small)
+                            .foregroundStyle(Studio.Palette.ink3)
+                            .fixedSize()
+                            .accessibilityHidden(true)
+                    }
                 }
+            }
+            if let note {
+                Text(note)
+                    .studioFont(.tiny)
+                    .foregroundStyle(Studio.Palette.warn)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(note)
             }
         }
     }

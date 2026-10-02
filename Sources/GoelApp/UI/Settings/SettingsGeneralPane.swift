@@ -112,8 +112,10 @@ private struct PowerSettingsCard: View {
                        detail: L10n.t("Seeding alone doesn’t keep the Mac awake."),
                        isOn: setting(vm, \.allowSleepWhileSeeding))
             SettingRow(L10n.t("Pause downloads below battery threshold"),
-                       detail: L10n.t("On battery, pause below this charge. 0 turns it off.")) {
-                SettingsIntField(value: batteryBinding, unit: L10n.t("%"), width: 80)
+                       detail: SettingsRangeText.detail(L10n.t("On battery, pause below this charge. 0 turns it off."),
+                           SettingsBounds.batteryThresholdPercent)) {
+                SettingsIntField(value: batteryBinding, unit: L10n.t("%"), width: 80,
+                                 range: SettingsBounds.batteryThresholdPercent)
             }
             SettingRow(L10n.t("Don’t seed on battery"),
                        detail: L10n.t("Stop uploading when the charger is unplugged."),
