@@ -99,7 +99,7 @@ let linuxCoreLink: [LinkerSetting] = []
 #endif
 
 var dependencies: [Package.Dependency] = [
-    .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
+    .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.11.1"),
 ]
 #if os(Linux)
 dependencies += [
