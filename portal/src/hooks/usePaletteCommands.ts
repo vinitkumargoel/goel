@@ -1,12 +1,12 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { View } from '../components/Sidebar'
+import type { RouteView as View } from '../lib/route'
 import { TYPE_FILTERS, type Filter } from '../lib/filters'
 import type { GroupBy } from '../lib/grouping'
 import type { Density, LibraryLayout } from '../lib/libraryPrefs'
 import type { PaletteCommand } from '../lib/palette'
 import { FILTER_KEYS } from '../lib/shortcuts'
-import { THEME_LABEL, THEMES, type ThemeChoice } from '../lib/theme'
+import { THEME_CHOICES, type ThemeChoice } from '../lib/theme'
 import type { TaskRow } from '../lib/types'
 
 export interface PaletteDeps {
@@ -77,9 +77,8 @@ export function usePaletteCommands(d: PaletteDeps): PaletteCommand[] {
         { id: 'retryFailed', group: 'actions', label: t('workflow.palette.retryFailed'), run: d.retryFailed },
       )
     }
-    const themes: ThemeChoice[] = ['auto', ...THEMES]
-    for (const theme of themes) {
-      const name = theme === 'auto' ? t('settings.theme.auto') : THEME_LABEL[theme]
+    for (const theme of THEME_CHOICES) {
+      const name = t(`settings.theme.${theme}`)
       list.push({
         id: `theme:${theme}`,
         group: 'settings',
@@ -100,8 +99,8 @@ export function usePaletteCommands(d: PaletteDeps): PaletteCommand[] {
     list.push(
       { id: 'density:compact', group: 'settings', label: t('workflow.palette.density', { what: t('workflow.library.compact') }), run: () => d.setDensity('compact') },
       { id: 'density:comfortable', group: 'settings', label: t('workflow.palette.density', { what: t('workflow.library.comfortable') }), run: () => d.setDensity('comfortable') },
+      { id: 'layout:board', group: 'settings', label: t('workflow.palette.layout', { what: t('workflow.library.board') }), run: () => d.setLayout('board') },
       { id: 'layout:table', group: 'settings', label: t('workflow.palette.layout', { what: t('workflow.library.table') }), run: () => d.setLayout('table') },
-      { id: 'layout:cards', group: 'settings', label: t('workflow.palette.layout', { what: t('workflow.library.cards') }), run: () => d.setLayout('cards') },
     )
     return list
   }, [d, t])

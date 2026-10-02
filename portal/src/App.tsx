@@ -1,61 +1,68 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { BulkBar } from './components/BulkBar'
-import { ConfirmDialog, type ConfirmRequest } from './components/ConfirmDialog'
-import { ContextMenu, type MenuState } from './components/ContextMenu'
-import { PaletteHost } from './components/CommandPalette'
-import { DetailPanel } from './components/DetailPanel'
-import { FilterChips } from './components/FilterChips'
-import { LibraryTools } from './components/LibraryTools'
-import type { DetailTab } from './components/DetailPanes'
-import { HistoryView } from './components/HistoryView'
-import { LibraryView } from './components/LibraryView'
-import { PlayerDialog } from './components/PlayerDialog'
-import { QueueOverview } from './components/QueueOverview'
-import { isStale, ReconnectBanner } from './components/ReconnectBanner'
-import { SettingsView } from './components/SettingsView'
-import { ShortcutsDialog } from './components/ShortcutsDialog'
-import { Sidebar, type Filter, type View } from './components/Sidebar'
-import { StatusBar } from './components/StatusBar'
-import { Toasts } from './components/Toasts'
-import { Topbar } from './components/Topbar'
+import { DetailPanel } from './components/detail/DetailPanel'
+import type { DetailTab } from './components/detail/DetailPanes'
+import { PlayerDialog } from './components/detail/PlayerDialog'
+import { QueueOverview } from './components/detail/QueueOverview'
+import { PaletteHost } from './components/dialogs/CommandPalette'
+import { ConfirmDialog, type ConfirmRequest } from './components/dialogs/ConfirmDialog'
+import { ShortcutsDialog } from './components/dialogs/ShortcutsDialog'
+import { HistoryView } from './components/history/HistoryView'
+import { BulkBar } from './components/library/BulkBar'
+import { FilterChips } from './components/library/FilterChips'
+import { LibraryTools } from './components/library/LibraryTools'
+import { LibraryView } from './components/library/LibraryView'
+import { SettingsView } from './components/settings/SettingsView'
+import { isStale, ReadOnlyBanner, ReconnectBanner } from './components/shell/Banners'
+import { BandwidthPill } from './components/shell/BandwidthPill'
+import { connectionOf, Header } from './components/shell/Header'
+import { Omnibox } from './components/shell/Omnibox'
+import { Rail, type Filter, type View } from './components/shell/Rail'
+import { StatusBar } from './components/shell/StatusBar'
+import { TabBar } from './components/shell/TabBar'
+import { Toasts } from './components/shell/Toasts'
+import { Icon } from './components/ui/Icon'
+import { Menu, type MenuState } from './components/ui/Menu'
+import { useActivitySignals } from './hooks/useActivitySignals'
 import { useAddFlow } from './hooks/useAddFlow'
+import { useAppKeys } from './hooks/useAppKeys'
+import { useBackToClose } from './hooks/useBackToClose'
 import { useBandwidth } from './hooks/useBandwidth'
 import { useBandwidthMenu } from './hooks/useBandwidthMenu'
 import { useDetail } from './hooks/useDetail'
+import { useLibraryWorkflow } from './hooks/useLibraryWorkflow'
+import { useMediaQuery } from './hooks/useMediaQuery'
 import { useMenus } from './hooks/useMenus'
 import { useNow } from './hooks/useNow'
-import { useSearchFocus } from './hooks/useSearchFocus'
-import { useActivitySignals } from './hooks/useActivitySignals'
-import { useAppKeys } from './hooks/useAppKeys'
-import { useBackToClose } from './hooks/useBackToClose'
-import { useLibraryWorkflow } from './hooks/useLibraryWorkflow'
 import { usePasteToAdd } from './hooks/usePasteToAdd'
-import { useMediaQuery } from './hooks/useMediaQuery'
+import { useQueueControls } from './hooks/useQueueControls'
+import { useSearchFocus } from './hooks/useSearchFocus'
 import { useStableCallback } from './hooks/useStableCallback'
 import { useTaskActions } from './hooks/useTaskActions'
 import { useTasks } from './hooks/useTasks'
 import { useThemeChoice } from './hooks/useThemeChoice'
-import { useQueueControls } from './hooks/useQueueControls'
 import { useToasts } from './hooks/useToasts'
 import { setRefusalHandler } from './lib/api'
 import { BOOT } from './lib/boot'
+import { NARROW_MAX, NARROW_QUERY, PHONE_QUERY } from './lib/breakpoints'
 import { copyText } from './lib/clipboard'
 import { countFilters, filterTasks, type Filter as LibraryFilter } from './lib/filters'
-import { loadPanelAutoHide, panelVisible, savePanelAutoHide } from './lib/prefs'
 import { groupTasks } from './lib/grouping'
-import { formatRoute, loadSort, parseRoute, saveSort } from './lib/route'
+import { loadPanelAutoHide, loadRailExpanded, panelVisible, savePanelAutoHide, saveRailExpanded } from './lib/prefs'
+import { queueEstimate } from './lib/queue'
 import { allTags, byQueuePosition, hasTag } from './lib/queueControls'
+import { formatRoute, loadSort, parseRoute, saveSort } from './lib/route'
 import { EMPTY_SELECTION, selectionReducer } from './lib/selection'
 import { nextSort, sortTasks, type SortKey, type SortState } from './lib/sort'
 import type { RowAction } from './lib/taskKind'
 import type { TaskRow } from './lib/types'
 
-const PANEL_BREAKPOINT = 920
+/** Wider than this, the detail sheet sits beside the board and starts open. */
+const PANEL_BREAKPOINT = NARROW_MAX
 
 type AppMenu = MenuState & { owner: 'row' | 'user' | 'bandwidth' }
 
-/** The row element for a task id: the detail panel hands focus back to it when it closes. */
+/** The card or row for a task id: the detail sheet hands focus back to it when it closes. */
 function rowElement(id: string): HTMLElement | undefined {
   return [...document.querySelectorAll<HTMLElement>('[role="option"][data-id]')].find(
     (el) => el.dataset.id === id,
@@ -73,7 +80,7 @@ export function App() {
   const [selection, select] = useReducer(selectionReducer, EMPTY_SELECTION, (empty) =>
     initial.task ? selectionReducer(empty, { type: 'single', id: initial.task }) : empty,
   )
-  const [tab, setTab] = useState<DetailTab>('general')
+  const [tab, setTab] = useState<DetailTab>('overview')
   const [panelOpen, setPanelOpen] = useState(
     () => window.innerWidth > PANEL_BREAKPOINT || initial.task != null,
   )
@@ -82,13 +89,22 @@ export function App() {
     setPanelAutoHideState(on)
     savePanelAutoHide(on)
   }, [])
+  /** The phone's filter drawer. */
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [railExpanded, setRailExpanded] = useState(loadRailExpanded)
+  const toggleRail = useCallback(() => {
+    setRailExpanded((on) => {
+      saveRailExpanded(!on)
+      return !on
+    })
+  }, [])
   const [menu, setMenu] = useState<AppMenu | null>(null)
   const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [theme, setTheme] = useThemeChoice()
-  const hamburgerRef = useRef<HTMLButtonElement>(null)
-  const { searchRef, mobileSearch, setMobileSearch, focusSearch } = useSearchFocus()
+  const drawerButtonRef = useRef<HTMLButtonElement>(null)
+  const { searchRef, focusSearch } = useSearchFocus()
+  const phone = useMediaQuery(PHONE_QUERY)
 
   const { tasks: snapshot, live, loaded, error, lastUpdate, refresh, reconnect } = useTasks()
   const { toasts, toast, dismiss, pause, resume, act } = useToasts()
@@ -189,6 +205,8 @@ export function App() {
   useEffect(() => {
     if (loaded) select({ type: 'prune', existing: tasks.map((t) => t.id) })
   }, [tasks, loaded])
+
+  const estimate = useMemo(() => queueEstimate(tasks), [tasks])
 
   const totals = useMemo(
     () =>
@@ -307,7 +325,7 @@ export function App() {
     wf.revealRows(ids)
   })
 
-  const { addOpen, openAdd, openAddWith, closeAdd, readd, dialog } = useAddFlow({
+  const { addOpen, openAdd, openAddWith, quickAdd, closeAdd, readd, dialog } = useAddFlow({
     canWrite,
     toast,
     refresh,
@@ -434,7 +452,7 @@ export function App() {
   }, [])
 
   // Back closes whatever layer is on top rather than leaving the portal.
-  const narrow = useMediaQuery(`(max-width: ${PANEL_BREAKPOINT}px)`)
+  const narrow = useMediaQuery(NARROW_QUERY)
   useBackToClose(view === 'library' && panelShown && narrow, closePanel)
   useBackToClose(sidebarOpen, () => setSidebarOpen(false))
   useBackToClose(addOpen, closeAdd)
@@ -442,117 +460,170 @@ export function App() {
   useBackToClose(wf.paletteOpen, wf.closePalette)
   useBackToClose(confirmReq != null, () => setConfirmReq(null))
 
+  const typeMenu = useCallback((m: MenuState) => setMenu({ ...m, owner: 'row' }), [])
+
+  // On a phone the status bar's controls move into the filter drawer.
+  const drawerFooter =
+    phone && (!BOOT.readOnly || bandwidth.state) ? (
+      <>
+        {!BOOT.readOnly && (
+          <>
+            <button type="button" className="btn sm" onClick={pauseAll}>
+              <Icon name="pause" />
+              {t('statusbar.pauseAll')}
+            </button>
+            <button type="button" className="btn sm" onClick={resumeAll}>
+              <Icon name="play" />
+              {t('statusbar.resumeAll')}
+            </button>
+          </>
+        )}
+        {bandwidth.status !== 'unsupported' && bandwidth.state && (
+          <BandwidthPill
+            state={bandwidth.state}
+            canWrite={canWrite}
+            menuOpen={menu?.owner === 'bandwidth'}
+            onOpen={openBandwidthMenu}
+          />
+        )}
+      </>
+    ) : null
+
   return (
     <>
-      <div className={`app-chrome${stale ? ' stale' : ''}`} inert={modalOpen}>
-        <Topbar
-          search={search}
-          onSearch={setSearch}
-          searchRef={searchRef}
-          mobileSearchOpen={mobileSearch}
-          onMobileSearch={setMobileSearch}
+      <div className={`app${stale ? ' stale' : ''}`} inert={modalOpen}>
+        <Header
+          connection={connectionOf(live, loaded)}
           downSpeed={totals.down}
           upSpeed={totals.up}
-          showSearch={view === 'library'}
-          showPanelToggle={view === 'library'}
+          showPanelToggle={view === 'library' && !phone}
           panelOpen={panelShown}
           onTogglePanel={togglePanel}
-          onAdd={openAdd}
-          onToggleSidebar={() => setSidebarOpen((s) => !s)}
           onUserMenu={openUserMenu}
           userMenuOpen={menu?.owner === 'user'}
-          sidebarOpen={sidebarOpen}
-          hamburgerRef={hamburgerRef}
-          canWrite={canWrite}
         />
 
-        <ReconnectBanner stale={stale} lastUpdate={lastUpdate} now={now} onRetry={reconnect} />
+        <div className="banners">
+          <ReconnectBanner stale={stale} lastUpdate={lastUpdate} now={now} onRetry={reconnect} />
+          {BOOT.readOnly && <ReadOnlyBanner />}
+        </div>
 
-        <div className="shell">
-          <Sidebar
+        <div className="app-body">
+          <Rail
+            variant={phone ? 'drawer' : 'rail'}
             view={view}
             filter={filter}
             counts={counts}
-            open={sidebarOpen}
-            onSelectFilter={goToFilter}
-            onSelectView={selectView}
-            onClose={() => setSidebarOpen(false)}
-            returnFocusTo={hamburgerRef}
             tags={tagCounts}
             activeTag={tag}
+            canWrite={canWrite}
+            onSelectFilter={goToFilter}
+            onSelectView={selectView}
             onSelectTag={goToTag}
+            onAdd={openAdd}
+            // Labels need room: at tablet width the rail stays slim whatever was pinned.
+            expanded={railExpanded && !narrow}
+            onToggleExpanded={toggleRail}
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            returnFocusTo={drawerButtonRef}
+            footer={drawerFooter}
           />
 
-          <main className="content">
-            {view === 'library' && <FilterChips filter={filter} counts={counts} onFilter={goToFilter} />}
+          <main className="main" id="main">
             {view === 'library' && (
-              <LibraryView
-                tasks={ordered}
-                groups={groups}
-                density={wf.density}
-                layout={wf.layout}
-                selecting={wf.selecting}
-                onSelecting={wf.setSelecting}
-                reveal={wf.reveal}
-                tools={
-                  <LibraryTools
-                    count={ordered.length}
-                    group={wf.group}
-                    onGroup={wf.setGroup}
-                    density={wf.density}
-                    onDensity={wf.setDensity}
-                    layout={wf.layout}
-                    onLayout={wf.setLayout}
-                    sort={sort}
-                    onSort={onSort}
-                  />
-                }
-                selectBar={
-                  <BulkBar
-                    className="pbulk"
-                    selected={selectedVisible}
-                    canWrite={canWrite}
-                    onAction={(action, ids) => void runBulk(action, ids)}
-                    onCopyLinks={(sources) => copy(sources.join('\n'))}
-                    onRemove={removeMany}
-                    onClear={() => select({ type: 'clear' })}
-                    onDone={() => {
-                      wf.setSelecting(false)
-                      select({ type: 'clear' })
-                    }}
-                  />
-                }
-                total={tasks.length}
-                loaded={loaded}
-                error={error}
-                search={search}
-                filtered={filter !== 'all'}
-                selectedIds={selection.ids}
-                lead={selection.lead}
-                sort={sort}
-                canWrite={canWrite}
-                readOnly={BOOT.readOnly}
-                onSelection={select}
-                onOpen={openDetail}
-                onSort={onSort}
-                onAction={onRowAction}
-                onMenu={openRowMenu}
-                onClearSearch={clearSearch}
-                onAdd={openAdd}
-                onRetry={refresh}
-                bulk={
-                  selectedVisible.length >= 2 ? (
+              <>
+                <Omnibox
+                  value={search}
+                  onChange={setSearch}
+                  inputRef={searchRef}
+                  canWrite={canWrite}
+                  onAdd={openAdd}
+                  onAddLinks={(text, pasted) => openAddWith(text, pasted)}
+                  onQuickAdd={(text) => void quickAdd(text)}
+                  onPalette={wf.openPalette}
+                />
+                <LibraryView
+                  tasks={ordered}
+                  groups={groups}
+                  group={wf.group}
+                  density={wf.density}
+                  layout={wf.layout}
+                  selecting={wf.selecting}
+                  onSelecting={wf.setSelecting}
+                  reveal={wf.reveal}
+                  chips={
+                    <FilterChips
+                      filter={filter}
+                      counts={counts}
+                      onFilter={goToFilter}
+                      tags={tagCounts}
+                      activeTag={tag}
+                      onTag={goToTag}
+                      openMenu={typeMenu}
+                    />
+                  }
+                  tools={
+                    <LibraryTools
+                      count={ordered.length}
+                      group={wf.group}
+                      onGroup={wf.setGroup}
+                      density={wf.density}
+                      onDensity={wf.setDensity}
+                      layout={wf.layout}
+                      onLayout={wf.setLayout}
+                      sort={sort}
+                      onSort={onSort}
+                    />
+                  }
+                  selectBar={
                     <BulkBar
+                      className="pbulk"
                       selected={selectedVisible}
                       canWrite={canWrite}
                       onAction={(action, ids) => void runBulk(action, ids)}
                       onCopyLinks={(sources) => copy(sources.join('\n'))}
                       onRemove={removeMany}
                       onClear={() => select({ type: 'clear' })}
+                      onDone={() => {
+                        wf.setSelecting(false)
+                        select({ type: 'clear' })
+                      }}
                     />
-                  ) : undefined
-                }
-              />
+                  }
+                  total={tasks.length}
+                  loaded={loaded}
+                  error={error}
+                  search={search}
+                  filtered={filter !== 'all' || tag != null}
+                  selectedIds={selection.ids}
+                  lead={selection.lead}
+                  sort={sort}
+                  canWrite={canWrite}
+                  readOnly={BOOT.readOnly}
+                  onSelection={select}
+                  onOpen={openDetail}
+                  onSort={onSort}
+                  onAction={onRowAction}
+                  onMenu={openRowMenu}
+                  onClearSearch={clearSearch}
+                  onAdd={openAdd}
+                  onRetry={refresh}
+                  onStream={openPlayer}
+                  bulk={
+                    selectedVisible.length >= 2 ? (
+                      <BulkBar
+                        selected={selectedVisible}
+                        canWrite={canWrite}
+                        onAction={(action, ids) => void runBulk(action, ids)}
+                        onCopyLinks={(sources) => copy(sources.join('\n'))}
+                        onRemove={removeMany}
+                        onClear={() => select({ type: 'clear' })}
+                      />
+                    ) : undefined
+                  }
+                />
+              </>
             )}
             {view === 'history' && (
               <HistoryView
@@ -596,7 +667,8 @@ export function App() {
               onStream={openPlayer}
               trapFocus={!modalOpen}
               overview={
-                detailId == null ? (
+                // Until the first snapshot the sheet shows its loading state, not a queue of zeros.
+                detailId == null && (loaded || error) ? (
                   <QueueOverview
                     tasks={tasks}
                     counts={counts}
@@ -613,19 +685,32 @@ export function App() {
           )}
         </div>
 
-        <StatusBar
-          live={live}
-          loaded={loaded}
-          queue={counts}
-          downSpeed={totals.down}
-          readOnly={BOOT.readOnly}
-          onFilter={goToFilter}
-          onPauseAll={pauseAll}
-          onResumeAll={resumeAll}
-          bandwidth={bandwidth.status === 'unsupported' ? null : bandwidth.state}
-          bandwidthMenuOpen={menu?.owner === 'bandwidth'}
-          onBandwidthMenu={openBandwidthMenu}
-        />
+        {!phone && (
+          <StatusBar
+            queue={counts}
+            downSpeed={totals.down}
+            upSpeed={totals.up}
+            estimate={estimate}
+            readOnly={BOOT.readOnly}
+            onFilter={goToFilter}
+            onPauseAll={pauseAll}
+            onResumeAll={resumeAll}
+            bandwidth={bandwidth.status === 'unsupported' ? null : bandwidth.state}
+            bandwidthMenuOpen={menu?.owner === 'bandwidth'}
+            onBandwidthMenu={openBandwidthMenu}
+          />
+        )}
+        {phone && (
+          <TabBar
+            view={view}
+            canWrite={canWrite}
+            drawerOpen={sidebarOpen}
+            onView={selectView}
+            onAdd={openAdd}
+            onDrawer={() => setSidebarOpen((open) => !open)}
+            drawerButtonRef={drawerButtonRef}
+          />
+        )}
       </div>
 
       {dialog}
@@ -660,7 +745,7 @@ export function App() {
       {playingTask && <PlayerDialog task={playingTask} onClose={() => setPlaying(null)} onCopy={copy} />}
 
       <ConfirmDialog request={confirmReq} onClose={() => setConfirmReq(null)} />
-      <ContextMenu menu={menu} onClose={() => setMenu(null)} />
+      <Menu menu={menu} onClose={() => setMenu(null)} />
       <Toasts toasts={toasts} onDismiss={dismiss} onPause={pause} onResume={resume} onAction={act} />
     </>
   )

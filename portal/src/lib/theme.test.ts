@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyTheme, initialTheme, resolveTheme, watchSystemTheme } from './theme'
+import { applyTheme, initialTheme, normalizeTheme, resolveTheme, watchSystemTheme } from './theme'
 
 type Listener = (e: MediaQueryListEvent) => void
 
@@ -49,10 +49,32 @@ afterEach(() => {
 })
 
 describe('resolveTheme', () => {
-  it('maps Auto to the Frost pair and leaves a concrete theme alone', () => {
-    expect(resolveTheme('auto', true)).toBe('frost-dark')
-    expect(resolveTheme('auto', false)).toBe('frost-light')
-    expect(resolveTheme('nord', false)).toBe('nord')
+  it('maps Auto to the OS appearance and leaves a concrete theme alone', () => {
+    expect(resolveTheme('auto', true)).toBe('dark')
+    expect(resolveTheme('auto', false)).toBe('light')
+    expect(resolveTheme('dark', false)).toBe('dark')
+    expect(resolveTheme('light', true)).toBe('light')
+  })
+})
+
+describe('normalizeTheme', () => {
+  it('accepts the Studio values as they are', () => {
+    expect(normalizeTheme('light')).toBe('light')
+    expect(normalizeTheme('dark')).toBe('dark')
+    expect(normalizeTheme('auto')).toBe('auto')
+  })
+
+  it('maps every pre-Studio theme to the palette that replaced it', () => {
+    expect(normalizeTheme('frost-light')).toBe('light')
+    expect(normalizeTheme('frost-dark')).toBe('dark')
+    expect(normalizeTheme('dracula')).toBe('dark')
+    expect(normalizeTheme('nord')).toBe('dark')
+  })
+
+  it('rejects anything else', () => {
+    expect(normalizeTheme('neon')).toBeNull()
+    expect(normalizeTheme('')).toBeNull()
+    expect(normalizeTheme(null)).toBeNull()
   })
 })
 
@@ -62,10 +84,19 @@ describe('initialTheme', () => {
   })
 
   it('returns a stored choice, including Auto', () => {
-    localStorage.setItem('goel-web-theme', 'dracula')
-    expect(initialTheme()).toBe('dracula')
+    localStorage.setItem('goel-web-theme', 'light')
+    expect(initialTheme()).toBe('light')
     localStorage.setItem('goel-web-theme', 'auto')
     expect(initialTheme()).toBe('auto')
+  })
+
+  it('keeps a choice stored before Studio, as the palette that replaced it', () => {
+    localStorage.setItem('goel-web-theme', 'dracula')
+    expect(initialTheme()).toBe('dark')
+    localStorage.setItem('goel-web-theme', 'frost-light')
+    expect(initialTheme()).toBe('light')
+    localStorage.setItem('goel-web-theme', 'nord')
+    expect(initialTheme()).toBe('dark')
   })
 
   it('ignores a stored value that is not a theme', () => {
@@ -78,14 +109,14 @@ describe('applyTheme', () => {
   it('paints Auto with the OS appearance and persists the choice, not the resolution', () => {
     fakeMatchMedia(false)
     applyTheme('auto', true)
-    expect(document.documentElement.dataset['theme']).toBe('frost-light')
+    expect(document.documentElement.dataset['theme']).toBe('light')
     expect(localStorage.getItem('goel-web-theme')).toBe('auto')
   })
 
   it('does not persist when asked not to', () => {
     fakeMatchMedia(true)
-    applyTheme('nord', false)
-    expect(document.documentElement.dataset['theme']).toBe('nord')
+    applyTheme('dark', false)
+    expect(document.documentElement.dataset['theme']).toBe('dark')
     expect(localStorage.getItem('goel-web-theme')).toBeNull()
   })
 })

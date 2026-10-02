@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AddDialog } from '../components/AddDialog'
+import { AddDialog } from '../components/add/AddDialog'
 import { clearDraft, loadDraft, type AddDraft } from '../lib/addDraft'
-import type { AddSummary } from '../lib/addSubmit'
+import { loadAddPrefs } from '../lib/addPrefs'
+import { submitAdd, type AddSummary } from '../lib/addSubmit'
 import { api, failureMessage } from '../lib/api'
+import { summarizeLinks } from '../lib/links'
 import type { ToastOptions, ToastTone } from './useToasts'
 import { afterHistorySettles } from './useBackToClose'
 import { useWindowTorrentDrop } from './useWindowTorrentDrop'
@@ -95,6 +97,30 @@ export function useAddFlow({ canWrite, toast, refresh, onQueued, onReveal }: Dep
     [closeAdd, onQueued, toast, warn, refresh, t, onReveal],
   )
 
+  /**
+   * The omnibox's Add: queues typed links straight away with the remembered folder and priority.
+   * If the server turns them down, the dialog opens with them so they can be fixed there.
+   */
+  const quickAdd = useCallback(
+    async (text: string) => {
+      const prefs = loadAddPrefs()
+      try {
+        const summary = await submitAdd({
+          text,
+          validLinks: summarizeLinks(text).valid,
+          files: [],
+          options: { folder: prefs.folder || undefined, priority: prefs.priority },
+        })
+        onAdded(summary)
+      } catch (e) {
+        const message = failureMessage(e)
+        if (message) warn(message)
+        openAddWith(text)
+      }
+    },
+    [onAdded, warn, openAddWith],
+  )
+
   const readd = useCallback(
     async (source: string) => {
       try {
@@ -111,26 +137,18 @@ export function useAddFlow({ canWrite, toast, refresh, onQueued, onReveal }: Dep
     [refresh, toast, warn, onQueued, t],
   )
 
-  const dialog = (
-    <div
-      className={`scrim${open ? ' open' : ''}`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) closeAdd()
-      }}
-    >
-      {open && (
-        <AddDialog
-          onClose={closeAdd}
-          onWarn={warn}
-          onAdded={onAdded}
-          initialFiles={dropped}
-          initialDraft={draft}
-          initialUrl={prefill?.url}
-          pasted={prefill?.pasted}
-        />
-      )}
-    </div>
-  )
+  // AddDialog is a Modal: it brings its own scrim, and closing it unmounts it.
+  const dialog = open ? (
+    <AddDialog
+      onClose={closeAdd}
+      onWarn={warn}
+      onAdded={onAdded}
+      initialFiles={dropped}
+      initialDraft={draft}
+      initialUrl={prefill?.url}
+      pasted={prefill?.pasted}
+    />
+  ) : null
 
-  return { addOpen: open, openAdd, openAddWith, closeAdd, readd, dialog }
+  return { addOpen: open, openAdd, openAddWith, quickAdd, closeAdd, readd, dialog }
 }

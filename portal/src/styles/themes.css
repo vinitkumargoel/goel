@@ -1,27 +1,281 @@
-:root{font-synthesis:none}
-/* --on-accent / --on-red: ink for anything drawn on an accent or red fill. Never hard-code #fff there:
-   white on the dark themes' pastel accents reads at 2.0-2.4:1. --text-faint clears 4.5:1 on --bg-content. */
-html[data-theme="frost-light"]{
-  --bg-app:#dfe3ee;--bg-window:#eef0f4;--bg-bar:rgba(250,250,252,.82);--bg-sidebar:rgba(238,240,244,.86);--bg-content:#fbfcfe;--bg-panel:rgba(245,246,250,.82);
-  --bg-row-alt:rgba(0,0,0,.022);--bg-row-hover:rgba(0,0,0,.045);--bg-row-sel:rgba(63,88,214,.2);
-  --bg-input:rgba(0,0,0,.05);--bg-chip:rgba(0,0,0,.06);--bg-control:rgba(0,0,0,.05);--bg-control-active:rgba(0,0,0,.1);--track:rgba(0,0,0,.1);--bg-modal:#f6f7fa;
-  --text:#1a1c22;--text-dim:#5a616f;--text-faint:#646b7a;--border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);--seg-empty:rgba(0,0,0,.08);--scrim:rgba(0,0,0,.32);
-  --accent:#3F58D6;--on-accent:#fff;--on-red:#fff;--accent-press:#2E45B8;--accent-soft:rgba(63,88,214,.18);--green:#158A3C;--orange:#A85800;--red:#CE0E0E;--red-soft:rgba(206,14,14,.12);--yellow:#8A6D00;--purple:#7A3FD0;--teal:#0E7490;--indigo:#3F58D6;color-scheme:light}
-html[data-theme="frost-dark"]{
-  --bg-app:#15171d;--bg-window:#1e2027;--bg-bar:rgba(28,30,37,.72);--bg-sidebar:rgba(24,26,32,.72);--bg-content:#1c1e25;--bg-panel:rgba(40,43,53,.7);
-  --bg-row-alt:rgba(255,255,255,.022);--bg-row-hover:rgba(255,255,255,.05);--bg-row-sel:rgba(138,162,255,.24);
-  --bg-input:rgba(255,255,255,.07);--bg-chip:rgba(255,255,255,.08);--bg-control:rgba(255,255,255,.09);--bg-control-active:rgba(255,255,255,.16);--track:rgba(255,255,255,.1);--bg-modal:#252831;
-  --text:#eef1f7;--text-dim:#9aa3b4;--text-faint:#8b94a8;--border:rgba(255,255,255,.09);--border-strong:rgba(255,255,255,.15);--seg-empty:rgba(255,255,255,.08);--scrim:rgba(0,0,0,.55);
-  --accent:#8AA2FF;--on-accent:#12141a;--on-red:#12141a;--accent-press:#738FF5;--accent-soft:rgba(138,162,255,.2);--green:#4ADE80;--orange:#FBBF6B;--red:#F87171;--red-soft:rgba(248,113,113,.16);--yellow:#FCD34D;--purple:#C0A2FB;--teal:#7FDBE8;--indigo:#A5B8FF;color-scheme:dark}
-html[data-theme="dracula"]{
-  --bg-app:#21222c;--bg-window:#282a36;--bg-bar:rgba(40,42,54,.82);--bg-sidebar:rgba(33,34,44,.9);--bg-content:#282a36;--bg-panel:rgba(52,55,70,.72);
-  --bg-row-alt:rgba(255,255,255,.02);--bg-row-hover:rgba(255,255,255,.05);--bg-row-sel:rgba(189,147,249,.24);
-  --bg-input:rgba(255,255,255,.07);--bg-chip:rgba(255,255,255,.08);--bg-control:rgba(255,255,255,.08);--bg-control-active:rgba(255,255,255,.15);--track:rgba(255,255,255,.1);--bg-modal:#343746;
-  --text:#f8f8f2;--text-dim:#b8bed6;--text-faint:#95a1cb;--border:rgba(248,248,242,.1);--border-strong:rgba(248,248,242,.16);--seg-empty:rgba(255,255,255,.08);--scrim:rgba(0,0,0,.55);
-  --accent:#BD93F9;--on-accent:#12141a;--on-red:#12141a;--accent-press:#A97BF0;--accent-soft:rgba(189,147,249,.22);--green:#50FA7B;--orange:#FFB86C;--red:#FF6E6E;--red-soft:rgba(255,110,110,.16);--yellow:#F1FA8C;--purple:#FF79C6;--teal:#8BE9FD;--indigo:#BD93F9;color-scheme:dark}
-html[data-theme="nord"]{
-  --bg-app:#2b303b;--bg-window:#2e3440;--bg-bar:rgba(46,52,64,.82);--bg-sidebar:rgba(43,48,59,.9);--bg-content:#2e3440;--bg-panel:rgba(59,66,82,.72);
-  --bg-row-alt:rgba(255,255,255,.02);--bg-row-hover:rgba(255,255,255,.05);--bg-row-sel:rgba(136,192,208,.22);
-  --bg-input:rgba(255,255,255,.06);--bg-chip:rgba(255,255,255,.08);--bg-control:rgba(255,255,255,.08);--bg-control-active:rgba(255,255,255,.14);--track:rgba(255,255,255,.1);--bg-modal:#3b4252;
-  --text:#eceff4;--text-dim:#a8b1c4;--text-faint:#98a2b8;--border:rgba(236,239,244,.1);--border-strong:rgba(236,239,244,.16);--seg-empty:rgba(255,255,255,.08);--scrim:rgba(0,0,0,.55);
-  --accent:#88C0D0;--on-accent:#12141a;--on-red:#12141a;--accent-press:#81A1C1;--accent-soft:rgba(136,192,208,.2);--green:#A3BE8C;--orange:#D08770;--red:#E08691;--red-soft:rgba(224,134,145,.16);--yellow:#EBCB8B;--purple:#B48EAD;--teal:#8FBCBB;--indigo:#81A1C1;color-scheme:dark}
+/*
+ * Studio colour tokens — the only colour definitions in the portal. Values mirror
+ * Sources/GoelApp/UI/DesignSystem/StudioPalette.swift (OKLCH, light / dark).
+ *
+ * `data-theme` on <html> picks the palette:
+ *   light, dark            the two Studio palettes
+ *   auto                   follows prefers-color-scheme (main.tsx normally resolves it first)
+ *   frost-light            legacy value → light
+ *   frost-dark, dracula,   legacy values → dark
+ *   nord
+ * The legacy values keep working because the server still renders them into the page and the
+ * sign-in page before any script runs. No attribute at all is light.
+ *
+ * This file also styles the sign-in page (codegen.mjs prepends it to login.css), so it must
+ * stay free of anything portal-specific.
+ */
+
+:root,
+:root[data-theme='light'],
+:root[data-theme='frost-light'] {
+  --canvas: oklch(97% 0.008 150);
+  --canvas-2: oklch(94.5% 0.011 150);
+  --card: oklch(100% 0 0);
+  --card-2: oklch(98.6% 0.005 150);
+  --card-raised: oklch(100% 0 0);
+  --sheet: oklch(100% 0 0);
+  --card-edge: oklch(92% 0.01 150);
+  --ink: oklch(25% 0.022 165);
+  --ink-2: oklch(45% 0.018 165);
+  /* A touch deeper than the mockup's 58% so small faint text still clears 4.5:1 on the canvas. */
+  --ink-3: oklch(53% 0.014 165);
+  --line: oklch(92% 0.01 150);
+  --line-2: oklch(86% 0.013 150);
+  --track: oklch(92% 0.012 150);
+  --seg-bg: oklch(93.5% 0.011 150);
+  --field: oklch(98.8% 0.004 150);
+  --hover: oklch(30% 0.03 165 / 0.045);
+  --press: oklch(30% 0.03 165 / 0.08);
+
+  --accent: oklch(52% 0.11 170);
+  --accent-2: oklch(45% 0.1 170);
+  --accent-ink: oklch(99% 0.005 170);
+  --accent-soft: oklch(52% 0.11 170 / 0.11);
+  --accent-line: oklch(52% 0.11 170 / 0.35);
+  --focus: oklch(52% 0.11 170 / 0.55);
+
+  --up: oklch(55% 0.11 225);
+  --up-soft: oklch(55% 0.11 225 / 0.12);
+  --good: oklch(56% 0.13 150);
+  --good-soft: oklch(56% 0.13 150 / 0.13);
+  --warn: oklch(55% 0.13 62);
+  --warn-soft: oklch(70% 0.14 70 / 0.18);
+  --bad: oklch(55% 0.17 27);
+  --bad-soft: oklch(55% 0.17 27 / 0.11);
+  --info: oklch(55% 0.12 255);
+  --info-soft: oklch(55% 0.12 255 / 0.12);
+
+  --t-video: oklch(72% 0.13 32);
+  --t-video-2: oklch(60% 0.15 22);
+  --t-audio: oklch(84% 0.13 85);
+  --t-audio-2: oklch(72% 0.15 65);
+  --t-disc: oklch(76% 0.08 300);
+  --t-disc-2: oklch(62% 0.11 295);
+  --t-arch: oklch(84% 0.05 75);
+  --t-arch-2: oklch(70% 0.07 65);
+  --t-app: oklch(78% 0.09 230);
+  --t-app-2: oklch(62% 0.12 240);
+  --t-doc: oklch(68% 0.03 250);
+  --t-doc-2: oklch(52% 0.04 255);
+  --t-mag: oklch(70% 0.12 350);
+  --t-mag-2: oklch(58% 0.15 355);
+  --t-dir: oklch(80% 0.07 170);
+  --t-dir-2: oklch(62% 0.09 172);
+  --t-image: oklch(80% 0.11 135);
+  --t-image-2: oklch(64% 0.13 145);
+  --t-other: oklch(80% 0.015 160);
+  --t-other-2: oklch(64% 0.02 165);
+  --art-hi: oklch(100% 0 0 / 0.26);
+  --art-ink: oklch(99% 0.005 90);
+
+  --glass: oklch(100% 0 0 / 0.72);
+  --scrim: oklch(30% 0.03 165 / 0.32);
+  --sh-1: 0 1px 2px oklch(30% 0.03 165 / 0.06);
+  --sh-card: 0 1px 1px oklch(30% 0.03 165 / 0.04), 0 2px 4px oklch(30% 0.03 165 / 0.04),
+    0 8px 18px -6px oklch(30% 0.03 165 / 0.1);
+  --sh-float: 0 1px 2px oklch(30% 0.03 165 / 0.06), 0 12px 28px -6px oklch(30% 0.03 165 / 0.16),
+    0 32px 64px -18px oklch(30% 0.03 165 / 0.22);
+
+  /* Theme previews in Settings: each palette's canvas, card, ink and accent, whatever is active. */
+  --pal-l1: oklch(97% 0.008 150);
+  --pal-l2: oklch(100% 0 0);
+  --pal-l3: oklch(86% 0.013 150);
+  --pal-l4: oklch(52% 0.11 170);
+  --pal-d1: oklch(22% 0.02 165);
+  --pal-d2: oklch(27.5% 0.022 165);
+  --pal-d3: oklch(39% 0.022 165);
+  --pal-d4: oklch(76% 0.12 170);
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'],
+:root[data-theme='frost-dark'],
+:root[data-theme='dracula'],
+:root[data-theme='nord'] {
+  --canvas: oklch(22% 0.02 165);
+  --canvas-2: oklch(20% 0.019 165);
+  --card: oklch(27.5% 0.022 165);
+  --card-2: oklch(25.5% 0.021 165);
+  --card-raised: oklch(31% 0.022 165);
+  --sheet: oklch(29% 0.022 165);
+  --card-edge: oklch(33% 0.022 165);
+  --ink: oklch(95% 0.01 160);
+  --ink-2: oklch(79% 0.016 160);
+  --ink-3: oklch(68% 0.016 160);
+  --line: oklch(32% 0.02 165);
+  --line-2: oklch(39% 0.022 165);
+  --track: oklch(35% 0.02 165);
+  --seg-bg: oklch(24.5% 0.02 165);
+  --field: oklch(24% 0.02 165);
+  --hover: oklch(100% 0 0 / 0.05);
+  --press: oklch(100% 0 0 / 0.09);
+
+  --accent: oklch(76% 0.12 170);
+  --accent-2: oklch(82% 0.11 170);
+  --accent-ink: oklch(21% 0.03 170);
+  --accent-soft: oklch(76% 0.12 170 / 0.15);
+  --accent-line: oklch(76% 0.12 170 / 0.45);
+  --focus: oklch(76% 0.12 170 / 0.6);
+
+  --up: oklch(77% 0.1 225);
+  --up-soft: oklch(77% 0.1 225 / 0.15);
+  --good: oklch(77% 0.14 150);
+  --good-soft: oklch(77% 0.14 150 / 0.15);
+  --warn: oklch(82% 0.13 75);
+  --warn-soft: oklch(82% 0.13 75 / 0.16);
+  --bad: oklch(72% 0.15 25);
+  --bad-soft: oklch(72% 0.15 25 / 0.15);
+  --info: oklch(78% 0.1 255);
+  --info-soft: oklch(78% 0.1 255 / 0.15);
+
+  --t-video: oklch(64% 0.12 32);
+  --t-video-2: oklch(50% 0.13 22);
+  --t-audio: oklch(74% 0.12 85);
+  --t-audio-2: oklch(60% 0.13 65);
+  --t-disc: oklch(64% 0.08 300);
+  --t-disc-2: oklch(50% 0.1 295);
+  --t-arch: oklch(70% 0.05 75);
+  --t-arch-2: oklch(56% 0.06 65);
+  --t-app: oklch(66% 0.09 230);
+  --t-app-2: oklch(52% 0.11 240);
+  --t-doc: oklch(58% 0.03 250);
+  --t-doc-2: oklch(45% 0.04 255);
+  --t-mag: oklch(62% 0.12 350);
+  --t-mag-2: oklch(50% 0.14 355);
+  --t-dir: oklch(64% 0.07 170);
+  --t-dir-2: oklch(50% 0.08 172);
+  --t-image: oklch(68% 0.1 135);
+  --t-image-2: oklch(52% 0.12 145);
+  --t-other: oklch(60% 0.015 160);
+  --t-other-2: oklch(47% 0.02 165);
+  --art-hi: oklch(100% 0 0 / 0.18);
+  --art-ink: oklch(98% 0.005 90);
+
+  --glass: oklch(25% 0.02 165 / 0.7);
+  --scrim: oklch(14% 0.02 165 / 0.5);
+  --sh-1: 0 1px 2px oklch(10% 0.02 165 / 0.3);
+  --sh-card: 0 1px 0 oklch(100% 0 0 / 0.04) inset, 0 2px 4px oklch(10% 0.02 165 / 0.25),
+    0 10px 22px -8px oklch(10% 0.02 165 / 0.45);
+  --sh-float: 0 1px 0 oklch(100% 0 0 / 0.05) inset, 0 14px 30px -6px oklch(10% 0.02 165 / 0.5),
+    0 36px 70px -18px oklch(10% 0.02 165 / 0.6);
+
+  color-scheme: dark;
+}
+
+/* Auto before the script resolves it (and the sign-in page, which never runs the portal's script). */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='auto'] {
+    --canvas: oklch(22% 0.02 165);
+    --canvas-2: oklch(20% 0.019 165);
+    --card: oklch(27.5% 0.022 165);
+    --card-2: oklch(25.5% 0.021 165);
+    --card-raised: oklch(31% 0.022 165);
+    --sheet: oklch(29% 0.022 165);
+    --card-edge: oklch(33% 0.022 165);
+    --ink: oklch(95% 0.01 160);
+    --ink-2: oklch(79% 0.016 160);
+    --ink-3: oklch(68% 0.016 160);
+    --line: oklch(32% 0.02 165);
+    --line-2: oklch(39% 0.022 165);
+    --track: oklch(35% 0.02 165);
+    --seg-bg: oklch(24.5% 0.02 165);
+    --field: oklch(24% 0.02 165);
+    --hover: oklch(100% 0 0 / 0.05);
+    --press: oklch(100% 0 0 / 0.09);
+    --accent: oklch(76% 0.12 170);
+    --accent-2: oklch(82% 0.11 170);
+    --accent-ink: oklch(21% 0.03 170);
+    --accent-soft: oklch(76% 0.12 170 / 0.15);
+    --accent-line: oklch(76% 0.12 170 / 0.45);
+    --focus: oklch(76% 0.12 170 / 0.6);
+    --up: oklch(77% 0.1 225);
+    --up-soft: oklch(77% 0.1 225 / 0.15);
+    --good: oklch(77% 0.14 150);
+    --good-soft: oklch(77% 0.14 150 / 0.15);
+    --warn: oklch(82% 0.13 75);
+    --warn-soft: oklch(82% 0.13 75 / 0.16);
+    --bad: oklch(72% 0.15 25);
+    --bad-soft: oklch(72% 0.15 25 / 0.15);
+    --info: oklch(78% 0.1 255);
+    --info-soft: oklch(78% 0.1 255 / 0.15);
+    --t-video: oklch(64% 0.12 32);
+    --t-video-2: oklch(50% 0.13 22);
+    --t-audio: oklch(74% 0.12 85);
+    --t-audio-2: oklch(60% 0.13 65);
+    --t-disc: oklch(64% 0.08 300);
+    --t-disc-2: oklch(50% 0.1 295);
+    --t-arch: oklch(70% 0.05 75);
+    --t-arch-2: oklch(56% 0.06 65);
+    --t-app: oklch(66% 0.09 230);
+    --t-app-2: oklch(52% 0.11 240);
+    --t-doc: oklch(58% 0.03 250);
+    --t-doc-2: oklch(45% 0.04 255);
+    --t-mag: oklch(62% 0.12 350);
+    --t-mag-2: oklch(50% 0.14 355);
+    --t-dir: oklch(64% 0.07 170);
+    --t-dir-2: oklch(50% 0.08 172);
+    --t-image: oklch(68% 0.1 135);
+    --t-image-2: oklch(52% 0.12 145);
+    --t-other: oklch(60% 0.015 160);
+    --t-other-2: oklch(47% 0.02 165);
+    --art-hi: oklch(100% 0 0 / 0.18);
+    --art-ink: oklch(98% 0.005 90);
+    --glass: oklch(25% 0.02 165 / 0.7);
+    --scrim: oklch(14% 0.02 165 / 0.5);
+    --sh-1: 0 1px 2px oklch(10% 0.02 165 / 0.3);
+    --sh-card: 0 1px 0 oklch(100% 0 0 / 0.04) inset, 0 2px 4px oklch(10% 0.02 165 / 0.25),
+      0 10px 22px -8px oklch(10% 0.02 165 / 0.45);
+    --sh-float: 0 1px 0 oklch(100% 0 0 / 0.05) inset, 0 14px 30px -6px oklch(10% 0.02 165 / 0.5),
+      0 36px 70px -18px oklch(10% 0.02 165 / 0.6);
+    color-scheme: dark;
+  }
+}
+
+/* Increase Contrast: firmer lines and deeper ink, as StudioPalette's high-contrast resolutions. */
+@media (prefers-contrast: more) {
+  :root,
+  :root[data-theme='light'],
+  :root[data-theme='frost-light'] {
+    --card-edge: oklch(62% 0.02 150);
+    --line: oklch(62% 0.02 150);
+    --line-2: oklch(50% 0.02 150);
+    --ink: oklch(16% 0.02 165);
+    --ink-2: oklch(30% 0.02 165);
+    --ink-3: oklch(40% 0.018 165);
+    --track: oklch(78% 0.015 150);
+    --accent: oklch(42% 0.1 170);
+    --focus: oklch(42% 0.1 170);
+  }
+  :root[data-theme='dark'],
+  :root[data-theme='frost-dark'],
+  :root[data-theme='dracula'],
+  :root[data-theme='nord'] {
+    --card-edge: oklch(60% 0.02 165);
+    --line: oklch(60% 0.02 165);
+    --line-2: oklch(70% 0.02 165);
+    --ink: oklch(99% 0.005 160);
+    --ink-2: oklch(90% 0.012 160);
+    --ink-3: oklch(82% 0.014 160);
+    --track: oklch(48% 0.02 165);
+    --accent: oklch(84% 0.11 170);
+    --focus: oklch(84% 0.11 170);
+  }
+}
+
+:root {
+  --f-display: 'Bricolage Grotesque', 'Figtree', ui-sans-serif, system-ui, sans-serif;
+  --f-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mono: 'Spline Sans Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-synthesis: none;
+}

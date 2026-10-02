@@ -43,13 +43,10 @@
     "metered": "Getaktet"
   },
   "topbar": {
-    "menu": "Menü",
     "web": "WEB",
     "searchDownloads": "Downloads durchsuchen",
     "detailPanel": "Detailbereich",
     "accountMenu": "Kontomenü für {{username}}",
-    "openSearch": "Suchen",
-    "cancelSearch": "Abbrechen",
     "addDownload": "Download hinzufügen",
     "speedTrend": "Gesamtgeschwindigkeit der letzten Minute"
   },
@@ -58,7 +55,6 @@
     "allDownloads": "Alle Downloads",
     "status": "Status",
     "tools": "Werkzeuge",
-    "navLabel": "Mediathek und Werkzeuge",
     "type": "Typ",
     "allTypes_one": "{{count}} weiteren Typ zeigen",
     "allTypes_other": "{{count}} weitere Typen zeigen",
@@ -234,12 +230,8 @@
     "moreActions": "Weitere Aktionen",
     "tabsLabel": "Detailabschnitte",
     "tabs": {
-      "general": "Allgemein",
-      "details": "Details",
-      "progress": "Fortschritt",
       "files": "Dateien",
-      "peers": "Peers",
-      "connections": "Verbindungen"
+      "peers": "Peers"
     },
     "general": {
       "savePath": "Speicherort",
@@ -262,17 +254,14 @@
       "seeds": "Seeds",
       "peers": "Peers",
       "sequential": "Sequenziell",
-      "trackers": "Tracker",
       "server": "Server",
       "mime": "MIME",
       "connections": "Verbindungen",
       "segments": "Segmente"
     },
     "progress": {
-      "pieceMap": "Stückkarte · {{count}} Blöcke",
       "segments_one": "{{count}} Segment",
       "segments_other": "{{count}} Segmente",
-      "hint": "Live-Daten zu Stücken und Segmenten erscheinen hier, solange die Übertragung läuft.",
       "pieceStrip": "{{have}} von {{total}} Stücken fertig",
       "have_one": "{{count}} fertig",
       "have_other": "{{count}} fertig",
@@ -290,7 +279,6 @@
     },
     "peers": {
       "summary": "{{seeds}} Seeds · {{peers}} Peers",
-      "colPeer": "Peer",
       "colSegment": "Segment",
       "colRange": "Bereich",
       "none": "Gerade keine verbundenen Peers.",
@@ -320,7 +308,6 @@
     "modeSplit": "Diesen Download auf Schnittstellen verteilen",
     "modeSingle": "Alles über eine Schnittstelle senden",
     "splitHint": "Dieser Rechner hat {{count}} nutzbare Schnittstellen. Verteilen hilft nur, wenn jede ihre eigene Internetleitung hat – zwei Adapter hinter demselben Router teilen sich eine Leitung und sind zusammen meist langsamer als der schnellere allein.",
-    "addPaused": "Pausiert hinzufügen",
     "adding": "Wird hinzugefügt…",
     "submit": "Einreihen",
     "pickInterface": "Wähle mindestens eine Schnittstelle",
@@ -371,7 +358,9 @@
       "name": "Web-Design",
       "desc": "Unabhängig von der Desktop-App – diese Wahl gilt nur in <bold>diesem Browser</bold>. „Automatisch“ folgt der Hell-/Dunkel-Einstellung deines Geräts.",
       "toast": "Design: {{theme}}",
-      "auto": "Automatisch (wie System)"
+      "auto": "Automatisch (wie System)",
+      "light": "Hell",
+      "dark": "Dunkel"
     },
     "access": {
       "name": "Zugriff",
@@ -411,7 +400,6 @@
       "name": "Bandbreite",
       "desc": "Begrenzt, wie schnell der Server lädt und hochlädt. Ein leeres Limit heißt: in dieser Richtung unbegrenzt.",
       "enabledName": "Bandbreite begrenzen",
-      "enabledDesc": "Aus heißt: jede Übertragung läuft unbegrenzt.",
       "profileName": "Aktives Profil",
       "capsName": "Profil-Limits",
       "down": "↓ Down",
@@ -476,7 +464,6 @@
     "label": "Tempo der letzten Minute: Download-Spitze {{down}}, Upload-Spitze {{up}}",
     "peak": "Spitze {{rate}}",
     "ago": "vor 60 s",
-    "now": "jetzt",
     "down": "Download",
     "up": "Upload"
   },
@@ -496,8 +483,7 @@
     "toggle": "Auswahl pausieren oder fortsetzen",
     "remove": "Auswahl entfernen",
     "menuItem": "Tastenkürzel",
-    "hint": "{{label}} ({{key}})",
-    "or": "oder"
+    "hint": "{{label}} ({{key}})"
   },
   "overview": {
     "title": "Übersicht der Warteschlange",
@@ -545,11 +531,8 @@
       "deleteN_other": "{{count}} löschen · {{size}}"
     },
     "add": {
-      "review": "Prüfen",
       "checking": "Links werden geprüft…",
       "back": "Zurück",
-      "reviewLabel_one": "{{count}} Link zum Hinzufügen",
-      "reviewLabel_other": "{{count}} Links zum Hinzufügen",
       "pasted": "Aus der Zwischenablage eingefügt",
       "recent": "Zuletzt",
       "recentFolders": "Zuletzt verwendete Ordner",
@@ -605,9 +588,8 @@
       "compact": "Kompakt",
       "layout": "Ansicht",
       "table": "Tabelle",
-      "cards": "Karten",
-      "done": "Fertig",
-      "selectMode": "Auswahlmodus – tippe Zeilen an, um sie hinzuzufügen oder zu entfernen"
+      "board": "Board",
+      "done": "Fertig"
     },
     "shortcuts": {
       "palette": "Befehlspalette",
@@ -624,8 +606,6 @@
       "placeholder": "Befehl oder Download-Namen eingeben…",
       "results": "Befehle und Downloads",
       "empty": "Nichts passt zu „{{query}}“",
-      "move": "zum Bewegen",
-      "run": "zum Ausführen",
       "group": {
         "add": "Hinzufügen",
         "downloads": "Downloads",
@@ -720,8 +700,6 @@
     "startCurrent": "Wartet derzeit bis {{when}}.",
     "sequential": "In Reihenfolge laden",
     "sequentialHint": "Beim Laden streamen – die Stücke kommen vom Anfang der Datei.",
-    "addSequential": "In Reihenfolge laden (beim Laden streamen)",
-    "colClient": "Client",
     "colProgress": "Hat",
     "colAdapter": "Adapter",
     "peerProgress": "Wie viel {{peer}} hat",
@@ -742,7 +720,6 @@
     "bufferedOf": "{{done}} von {{total}} geladen – weiter hinten wartet die Wiedergabe auf Daten"
   },
   "browser": {
-    "title": "Dieser Browser",
     "notify": "Benachrichtigen, wenn Downloads fertig sind oder fehlschlagen",
     "notifyHint": "Nutzt die Mitteilungen dieses Browsers, während das Portal in einem Hintergrund-Tab offen ist.",
     "notifyDenied": "Mitteilungen sind für diese Seite blockiert. Erlaube sie in den Website-Einstellungen des Browsers.",
@@ -761,7 +738,6 @@
     "window": "{{start}} – {{end}}",
     "hint": "Ein Zeitfenster für alle gewählten Tage. Ziehe über die Stunden, um es festzulegen; klicke auf einen Tag, um ihn ein- oder auszuschließen.",
     "saved": "Zeitplan gesichert",
-    "unsupported": "Dieser Server hat keinen Zeitplan.",
     "hourLabel": "{{day}} {{hour}}:00",
     "open": "Lädt",
     "closed": "Wartet",
@@ -792,9 +768,7 @@
     "clearTitle": "Verlauf leeren?",
     "clearBodyOlder": "Einträge, die vor mehr als {{days}} Tagen fertig wurden, verlassen den Verlauf. Dateien auf der Festplatte bleiben erhalten.",
     "clearBodyAll": "Alle Einträge verlassen den Verlauf. Dateien auf der Festplatte bleiben erhalten.",
-    "readdMenu": "Weitere Optionen zum erneuten Hinzufügen",
     "readdTo": "In Ordner erneut hinzufügen…",
-    "clearConfirm": "Leeren",
     "clearCount_one": "{{count}} Eintrag wird aus dem Verlauf entfernt.",
     "clearCount_other": "{{count}} Einträge werden aus dem Verlauf entfernt.",
     "clearN_one": "{{count}} Eintrag leeren",
@@ -812,5 +786,190 @@
     "editLabel": "Tracker-URL",
     "editNamed": "Tracker {{host}} ändern",
     "removeNamed": "Tracker {{host}} entfernen"
+  },
+  "shell": {
+    "omnibox": {
+      "placeholder": "Link, Magnet oder Stream einfügen – oder suchen",
+      "placeholderShort": "Link einfügen oder suchen",
+      "placeholderReadOnly": "Downloads durchsuchen",
+      "label": "Link hinzufügen oder Downloads durchsuchen",
+      "found_one": "Link erkannt",
+      "found_other": "{{count}} Links erkannt",
+      "addCount_one": "Hinzufügen",
+      "addCount_other": "{{count}} hinzufügen",
+      "options": "Optionen…",
+      "clear": "Suche leeren",
+      "hint": "Link einfügen, um ihn hinzuzufügen. Tippen, um zu suchen; is:, host: und type: grenzen die Liste ein."
+    },
+    "conn": {
+      "live": "Live",
+      "connecting": "Verbinde…",
+      "reconnecting": "Verbinde neu…",
+      "liveLong": "Live – Änderungen kommen sofort an",
+      "reconnectingLong": "Verbinde neu… die Liste ist eventuell nicht aktuell"
+    },
+    "rates": "Download {{down}}, Upload {{up}}",
+    "rail": {
+      "label": "Bibliothek und Werkzeuge",
+      "expand": "Beschriftungen zeigen",
+      "collapse": "Beschriftungen ausblenden",
+      "add": "Download hinzufügen",
+      "countLabel": "{{label}}, {{count}}"
+    },
+    "tabs": {
+      "label": "Bereiche",
+      "board": "Board",
+      "filters": "Filter"
+    },
+    "drawer": {
+      "title": "Filter & Werkzeuge"
+    },
+    "status": {
+      "left": "noch {{size}}",
+      "doneAt": "fertig ≈ {{time}}",
+      "unknown_one": "{{count}} ohne Größe",
+      "unknown_other": "{{count}} ohne Größe",
+      "idle": "Nichts in Bewegung",
+      "chart": "Geschwindigkeit, letzte Minute",
+      "chartTitle": "Geschwindigkeit · letzte Minute",
+      "peakNow": "Spitze {{peak}} · jetzt {{now}}",
+      "counts": "Downloads nach Status"
+    }
+  },
+  "board": {
+    "lane": {
+      "downloading": "Lädt",
+      "upNext": "Als Nächstes",
+      "needsYou": "Braucht dich",
+      "done": "Fertig",
+      "doneToday": "Heute fertig",
+      "inOrder": "startet der Reihe nach"
+    },
+    "card": {
+      "requesting": "Infos werden abgefragt…",
+      "seeding": "Seedet {{ratio}}×",
+      "startsAt": "startet {{when}}"
+    },
+    "tools": {
+      "view": "Ansicht",
+      "viewOptions": "Ansichtsoptionen"
+    },
+    "chips": {
+      "type": "Typ",
+      "allTypes": "Alle Typen",
+      "tags": "Tags"
+    }
+  },
+  "sheet": {
+    "tabs": {
+      "overview": "Übersicht",
+      "network": "Netzwerk"
+    },
+    "copyMagnet": "Magnet kopieren",
+    "rates": "Download {{down}}, Upload {{up}}",
+    "throughput": "Durchsatz zuletzt",
+    "priority": "Priorität",
+    "queueTitle": "Warteschlange",
+    "metadata": {
+      "title": "Infos werden abgefragt …",
+      "hint": "Peers werden nach Name, Größe und Dateiliste des Torrents gefragt. Das dauert meist nur wenige Sekunden."
+    },
+    "finished": {
+      "summary": "{{size}} · fertig {{when}}",
+      "play": "Abspielen",
+      "playNamed": "{{name}} abspielen"
+    },
+    "failed": {
+      "copyDetails": "Details kopieren"
+    },
+    "files": {
+      "beforeMetadata": "Die Dateiliste erscheint, sobald die Metadaten des Torrents da sind.",
+      "skipped": "Übersprungen",
+      "skipNote_one": "Wenn {{count}} Datei übersprungen wird, sparst du {{size}}. Änderungen gelten sofort; übersprungene Dateien werden nie auf die Festplatte geschrieben.",
+      "skipNote_other": "Wenn {{count}} Dateien übersprungen werden, sparst du {{size}}. Änderungen gelten sofort; übersprungene Dateien werden nie auf die Festplatte geschrieben."
+    },
+    "net": {
+      "url": "URL",
+      "pieceMap": "Stückkarte",
+      "peersConnected_one": "{{count}} verbunden",
+      "peersConnected_other": "{{count}} verbunden",
+      "colPeer": "Peer · Client",
+      "colSpeed": "Tempo",
+      "trackersCount": "Tracker · {{count}}",
+      "trackerCountsShort": "{{seeds}} / {{leeches}}"
+    },
+    "overview": {
+      "tile": {
+        "active": "Aktiv",
+        "queued": "Wartend",
+        "completed": "Fertig",
+        "failed": "Fehlgeschlagen"
+      },
+      "failedHint": "zum Ansehen tippen",
+      "chart": "Download · letzte 60 s",
+      "ring": "{{percent}} % der Warteschlange heruntergeladen"
+    },
+    "player": {
+      "nowPlaying": "Wird abgespielt",
+      "done": "Fertig",
+      "play": "Abspielen",
+      "pause": "Pause",
+      "mute": "Ton aus",
+      "unmute": "Ton an",
+      "fullscreen": "Vollbild",
+      "seek": "Position",
+      "openTab": "In neuem Tab öffnen"
+    }
+  },
+  "adding": {
+    "step": "Schritt {{step}} von {{total}}",
+    "continue": "Weiter",
+    "magnetLink": "Magnet-Link",
+    "reviewTitle_one": "{{count}} Link prüfen",
+    "reviewTitle_other": "{{count}} Links prüfen",
+    "selectedOf": "{{n}} von {{total}} ausgewählt",
+    "selectAll": "Alle auswählen",
+    "selectNone": "Keine",
+    "all": "Alle",
+    "whenAdded": "Nach dem Hinzufügen",
+    "startNow": "Sofort starten",
+    "paused": "Pausiert",
+    "moreOptions": "Weitere Optionen",
+    "places": "Orte"
+  },
+  "pages": {
+    "history": {
+      "searchPlaceholder": "Name oder Link suchen",
+      "select": "Auswählen",
+      "selection": "Ausgewählte Verlaufseinträge",
+      "copyNamed": "Link von {{name}} kopieren",
+      "more": "Weitere Aktionen",
+      "moreNamed": "Weitere Aktionen für {{name}}",
+      "remove": "Aus dem Verlauf entfernen",
+      "savedIn": "Gespeichert in {{folder}}",
+      "thisMonth": "Dieser Monat",
+      "finished_one": "{{count}} Datei fertig",
+      "finished_other": "{{count}} Dateien fertig",
+      "byType": "Dieser Monat nach Dateityp",
+      "allTime_one": "Insgesamt: {{count}} Eintrag · {{size}}",
+      "allTime_other": "Insgesamt: {{count}} Einträge · {{size}}",
+      "emptyHint": "Fertige Downloads landen hier, damit du sie später speichern oder erneut hinzufügen kannst."
+    },
+    "settings": {
+      "autosave": "Die meisten Änderungen werden sofort gespeichert",
+      "appearance": "Darstellung",
+      "matchSystem": "Wie System",
+      "behaviour": "Mitteilungen und Layout",
+      "network": "Netzwerk",
+      "inUse": "Aktiv",
+      "editProfile": "Zu bearbeitendes Profil",
+      "editing": "Limits des Profils {{name}}"
+    },
+    "palette": {
+      "navigate": "Bewegen",
+      "run": "Ausführen",
+      "close": "Schließen",
+      "try": "Probier „Verlauf“, „pausieren“ oder „Design“"
+    }
   }
 }

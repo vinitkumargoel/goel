@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -43,8 +43,23 @@ const source = (...parts) => read(join(portalDir, 'src', ...parts))
 const js = built('portal.js')
 const css = built('portal.css')
 
+// The Studio faces Vite emitted (content-hashed names, referenced relatively from the CSS). They
+// are served from /assets/ like the bundle — `font-src 'self'` allows nothing else.
+const fonts = readdirSync(DIST)
+  .filter((name) => /^font-[\w.-]+\.woff2$/.test(name))
+  .sort()
+  .map((name) => [name, readFileSync(join(DIST, name)).toString('base64').match(/.{1,76}/g).join('\n')])
+if (fonts.length === 0) {
+  console.error('error: no font-*.woff2 in dist — did styles/fonts.css stop being imported?')
+  process.exit(1)
+}
+
+// The sign-in page uses the same faces: copy the built @font-face rules, whose relative URLs
+// resolve against /assets/ there too.
+const fontFaces = (css.match(/@font-face\{[^}]*\}/g) ?? []).join('\n')
+
 // Login CSS/JS ship as assets, never inline blocks, so the CSP can forbid inline script and style.
-const loginCss = source('styles', 'themes.css') + '\n' + source('login', 'login.css')
+const loginCss = fontFaces + '\n' + source('styles', 'themes.css') + '\n' + source('login', 'login.css')
 const loginJs = source('login', 'login.js')
 
 // The installable-app bits: a service worker (text) and home-screen icons (binary, base64 in
@@ -97,6 +112,11 @@ public enum PortalBundle {
 
     public static let serviceWorker = ${rawLiteral(serviceWorker)}
 
+    /// WOFF2 bodies of the Studio faces, base64 with line breaks; served from /assets/ by name.
+    public static let fonts: [String: String] = [
+${fonts.map(([name, b64]) => `        "${name}": ${rawLiteral(b64)},`).join('\n')}
+    ]
+
     /// PNG bodies, base64 with line breaks; decode with \`.ignoreUnknownCharacters\`.
     public static let icons: [String: String] = [
 ${icons.map(([name, b64]) => `        "${name}": ${rawLiteral(b64)},`).join('\n')}
@@ -108,6 +128,7 @@ mkdirSync(dirname(OUT), { recursive: true })
 writeFileSync(OUT, swift, 'utf8')
 
 const kb = (s) => `${(Buffer.byteLength(s, 'utf8') / 1024).toFixed(1)} kB`
+const fontBytes = (b64) => Buffer.from(b64.replace(/\n/g, ''), 'base64').length
 console.log('PortalBundle.swift written')
 for (const [name, body] of [
   [`portal-${jsHash}.js`, js],
@@ -116,4 +137,7 @@ for (const [name, body] of [
   [`login-${loginCssHash}.css`, loginCss],
 ]) {
   console.log(`  ${name.padEnd(34)} ${kb(body)}`)
+}
+for (const [name, b64] of fonts) {
+  console.log(`  ${name.padEnd(34)} ${(fontBytes(b64) / 1024).toFixed(1)} kB`)
 }

@@ -1,4 +1,6 @@
 import { failureMessage } from './api'
+import { rowAction, type RowAction } from './taskKind'
+import type { TaskRow } from './types'
 
 /** How many per-id requests a bulk action keeps in flight: the server has no batch API. */
 export const BULK_CONCURRENCY = 4
@@ -47,4 +49,9 @@ export function summariseBulk(results: readonly PromiseSettledResult<unknown>[])
   if (ok > 0) return { kind: 'partial', ok, failed, total }
   const reason = rejected.map((r) => failureMessage(r.reason)).find((m) => m != null) ?? null
   return { kind: 'failed', failed, total, reason }
+}
+
+/** The ids among `selected` that `action` applies to: the bulk bar shows a button only for these. */
+export function eligibleFor(selected: readonly TaskRow[], action: RowAction): string[] {
+  return selected.filter((t) => rowAction(t.statusToken) === action).map((t) => t.id)
 }

@@ -27,3 +27,23 @@ export function savePanelAutoHide(on: boolean): void {
 export function panelVisible(open: boolean, autoHide: boolean, hasSelection: boolean): boolean {
   return open && (hasSelection || !autoHide)
 }
+
+const RAIL_KEY = 'goel.rail.expanded'
+
+/** The desktop rail: slim icons by default, as in the app; labels and counts once pinned open. */
+export function loadRailExpanded(): boolean {
+  try {
+    return localStorage.getItem(RAIL_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function saveRailExpanded(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(RAIL_KEY, '1')
+    else localStorage.removeItem(RAIL_KEY)
+  } catch {
+    // A convenience: without storage the choice lasts until reload.
+  }
+}

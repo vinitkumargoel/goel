@@ -2,16 +2,17 @@ import { act, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ConfirmRequest } from '../components/ConfirmDialog'
+import type { ConfirmRequest } from '../components/dialogs/ConfirmDialog'
 import i18n from '../i18n'
 import { api, ApiError } from '../lib/api'
+import { makeTask } from '../test/makeTask'
 import { useTaskActions } from './useTaskActions'
 
 function wrapper({ children }: { children: ReactNode }) {
   return <I18nextProvider i18n={i18n}>{children}</I18nextProvider>
 }
 
-function setup(ids: string[] = ['a', 'b', 'c', 'd', 'e']) {
+function setup(ids: string[] = ['a', 'b', 'c', 'd', 'e'], lookup?: (id: string) => ReturnType<typeof makeTask> | undefined) {
   const toast = vi.fn()
   const refresh = vi.fn(async () => {})
   let pending: ConfirmRequest | null = null
@@ -25,6 +26,7 @@ function setup(ids: string[] = ['a', 'b', 'c', 'd', 'e']) {
           pending = r
         },
         currentIds: () => present,
+        lookup,
       }),
     { wrapper },
   )
@@ -79,6 +81,17 @@ describe('useTaskActions', () => {
     await act(async () => {})
     expect(remove.mock.calls.map((c) => c[0])).toEqual(['a', 'c'])
     expect(toast).toHaveBeenCalledWith('Removed', 'trash')
+  })
+
+  it('asks before removing with data, naming the download and its size', async () => {
+    const remove = vi.spyOn(api, 'remove').mockResolvedValue()
+    const task = makeTask('a', { name: 'big.iso', totalBytes: 2048 })
+    const { result, pending, confirmPending } = setup(['a'], (id) => (id === 'a' ? task : undefined))
+    act(() => result.current.removeTask('a', true))
+    expect(remove).not.toHaveBeenCalled()
+    expect(pending()?.items).toEqual([{ name: 'big.iso', bytes: 2048, kind: task.kind }])
+    await act(async () => confirmPending())
+    expect(remove).toHaveBeenCalledWith('a', true)
   })
 
   describe('undoable single remove', () => {

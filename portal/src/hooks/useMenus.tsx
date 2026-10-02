@@ -1,22 +1,10 @@
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { eligibleFor } from '../components/BulkBar'
-import type { MenuEntry, MenuState } from '../components/ContextMenu'
-import {
-  DownloadIcon,
-  FileIcon,
-  KeyboardIcon,
-  LinkIcon,
-  LogoutIcon,
-  PauseIcon,
-  PlayIcon,
-  RecheckIcon,
-  RetryIcon,
-  StreamIcon,
-  TrashIcon,
-} from '../components/Icons'
+import { Icon } from '../components/ui/Icon'
+import type { MenuEntry, MenuState } from '../components/ui/Menu'
 import { api, failureMessage, streamURL } from '../lib/api'
 import { BOOT } from '../lib/boot'
+import { eligibleFor } from '../lib/bulk'
 import { canSave, saveToDevice, saveURL } from '../lib/saveFile'
 import type { SelectionAction } from '../lib/selection'
 import { rowAction, type RowAction } from '../lib/taskKind'
@@ -29,9 +17,9 @@ import type { ToastTone } from './useToasts'
 const BULK_ACTIONS: readonly RowAction[] = ['pause', 'resume', 'retry']
 
 function actionIcon(action: RowAction) {
-  if (action === 'pause') return <PauseIcon />
-  if (action === 'retry') return <RetryIcon />
-  return <PlayIcon />
+  if (action === 'pause') return <Icon name="pause" />
+  if (action === 'retry') return <Icon name="retry" />
+  return <Icon name="play" />
 }
 
 interface Deps {
@@ -68,7 +56,7 @@ export function useMenus(deps: Deps) {
       {
         key: 'rm',
         label: t('menu.removeFromList'),
-        icon: <TrashIcon />,
+        icon: <Icon name="trash" />,
         danger: true,
         shortcut: 'Del',
         action: () => removeTask(id, false),
@@ -76,7 +64,7 @@ export function useMenus(deps: Deps) {
       {
         key: 'rmd',
         label: t('menu.removeWithData'),
-        icon: <TrashIcon />,
+        icon: <Icon name="trash" />,
         danger: true,
         action: () => removeTask(id, true),
       },
@@ -103,7 +91,7 @@ export function useMenus(deps: Deps) {
     entries.push({
       key: 'copy',
       label: t('bulk.copyLinks'),
-      icon: <LinkIcon />,
+      icon: <Icon name="link" />,
       action: () => deps.copy(rows.map((r) => r.source).join('\n')),
     })
     if (deps.canWrite && deps.queue) entries.push(...bulkQueueEntries(rows, deps.queue, t))
@@ -113,7 +101,7 @@ export function useMenus(deps: Deps) {
         {
           key: 'rm',
           label: t('menu.removeMany', { count: ids.length }),
-          icon: <TrashIcon />,
+          icon: <Icon name="trash" />,
           danger: true,
           shortcut: 'Del',
           action: () => deps.removeMany(ids),
@@ -139,14 +127,14 @@ export function useMenus(deps: Deps) {
     entries.push({
       key: 'copy',
       label: t('menu.copySourceLink'),
-      icon: <LinkIcon />,
+      icon: <Icon name="link" />,
       action: () => deps.copy(task.source),
     })
     if (canSave(task)) {
       entries.push({
         key: 'save',
         label: t('menu.saveToDevice'),
-        icon: <DownloadIcon />,
+        icon: <Icon name="download" />,
         action: () => saveToDevice(saveURL(task), task.multiFile ? '' : task.name),
       })
     }
@@ -154,7 +142,7 @@ export function useMenus(deps: Deps) {
       entries.push({
         key: 'stream',
         label: t('common.stream'),
-        icon: <StreamIcon />,
+        icon: <Icon name="stream" />,
         action: () =>
           deps.onStream ? deps.onStream(task) : window.open(streamURL(id), '_blank', 'noopener,noreferrer'),
       })
@@ -164,7 +152,7 @@ export function useMenus(deps: Deps) {
       entries.push({
         key: 'recheck',
         label: t('menu.forceRecheck'),
-        icon: <RecheckIcon />,
+        icon: <Icon name="refresh" />,
         action: () => {
           void api
             .recheck(id)
@@ -203,18 +191,18 @@ export function useMenus(deps: Deps) {
       y: anchor.bottom + 6,
       label: BOOT.username,
       entries: [
-        { key: 'set', label: t('common.settings'), icon: <FileIcon />, action: openSettings },
+        { key: 'set', label: t('common.settings'), icon: <Icon name="settings" />, action: openSettings },
         {
           key: 'keys',
           label: t('shortcuts.menuItem'),
-          icon: <KeyboardIcon />,
+          icon: <Icon name="keyboard" />,
           shortcut: '?',
           action: openShortcuts,
         },
         {
           key: 'out',
           label: t('common.signOut'),
-          icon: <LogoutIcon />,
+          icon: <Icon name="logout" />,
           danger: true,
           action: () => void api.logout(),
         },

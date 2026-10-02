@@ -41,6 +41,10 @@ export function useDialogFocus(ref: RefObject<HTMLElement | null>, options: Dial
       const root = ref.current
       if (!root) return
       if (e.key === 'Escape' && hasEscape) {
+        // An inline editor inside the dialog (a tracker form) takes its own Escape first: it
+        // marks itself `data-local-escape`, and the dialog closes only on the next press.
+        const target = e.target instanceof Element ? e.target : null
+        if (target && root.contains(target) && target.closest('[data-local-escape]')) return
         e.preventDefault()
         e.stopPropagation()
         onEscape()

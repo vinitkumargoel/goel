@@ -43,13 +43,10 @@
     "metered": "Metered"
   },
   "topbar": {
-    "menu": "Menu",
     "web": "WEB",
     "searchDownloads": "Search downloads",
     "detailPanel": "Detail panel",
     "accountMenu": "Account menu for {{username}}",
-    "openSearch": "Search",
-    "cancelSearch": "Cancel",
     "addDownload": "Add download",
     "speedTrend": "Total speed over the last minute"
   },
@@ -58,7 +55,6 @@
     "allDownloads": "All downloads",
     "status": "Status",
     "tools": "Tools",
-    "navLabel": "Library and tools",
     "type": "Type",
     "allTypes_one": "Show {{count}} more type",
     "allTypes_other": "Show {{count}} more types",
@@ -234,12 +230,8 @@
     "moreActions": "More actions",
     "tabsLabel": "Detail sections",
     "tabs": {
-      "general": "General",
-      "details": "Details",
-      "progress": "Progress",
       "files": "Files",
-      "peers": "Peers",
-      "connections": "Connections"
+      "peers": "Peers"
     },
     "general": {
       "savePath": "Save path",
@@ -262,17 +254,14 @@
       "seeds": "Seeds",
       "peers": "Peers",
       "sequential": "Sequential",
-      "trackers": "Trackers",
       "server": "Server",
       "mime": "MIME",
       "connections": "Connections",
       "segments": "Segments"
     },
     "progress": {
-      "pieceMap": "Piece map · {{count}} buckets",
       "segments_one": "{{count}} segment",
       "segments_other": "{{count}} segments",
-      "hint": "Live piece/segment data appears here while the transfer runs.",
       "pieceStrip": "{{have}} of {{total}} pieces complete",
       "have_one": "{{count}} complete",
       "have_other": "{{count}} complete",
@@ -290,7 +279,6 @@
     },
     "peers": {
       "summary": "{{seeds}} seeds · {{peers}} peers",
-      "colPeer": "Peer",
       "colSegment": "Segment",
       "colRange": "range",
       "none": "No connected peers right now.",
@@ -320,7 +308,6 @@
     "modeSplit": "Split this download across interfaces",
     "modeSingle": "Send it all through one interface",
     "splitHint": "This machine has {{count}} usable interfaces. Splitting only helps when each has its own upstream link — two adapters behind the same router share one pipe and are usually slower together than the faster one alone.",
-    "addPaused": "Add paused",
     "adding": "Adding…",
     "submit": "Add to queue",
     "pickInterface": "Pick at least one interface",
@@ -371,7 +358,9 @@
       "name": "Web theme",
       "desc": "Independent of the desktop app — this choice is remembered in <bold>this browser</bold> only. Auto follows your device’s light or dark setting.",
       "toast": "Theme: {{theme}}",
-      "auto": "Auto (match system)"
+      "auto": "Auto (match system)",
+      "light": "Light",
+      "dark": "Dark"
     },
     "access": {
       "name": "Access",
@@ -411,7 +400,6 @@
       "name": "Bandwidth",
       "desc": "Cap how fast the server downloads and uploads. A blank cap means no limit in that direction.",
       "enabledName": "Limit bandwidth",
-      "enabledDesc": "Off means every transfer runs unlimited.",
       "profileName": "Active profile",
       "capsName": "Profile caps",
       "down": "↓ Down",
@@ -476,7 +464,6 @@
     "label": "Speed over the last minute: download peak {{down}}, upload peak {{up}}",
     "peak": "Peak {{rate}}",
     "ago": "60s ago",
-    "now": "now",
     "down": "Download",
     "up": "Upload"
   },
@@ -496,8 +483,7 @@
     "toggle": "Pause or resume selected",
     "remove": "Remove selected",
     "menuItem": "Keyboard shortcuts",
-    "hint": "{{label}} ({{key}})",
-    "or": "or"
+    "hint": "{{label}} ({{key}})"
   },
   "overview": {
     "title": "Queue overview",
@@ -545,11 +531,8 @@
       "deleteN_other": "Delete {{count}} · {{size}}"
     },
     "add": {
-      "review": "Review",
       "checking": "Checking links…",
       "back": "Back",
-      "reviewLabel_one": "{{count}} link to add",
-      "reviewLabel_other": "{{count}} links to add",
       "pasted": "Pasted from clipboard",
       "recent": "Recent",
       "recentFolders": "Recent folders",
@@ -605,9 +588,8 @@
       "compact": "Compact",
       "layout": "Layout",
       "table": "Table",
-      "cards": "Cards",
-      "done": "Done",
-      "selectMode": "Selecting — tap rows to add or remove them"
+      "board": "Board",
+      "done": "Done"
     },
     "shortcuts": {
       "palette": "Command palette",
@@ -624,8 +606,6 @@
       "placeholder": "Type a command or a download name…",
       "results": "Commands and downloads",
       "empty": "Nothing matches “{{query}}”",
-      "move": "to move",
-      "run": "to run",
       "group": {
         "add": "Add",
         "downloads": "Downloads",
@@ -720,8 +700,6 @@
     "startCurrent": "Currently held until {{when}}.",
     "sequential": "Download in order",
     "sequentialHint": "Stream while downloading — pieces arrive from the start of the file.",
-    "addSequential": "Download in order (stream while downloading)",
-    "colClient": "Client",
     "colProgress": "Has",
     "colAdapter": "Adapter",
     "peerProgress": "How much {{peer}} has",
@@ -742,7 +720,6 @@
     "bufferedOf": "{{done}} of {{total}} downloaded — playback past that waits for data"
   },
   "browser": {
-    "title": "This browser",
     "notify": "Notify me when downloads finish or fail",
     "notifyHint": "Uses this browser's notifications while the portal is open in a background tab.",
     "notifyDenied": "Notifications are blocked for this site. Allow them in the browser's site settings.",
@@ -761,7 +738,6 @@
     "window": "{{start}} – {{end}}",
     "hint": "One window for all selected days. Drag across hours to set it; click a day to include or leave it out.",
     "saved": "Schedule saved",
-    "unsupported": "This server has no scheduler.",
     "hourLabel": "{{day}} {{hour}}:00",
     "open": "Downloading",
     "closed": "Waiting",
@@ -792,9 +768,7 @@
     "clearTitle": "Clear history?",
     "clearBodyOlder": "Entries finished more than {{days}} days ago leave the history. Files on disk are kept.",
     "clearBodyAll": "Every entry leaves the history. Files on disk are kept.",
-    "readdMenu": "More re-add options",
     "readdTo": "Re-add to folder…",
-    "clearConfirm": "Clear",
     "clearCount_one": "{{count}} entry will be removed from the history.",
     "clearCount_other": "{{count}} entries will be removed from the history.",
     "clearN_one": "Clear {{count}} entry",
@@ -812,5 +786,190 @@
     "editLabel": "Tracker URL",
     "editNamed": "Edit tracker {{host}}",
     "removeNamed": "Remove tracker {{host}}"
+  },
+  "shell": {
+    "omnibox": {
+      "placeholder": "Paste a link, magnet or stream — or search",
+      "placeholderShort": "Paste a link or search",
+      "placeholderReadOnly": "Search downloads",
+      "label": "Add a link or search downloads",
+      "found_one": "Link recognised",
+      "found_other": "{{count}} links recognised",
+      "addCount_one": "Add",
+      "addCount_other": "Add {{count}}",
+      "options": "Options…",
+      "clear": "Clear search",
+      "hint": "Paste a link to add it. Type to search; is:, host: and type: narrow the list."
+    },
+    "conn": {
+      "live": "Live",
+      "connecting": "Connecting…",
+      "reconnecting": "Reconnecting…",
+      "liveLong": "Live — updates stream in as they happen",
+      "reconnectingLong": "Reconnecting… the list may be out of date"
+    },
+    "rates": "Download {{down}}, upload {{up}}",
+    "rail": {
+      "label": "Library and tools",
+      "expand": "Show labels",
+      "collapse": "Hide labels",
+      "add": "Add download",
+      "countLabel": "{{label}}, {{count}}"
+    },
+    "tabs": {
+      "label": "Sections",
+      "board": "Board",
+      "filters": "Filters"
+    },
+    "drawer": {
+      "title": "Filters & tools"
+    },
+    "status": {
+      "left": "{{size}} left",
+      "doneAt": "done ≈ {{time}}",
+      "unknown_one": "{{count}} without a size",
+      "unknown_other": "{{count}} without a size",
+      "idle": "Nothing moving",
+      "chart": "Speed, last minute",
+      "chartTitle": "Speed · last minute",
+      "peakNow": "peak {{peak}} · now {{now}}",
+      "counts": "Downloads by state"
+    }
+  },
+  "board": {
+    "lane": {
+      "downloading": "Downloading",
+      "upNext": "Up next",
+      "needsYou": "Needs you",
+      "done": "Done",
+      "doneToday": "Done today",
+      "inOrder": "starts in order"
+    },
+    "card": {
+      "requesting": "Requesting info…",
+      "seeding": "Seeding {{ratio}}×",
+      "startsAt": "starts {{when}}"
+    },
+    "tools": {
+      "view": "View",
+      "viewOptions": "View options"
+    },
+    "chips": {
+      "type": "Type",
+      "allTypes": "All types",
+      "tags": "Tags"
+    }
+  },
+  "sheet": {
+    "tabs": {
+      "overview": "Overview",
+      "network": "Network"
+    },
+    "copyMagnet": "Copy magnet",
+    "rates": "Download {{down}}, upload {{up}}",
+    "throughput": "Recent throughput",
+    "priority": "Priority",
+    "queueTitle": "Queue",
+    "metadata": {
+      "title": "Requesting info…",
+      "hint": "Asking peers for the torrent’s name, size and file list. This usually takes a few seconds."
+    },
+    "finished": {
+      "summary": "{{size}} · finished {{when}}",
+      "play": "Play",
+      "playNamed": "Play {{name}}"
+    },
+    "failed": {
+      "copyDetails": "Copy details"
+    },
+    "files": {
+      "beforeMetadata": "The file list appears once the torrent’s metadata arrives.",
+      "skipped": "Skipped",
+      "skipNote_one": "Skipping {{count}} file saves {{size}}. Changes apply right away; skipped files are never written to disk.",
+      "skipNote_other": "Skipping {{count}} files saves {{size}}. Changes apply right away; skipped files are never written to disk."
+    },
+    "net": {
+      "url": "URL",
+      "pieceMap": "Piece map",
+      "peersConnected_one": "{{count}} connected",
+      "peersConnected_other": "{{count}} connected",
+      "colPeer": "Peer · client",
+      "colSpeed": "Speed",
+      "trackersCount": "Trackers · {{count}}",
+      "trackerCountsShort": "{{seeds}} / {{leeches}}"
+    },
+    "overview": {
+      "tile": {
+        "active": "Active",
+        "queued": "Queued",
+        "completed": "Done",
+        "failed": "Failed"
+      },
+      "failedHint": "tap to see it",
+      "chart": "Download · last 60 s",
+      "ring": "{{percent}}% of what’s queued is downloaded"
+    },
+    "player": {
+      "nowPlaying": "Now playing",
+      "done": "Done",
+      "play": "Play",
+      "pause": "Pause",
+      "mute": "Mute",
+      "unmute": "Unmute",
+      "fullscreen": "Full screen",
+      "seek": "Position",
+      "openTab": "Open in a new tab"
+    }
+  },
+  "adding": {
+    "step": "Step {{step}} of {{total}}",
+    "continue": "Continue",
+    "magnetLink": "magnet link",
+    "reviewTitle_one": "Review {{count}} link",
+    "reviewTitle_other": "Review {{count}} links",
+    "selectedOf": "{{n}} of {{total}} selected",
+    "selectAll": "Select all",
+    "selectNone": "None",
+    "all": "All",
+    "whenAdded": "When added",
+    "startNow": "Start now",
+    "paused": "Paused",
+    "moreOptions": "More options",
+    "places": "Places"
+  },
+  "pages": {
+    "history": {
+      "searchPlaceholder": "Search name or link",
+      "select": "Select",
+      "selection": "Selected history entries",
+      "copyNamed": "Copy the link of {{name}}",
+      "more": "More actions",
+      "moreNamed": "More actions for {{name}}",
+      "remove": "Remove from history",
+      "savedIn": "Saved in {{folder}}",
+      "thisMonth": "This month",
+      "finished_one": "{{count}} file finished",
+      "finished_other": "{{count}} files finished",
+      "byType": "This month by file type",
+      "allTime_one": "All time: {{count}} entry · {{size}}",
+      "allTime_other": "All time: {{count}} entries · {{size}}",
+      "emptyHint": "Downloads land here when they finish, so you can save or re-add them later."
+    },
+    "settings": {
+      "autosave": "Most changes save as you make them",
+      "appearance": "Appearance",
+      "matchSystem": "Match system",
+      "behaviour": "Notifications and layout",
+      "network": "Network",
+      "inUse": "In use",
+      "editProfile": "Profile to edit",
+      "editing": "Caps of the {{name}} profile"
+    },
+    "palette": {
+      "navigate": "Navigate",
+      "run": "Run",
+      "close": "Close",
+      "try": "Try “history”, “pause” or “theme”"
+    }
   }
 }

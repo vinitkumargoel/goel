@@ -1,48 +1,45 @@
 import { BOOT } from './boot'
 
-/** Mirrored from `Theme.swift` and `styles/themes.css` — a new theme must be added in all three. */
-export const THEMES = ['frost-light', 'frost-dark', 'dracula', 'nord'] as const
+/**
+ * The two Studio palettes, mirrored from StudioPalette.swift and `styles/themes.css`. `auto`
+ * follows the OS light/dark setting; it is a choice, never a value written to `data-theme`.
+ */
+export const THEMES = ['light', 'dark'] as const
 
 export type Theme = (typeof THEMES)[number]
 
-/**
- * What the user picked: a concrete theme, or `auto`, which follows the OS light/dark setting via
- * the Frost pair. `auto` is web-only — the desktop never sends it, and it is never written to `data-theme`.
- */
 export type ThemeChoice = Theme | 'auto'
 
 export const AUTO_THEME = 'auto' as const
 
-export const THEME_LABEL: Record<Theme, string> = {
-  'frost-light': 'Frost Light',
-  'frost-dark': 'Frost Dark',
-  dracula: 'Dracula',
-  nord: 'Nord',
-}
+/** The order Settings and the palette offer them in. */
+export const THEME_CHOICES: readonly ThemeChoice[] = ['light', 'dark', AUTO_THEME]
 
-export const THEME_ACCENT: Record<Theme, string> = {
-  'frost-light': '#3F58D6',
-  'frost-dark': '#8AA2FF',
-  dracula: '#BD93F9',
-  nord: '#88C0D0',
+/**
+ * Values from before Studio — the desktop's `remoteTheme` and what a browser stored under
+ * `goel-web-theme` — and the Studio palette each now paints with.
+ */
+export const LEGACY_THEMES: Readonly<Record<string, Theme>> = {
+  'frost-light': 'light',
+  'frost-dark': 'dark',
+  dracula: 'dark',
+  nord: 'dark',
 }
 
 const STORAGE_KEY = 'goel-web-theme'
 const DARK_QUERY = '(prefers-color-scheme: dark)'
 
-function isTheme(value: string | null): value is Theme {
-  return value != null && (THEMES as readonly string[]).includes(value)
-}
-
-function isChoice(value: string | null): value is ThemeChoice {
-  return value === AUTO_THEME || isTheme(value)
+/** Any accepted value, current or legacy, as a choice; null for anything else. */
+export function normalizeTheme(value: string | null | undefined): ThemeChoice | null {
+  if (value == null) return null
+  if (value === AUTO_THEME || (THEMES as readonly string[]).includes(value)) return value as ThemeChoice
+  return LEGACY_THEMES[value] ?? null
 }
 
 /** `localStorage` throws in private-mode Safari and when cookies are blocked. */
 function readStored(): ThemeChoice | null {
   try {
-    const v = localStorage.getItem(STORAGE_KEY)
-    return isChoice(v) ? v : null
+    return normalizeTheme(localStorage.getItem(STORAGE_KEY))
   } catch {
     return null
   }
@@ -57,26 +54,31 @@ function writeStored(choice: ThemeChoice): void {
 }
 
 /**
- * The stored choice, else Auto. A desktop default of Dracula or Nord is a deliberate pick with no
- * light twin, so a new browser starts on it; the Frost defaults defer to the OS setting instead.
- * `BOOT.theme` is never persisted: a browser follows the desktop only while nothing is stored.
+ * The stored choice, else what the desktop asked for, else Auto.
+ *
+ * The desktop's value is followed only while this browser has stored nothing, and is never
+ * persisted. `light`, `dark` and `auto` are taken as given. Of the legacy values, Dracula and
+ * Nord were deliberate dark picks with no light twin, so they start dark; the Frost pair was the
+ * desktop default and keeps deferring to the OS, as it always did.
  */
 export function initialTheme(): ThemeChoice {
   const stored = readStored()
   if (stored) return stored
-  return BOOT.theme === 'dracula' || BOOT.theme === 'nord' ? BOOT.theme : AUTO_THEME
+  const boot = BOOT.theme
+  if (boot === 'frost-light' || boot === 'frost-dark') return AUTO_THEME
+  return normalizeTheme(boot) ?? AUTO_THEME
 }
 
-/** Whether the OS asks for a dark appearance. Dark where `matchMedia` is missing, the old default. */
+/** Whether the OS asks for a dark appearance. Light where `matchMedia` is missing. */
 export function systemPrefersDark(): boolean {
-  if (typeof window.matchMedia !== 'function') return true
+  if (typeof window.matchMedia !== 'function') return false
   return window.matchMedia(DARK_QUERY).matches
 }
 
-/** The concrete theme a choice paints with. */
+/** The concrete palette a choice paints with. */
 export function resolveTheme(choice: ThemeChoice, prefersDark: boolean): Theme {
   if (choice !== AUTO_THEME) return choice
-  return prefersDark ? 'frost-dark' : 'frost-light'
+  return prefersDark ? 'dark' : 'light'
 }
 
 export function applyTheme(choice: ThemeChoice, persist: boolean): void {

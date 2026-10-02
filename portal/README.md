@@ -28,35 +28,58 @@ npm run dev        # http://localhost:5173, proxying the API to 127.0.0.1:8899
 ```
 
 The dev server proxies `/api`, `/login`, `/logout` and `/stream` to a real
-daemon, so you develop against real downloads rather than fixtures. Point it
-elsewhere with `GOEL_DEV_TARGET=http://host:port npm run dev`.
-
+daemon. Point it elsewhere with `GOEL_DEV_TARGET=http://host:port npm run dev`.
 You need a running backend with **Settings → Web Access** enabled. On Linux,
 `goel` serves it directly.
+
+**Fixture mode (dev only).** `http://localhost:5173/?fixtures` runs the portal
+against canned data instead (`src/dev/`): a mock `fetch` and `EventSource` with
+the mockup's downloads. Variants: `?fixtures=empty`, `loading`, `error`,
+`offline`, `readonly`; add `&theme=light|dark` and `&lang=de`. `src/dev/install.ts`
+acts only under `import.meta.env.DEV`, so none of it reaches the production bundle.
 
 ## Layout
 
 ```
 src/
-  main.tsx              mount, theme-before-paint, token scrub
-  App.tsx               view/filter/selection state, actions, menus
-  lib/
+  main.tsx              dev fixtures hook, styles, mount, theme-before-paint, token scrub
+  App.tsx               view/filter/selection state, actions, menus — the composition
+  lib/                  logic, no React: wire types, api, filters, lanes, queue, theme…
     types.ts            wire types — mirror RemoteRouter.swift exactly
-    api.ts              typed client; 401/403/network failures
-    boot.ts             the server's per-session values
-    theme.ts            the four themes and where the choice is stored
-    format.ts           sizes, speeds, ETAs
-    taskKind.ts         status/kind/file-type classification
-    clipboard.ts        copy, honest about non-secure contexts
-  hooks/
-    useTasks.ts         SSE stream with a poll fallback
-    useToasts.ts
-  components/           Topbar, Sidebar, LibraryView, DetailPanel, FolderPicker, …
+    lanes.ts            the Board's lanes (mirrors DownloadBoardLanes.swift)
+    tone.ts             the colour a state is drawn in
+    theme.ts            Studio Light / Dark / Auto, and the legacy values
+  hooks/                state and effects shared by the views
+  components/
+    ui/                 Studio primitives: Icon, Art, Ring/Bar, SpeedChart, Menu, Modal, Seg…
+    shell/              header, omnibox, rail / phone drawer, tab bar, status bar, banners, toasts
+    library/            Board and Table, filter chips, bulk bar, empty states
+    detail/             the detail sheet and its panes, player, queue overview
+    add/                the add dialog, review, folder picker
+    dialogs/            confirm, queue dialogs, shortcuts, command palette
+    history/ settings/  the two other views
   styles/
-    themes.css          the four palettes — mirrored from Theme.swift
-    portal.css          component styles
+    fonts.css           the self-hosted faces
+    themes.css          Studio Light and Dark tokens — every colour lives here
+    base.css            primitives (.btn, .chip, .pill, .seg, .art, .ring, .menu, .sheet…)
+    shell.css library.css detail.css dialogs.css pages.css
+  fonts/                Latin-subset woff2 + licences (scripts/subset-fonts.sh)
   login/                the sign-in page's CSS and JS (no React)
+  dev/                  fixture mode, dev server only
 ```
+
+**Themes.** `data-theme` takes `light`, `dark` or `auto` (follows the OS). The
+pre-Studio values still work: `frost-light` → light; `frost-dark`, `dracula`,
+`nord` → dark. Components never use a colour literal — only the tokens in
+`themes.css`.
+
+**Fonts.** Bricolage Grotesque (display), Figtree (UI) and Spline Sans Mono
+(figures), subset to Latin by `scripts/subset-fonts.sh` and served same-origin from
+`/assets/font-*.woff2` (`font-src 'self'` in the CSP). The codegen embeds them in
+`PortalBundle.fonts`; nothing is fetched from Google.
+
+**Breakpoints.** ≤920px narrow (rail slims, detail overlays); ≤600px phone (lanes
+stack, detail is a full-screen sheet, the rail becomes a tab bar plus drawer).
 
 ## Things worth knowing before you change something
 
@@ -65,18 +88,18 @@ structs in `Sources/GoelCore/Remote/RemoteRouter.swift` field for field. Nothing
 generates or checks that correspondence — if you add a field in Swift, add it
 there too.
 
-**`themes.css` is the only definition of the four palettes.** It reaches the app
+**`themes.css` is the only definition of the palettes.** It reaches the app
 through `main.tsx` and the login page through the codegen. Do not add a second
-copy in Swift; a divergent duplicate is what this rewrite removed.
+copy in Swift.
 
 **The CSP forbids inline script and style** (`script-src 'self'`). Anything
 inline — an inline `<script>`, a CDN `<link>`, a `new Function` — will be
 blocked at runtime. That is also why the server passes its boot values as a
 `<script type="application/json">` element rather than an assignment.
 
-**The build must stay one JS file and one CSS file.** `vite.config.ts` disables
-code splitting on purpose: a dynamic `import()` would need a CSP relaxation, and
-`scripts/codegen.mjs` embeds exactly two artifacts.
+**The build must stay one JS file and one CSS file** (plus the fonts).
+`vite.config.ts` disables code splitting on purpose: a dynamic `import()` would
+need a CSP relaxation, and `scripts/codegen.mjs` embeds exactly those artifacts.
 
 **Read-only sessions.** `BOOT.readOnly` hides controls that would be refused,
 but it is a courtesy, not a control — the server refuses every POST with a 403
@@ -93,10 +116,6 @@ answers from the server — grey out what they say to grey out, and never infer 
 here. A rule invented in JavaScript about someone else's filesystem is a rule that will be
 wrong, and it would be wrong about a security boundary. `SaveFolderBrowser.swift` records
 what this reach costs.
-
-**The `hide-sm` / `hide-xs` classes in `LibraryView` are load-bearing.** They must match
-the narrow-viewport `grid-template-columns` in `portal.css` and be identical between a
-header cell and the row cell under it, or a column header ends up over nothing.
 
 **Adding an API route** means: the Swift route, the type in `types.ts`, the
 method in `api.ts`, then the component. The `api` layer already handles the 401
