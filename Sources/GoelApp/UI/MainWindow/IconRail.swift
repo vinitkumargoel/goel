@@ -134,7 +134,9 @@ struct IconRail: View {
     private var expanded: some View {
         VStack(spacing: 0) {
             // Fades at the edge that hides rows, so a short window reads as "scroll for more".
-            EdgeFadingScrollView {
+            // A short fade: the full 28 pt washed out a whole row ("nas.home") that was in
+            // view, so it read as disabled rather than as the edge of the list.
+            EdgeFadingScrollView(fadeLength: Studio.Space.m) {
                 VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     RailFilterSections()
                     RailTagSection()
