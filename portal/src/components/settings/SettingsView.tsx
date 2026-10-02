@@ -10,6 +10,7 @@ import { Icon } from '../ui/Icon'
 import { BandwidthCard } from './BandwidthCard'
 import { LanguageRow, NotifyRow } from './BrowserPrefsCard'
 import { NetworkCard } from './NetworkCard'
+import { RulesCard } from './RulesCard'
 import { ScheduleCard } from './ScheduleCard'
 import { ServerSettingsCards } from './ServerSettingsCards'
 import { Pill, SettingsCard } from './SettingsParts'
@@ -137,6 +138,7 @@ export function SettingsView({
             <BandwidthCard bandwidth={bandwidth} canWrite={canWrite} onToast={onToast} onDirty={setBandwidthDirty} />
           )}
           <ServerSettingsCards canWrite={canWrite} onToast={onToast} onDirty={setServerDirty} />
+          <RulesCard canWrite={canWrite} onToast={onToast} />
           <NetworkCard canWrite={canWrite} onToast={onToast} onDirty={setNetworkDirty} />
           <SettingsCard
             title={t('settings.desktop.name')}

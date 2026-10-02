@@ -73,6 +73,10 @@ public protocol RemoteBackend: AnyObject, Sendable {
     func settingsState() async -> RemoteSettingsState?
     /// Called only after the router validated `update` and vetted its folder.
     func updateSettings(_ update: RemoteSettingsUpdate) async -> RemoteSettingsState?
+    /// nil = no editable rules to expose; the routes answer 404.
+    func rulesState() async -> [AutoSortRule]?
+    /// Called only after the router validated and vetted the list; replaces the stored rules, returns them.
+    func replaceRules(_ rules: [AutoSortRule]) async -> [AutoSortRule]?
     // Tracker editing; URLs arrive already checked with `TrackerList.isValidAnnounceURL`.
     /// How many were new to the torrent.
     func addTrackers(_ urls: [String], task id: UUID) async -> Int
@@ -90,6 +94,8 @@ public extension RemoteBackend {
     func updateSchedule(_ update: RemoteScheduleUpdate) async -> RemoteScheduleState? { nil }
     func settingsState() async -> RemoteSettingsState? { nil }
     func updateSettings(_ update: RemoteSettingsUpdate) async -> RemoteSettingsState? { nil }
+    func rulesState() async -> [AutoSortRule]? { nil }
+    func replaceRules(_ rules: [AutoSortRule]) async -> [AutoSortRule]? { nil }
     func addTrackers(_ urls: [String], task id: UUID) async -> Int { 0 }
     func removeTrackers(_ urls: Set<String>, task id: UUID) async {}
     func editTracker(_ old: String, to new: String, task id: UUID) async -> Bool { false }
@@ -246,6 +252,15 @@ extension DownloadManager: RemoteBackend {
     public func updateSettings(_ update: RemoteSettingsUpdate) async -> RemoteSettingsState? {
         let updated = await apply { update.apply(to: &$0) }
         return RemoteSettingsState(updated)
+    }
+
+    public func rulesState() async -> [AutoSortRule]? {
+        settings.autoSortRules
+    }
+
+    /// Through `apply`, like settings: only the rule list is written, from the desktop's own store.
+    public func replaceRules(_ rules: [AutoSortRule]) async -> [AutoSortRule]? {
+        await apply { $0.autoSortRules = rules }.autoSortRules
     }
 
     public func remoteDownloadRoots() async -> [String] {

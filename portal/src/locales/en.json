@@ -1032,5 +1032,89 @@
       "close": "Close",
       "try": "Try “history”, “pause” or “theme”"
     }
+  },
+  "rules": {
+    "title": "Download rules",
+    "desc": "Sort new downloads by name, type, site or size. Rules are checked in order and the first enabled match wins. They are shared with the desktop app.",
+    "empty": "No rules yet. Add one to send matching downloads to a folder, tag them or change how they run.",
+    "add": "Add rule",
+    "editBtn": "Edit",
+    "saved": "Rule saved",
+    "deleted": "Rule deleted",
+    "and": " and ",
+    "or": " or ",
+    "edit": "Edit rule {{name}}",
+    "remove": "Delete rule {{name}}",
+    "moveUp": "Move rule {{name}} up",
+    "moveDown": "Move rule {{name}} down",
+    "delete": {
+      "title": "Delete this rule?",
+      "body": "“{{name}}” stops applying to new downloads. Downloads already added are not changed.",
+      "confirm": "Delete rule"
+    },
+    "match": {
+      "all": "all",
+      "any": "any"
+    },
+    "fields": {
+      "fileName": "File name",
+      "fileExtension": "Extension",
+      "domain": "Domain",
+      "url": "URL",
+      "size": "Size"
+    },
+    "ops": {
+      "isEqual": "is",
+      "contains": "contains",
+      "beginsWith": "begins with",
+      "endsWith": "ends with",
+      "isAnyOf": "is any of",
+      "matchesRegex": "matches regex",
+      "largerThan": "is larger than",
+      "smallerThan": "is smaller than"
+    },
+    "priority": {
+      "high": "High",
+      "normal": "Normal",
+      "low": "Low"
+    },
+    "done": {
+      "nothing": "Do nothing",
+      "open": "Open",
+      "reveal": "Show in folder",
+      "moveTo": "Move to…"
+    },
+    "editor": {
+      "addTitle": "Add download rule",
+      "editTitle": "Edit download rule",
+      "subtitle": "When a new download matches, set where it goes and how it runs.",
+      "name": "Rule name",
+      "nameInvalid": "Give the rule a name of up to 120 characters.",
+      "when": "When a new download matches",
+      "matchLabel": "Match all or any condition",
+      "ofThese": "of these:",
+      "conditionN": "Condition {{n}}",
+      "valueN": "Value of condition {{n}}",
+      "removeCondition": "Remove condition {{n}}",
+      "addCondition": "Add condition",
+      "sizeHint": "e.g. 1 GB",
+      "conditionInvalid": "Every condition needs a value.",
+      "sizeInvalid": "A size looks like 500 MB or 1.5 GB.",
+      "then": "Then",
+      "folder": "Save to",
+      "folderDefault": "Default folder rule",
+      "tag": "Tag",
+      "none": "None",
+      "speed": "Speed cap (KB/s)",
+      "noCap": "No cap",
+      "speedInvalid": "Use a whole number of KB/s, or leave it empty.",
+      "priority": "Priority",
+      "startPaused": "Start paused",
+      "done": "When done",
+      "moveTarget": "Folder to move finished downloads to",
+      "doneLocked": "This rule’s “when done” action runs a script or app and can only be changed in the desktop app. It is kept as it is.",
+      "actionInvalid": "Give the rule at least one action: a folder, tag, speed cap, priority, start paused or when done.",
+      "save": "Save rule"
+    }
   }
 }

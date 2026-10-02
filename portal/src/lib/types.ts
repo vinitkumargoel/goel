@@ -286,3 +286,49 @@ export type ServerSettingsUpdate = {
   general?: Partial<Omit<ServerSettings['general'], 'profile'>>
   bittorrent?: Partial<ServerSettings['bittorrent']>
 }
+
+/** `GET /api/rules`: the auto-sort rules in the order they are checked (the desktop's Download Rules). */
+export type RuleField = 'fileName' | 'fileExtension' | 'domain' | 'url' | 'size'
+export type RuleOperator =
+  | 'isEqual'
+  | 'contains'
+  | 'beginsWith'
+  | 'endsWith'
+  | 'isAnyOf'
+  | 'matchesRegex'
+  | 'largerThan'
+  | 'smallerThan'
+
+export interface RuleCondition {
+  field: RuleField
+  op: RuleOperator
+  value: string
+}
+
+export interface RuleWhenDone {
+  /** `openWith` and `runScript` can be kept but never set from the portal. */
+  kind: 'nothing' | 'open' | 'reveal' | 'moveTo' | 'openWith' | 'runScript'
+  target?: string | null
+  /** Reads only: kept as it is unless the update leaves `whenDone` out. */
+  locked?: boolean
+}
+
+export interface PortalRule {
+  /** Absent on a rule that has not been saved yet. */
+  id?: string
+  name: string
+  enabled: boolean
+  match: 'all' | 'any'
+  conditions: RuleCondition[]
+  folder?: string | null
+  tag?: string | null
+  speedLimitBytesPerSec?: number | null
+  priority?: 'high' | 'normal' | 'low' | null
+  startPaused: boolean
+  /** Omitted on a write to keep what the rule has. */
+  whenDone?: RuleWhenDone | null
+}
+
+export interface RulesState {
+  rules: PortalRule[]
+}

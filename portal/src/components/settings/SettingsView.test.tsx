@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   updateSchedule: vi.fn(),
   // The server-settings cards have their own tests; here they stay loading and render nothing.
   serverSettings: vi.fn(() => new Promise(() => {})),
+  rules: vi.fn(() => new Promise(() => {})),
   updateServerSettings: vi.fn(),
 }))
 const boot = vi.hoisted(() => ({ host: 'mac' as 'mac' | 'linux', hostname: 'studio', readOnly: false, username: 'vinit' }))

@@ -568,3 +568,80 @@
     border-radius: 3px;
   }
 }
+
+/* ------------------------------------------------------------------ download rules */
+
+.rule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rule-row .sl span {
+  overflow-wrap: anywhere;
+}
+
+.rule-row.off .sl {
+  opacity: 0.6;
+}
+
+.rule-acts {
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.rule-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.rule-set {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rule-f {
+  gap: 4px;
+}
+
+.rule-cond {
+  display: grid;
+  grid-template-columns: 8.5rem 9.5rem minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.rule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rule-opts {
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.field.grow {
+  flex: 1;
+}
+
+@media (max-width: 560px) {
+  .rule-cond {
+    grid-template-columns: 1fr 1fr;
+  }
+  .rule-cond .rule-val {
+    grid-column: 1 / -1;
+  }
+  .rule-grid {
+    grid-template-columns: 1fr;
+  }
+}
