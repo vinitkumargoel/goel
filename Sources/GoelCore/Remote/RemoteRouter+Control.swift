@@ -50,6 +50,13 @@ extension RemoteRouter {
         case ("POST", "/api/schedule"):
             return await postSchedule(request, backend: backend)
 
+        case ("GET", "/api/settings"):
+            guard let state = await backend.settingsState() else { return notFound() }
+            return json(state)
+
+        case ("POST", "/api/settings"):
+            return await postSettings(request, backend: backend)
+
         default:
             return nil
         }
@@ -277,6 +284,20 @@ extension RemoteRouter {
 
     private struct ClearedRow: Encodable {
         var removed: Int
+    }
+
+    private static func postSettings(_ request: RemoteRequest, backend: RemoteBackend) async -> Data {
+        guard await backend.settingsState() != nil else { return notFound() }
+        guard request.body.count <= 16_384,
+              let update = try? JSONDecoder().decode(RemoteSettingsUpdate.self, from: request.body)
+        else { return badRequest() }
+        if let refusal = update.refusal() { return badRequest(refusal) }
+        // The same rule as an Add's folder: it must exist, be writable and not be a protected location.
+        if let folder = update.requestedFolder, await backend.remoteSaveDirectoryAllowed(folder) == false {
+            return forbidden(saveFolderRefusal)
+        }
+        guard let updated = await backend.updateSettings(update) else { return notFound() }
+        return json(updated)
     }
 
     private static func postSchedule(_ request: RemoteRequest, backend: RemoteBackend) async -> Data {

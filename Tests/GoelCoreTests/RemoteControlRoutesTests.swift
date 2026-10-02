@@ -36,7 +36,6 @@ private final class ControlBackend: RemoteBackend, @unchecked Sendable {
     func history(limit: Int) async -> [HistoryEntry] { entries }
     func removeHistoryEntry(_ id: UUID) async { removedHistory.append(id) }
     func clearHistory() async { clearedHistory = true }
-    func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { true }
 
     func setTaskSpeedLimit(_ bytesPerSec: Int64?, task id: UUID) async { limits.append((bytesPerSec, id)) }
     func setTags(_ tags: [String], task id: UUID) async { self.tags.append((tags, id)) }
@@ -52,6 +51,14 @@ private final class ControlBackend: RemoteBackend, @unchecked Sendable {
         trackerURLs.insert(new)
         return true
     }
+    var appSettings = AppSettings()
+    var allowedFolders: Set<String> = ["/srv/downloads"]
+    func settingsState() async -> RemoteSettingsState? { RemoteSettingsState(appSettings) }
+    func updateSettings(_ update: RemoteSettingsUpdate) async -> RemoteSettingsState? {
+        update.apply(to: &appSettings)
+        return RemoteSettingsState(appSettings)
+    }
+    func remoteSaveDirectoryAllowed(_ folder: String) async -> Bool { allowedFolders.contains(folder) }
     func scheduleState() async -> RemoteScheduleState? { schedule }
     func updateSchedule(_ update: RemoteScheduleUpdate) async -> RemoteScheduleState? {
         guard var state = schedule else { return nil }
@@ -101,6 +108,7 @@ final class RemoteControlRoutesTests: XCTestCase {
             raw("POST", "/api/history-remove-many", json: #"{"ids":["\#(q)"]}"#, auth: auth),
             raw("POST", "/api/history-clear", json: "{}", auth: auth),
             raw("POST", "/api/schedule", json: #"{"enabled":true}"#, auth: auth),
+            raw("POST", "/api/settings", json: #"{"bittorrent":{"dht":false}}"#, auth: auth),
             raw("POST", "/api/trackers", json: #"{"id":"\#(q)","add":["udp://t.example:80/announce"]}"#, auth: auth),
         ]
     }
@@ -239,6 +247,48 @@ final class RemoteControlRoutesTests: XCTestCase {
         let gone = await send(raw("POST", "/api/file-priorities",
                                   json: #"{"id":"\#(id.uuidString)","files":[0],"prio":"low"}"#), backend)
         XCTAssertTrue(gone.hasPrefix("HTTP/1.1 404"))
+    }
+
+    func testSettingsRoundTripAndAreValidatedAtTheBoundary() async throws {
+        let backend = ControlBackend()
+        let before = await send(raw("GET", "/api/settings"), backend)
+        XCTAssertTrue(before.hasPrefix("HTTP/1.1 200"))
+        XCTAssertTrue(before.contains(#""encryptionMode":"prefer""#), before)
+
+        let ok = await send(raw("POST", "/api/settings", json: """
+            {"general":{"defaultSaveDirectory":"/srv/downloads","existingFileReaction":"overwrite","maxSimultaneousDownloads":5},
+             "bittorrent":{"encryptionMode":"require","dht":false,"utp":false}}
+            """), backend)
+        XCTAssertTrue(ok.hasPrefix("HTTP/1.1 200"), ok)
+        XCTAssertEqual(backend.appSettings.defaultSaveDirectory, "/srv/downloads")
+        XCTAssertEqual(backend.appSettings.existingFileReaction, "overwrite")
+        XCTAssertEqual(backend.appSettings.selectedProfile.maxSimultaneousDownloads, 5)
+        XCTAssertEqual(backend.appSettings.btEncryptionMode, "require")
+        XCTAssertFalse(backend.appSettings.btEnableDHT)
+        XCTAssertFalse(backend.appSettings.btEnableUTP)
+        XCTAssertTrue(backend.appSettings.btEnablePeX, "an omitted field keeps its value")
+
+        for bad in [#"{"general":{"maxSimultaneousDownloads":0}}"#,
+                    #"{"general":{"maxSimultaneousDownloads":99}}"#,
+                    #"{"general":{"defaultSaveDirectory":"relative/path"}}"#,
+                    #"{"general":{"defaultSaveDirectory":""}}"#,
+                    #"{"general":{"defaultFolderRule":"nope"}}"#,
+                    #"{"general":{"existingFileReaction":"delete"}}"#,
+                    #"{"bittorrent":{"encryptionMode":"maybe"}}"#,
+                    #"{"bittorrent":{"dht":"yes"}}"#,
+                    "not json"] {
+            let out = await send(raw("POST", "/api/settings", json: bad), backend)
+            XCTAssertTrue(out.hasPrefix("HTTP/1.1 400"), "\(bad) -> \(out.prefix(30))")
+        }
+        let forbidden = await send(raw("POST", "/api/settings",
+                                       json: #"{"general":{"defaultSaveDirectory":"/etc"}}"#), backend)
+        XCTAssertTrue(forbidden.hasPrefix("HTTP/1.1 403"), forbidden)
+        XCTAssertEqual(backend.appSettings.defaultSaveDirectory, "/srv/downloads")
+
+        let unauth = await send(raw("GET", "/api/settings", auth: false), backend)
+        XCTAssertTrue(unauth.hasPrefix("HTTP/1.1 401"))
+        let readOnly = await send(raw("POST", "/api/settings", json: "{}"), backend, readOnly: true)
+        XCTAssertTrue(readOnly.hasPrefix("HTTP/1.1 403"))
     }
 
     func testHistoryPagingIsOptionalAndValidated() async {
