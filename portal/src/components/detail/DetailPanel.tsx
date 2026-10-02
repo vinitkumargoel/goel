@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { statusLabel } from '../library/itemShared'
 import { useDialogFocus } from '../../hooks/useDialogFocus'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import type { QueueControls } from '../../hooks/useQueueControls'
@@ -250,7 +251,7 @@ function Loaded({
             </span>
             <span className={pillClass(stateTone(row))}>
               {/* `row.status` is server-rendered copy; the daemon owns its wording. */}
-              {row.status}
+              {statusLabel(row, t)}
               {eta && ` · ${t('library.left', { eta })}`}
             </span>
             {live && (

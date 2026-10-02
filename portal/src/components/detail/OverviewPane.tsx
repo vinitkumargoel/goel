@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { statusLabel } from '../library/itemShared'
 import type { QueueControls } from '../../hooks/useQueueControls'
 import { fmtAbsolute, fmtEta, fmtSize, fmtSpeed, IDLE_RATE, pct } from '../../lib/format'
 import { canSave } from '../../lib/saveFile'
@@ -246,7 +247,7 @@ function FinishedCard({ row, onStream }: { row: TaskRow; onStream?: (row: TaskRo
       )}
       <div className="dfin-b">
         <div className="row">
-          <span className={pillClass(stateTone(row))}>{row.status}</span>
+          <span className={pillClass(stateTone(row))}>{statusLabel(row, t)}</span>
           <span className="sp" />
           <Icon name={stateGlyph(row.statusToken)} className={row.statusToken === 'seeding' ? 'upc' : 'goodc'} />
         </div>
