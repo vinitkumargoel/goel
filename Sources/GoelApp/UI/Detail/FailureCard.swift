@@ -109,19 +109,11 @@ struct FailureCard: View {
                 .buttonStyle(.studio(.primary, size: .small))
                 .a11yButton(L10n.t("Retry %@", task.name))
         }
-        if !compact {
-            Button(L10n.t("Copy Details"), systemImage: "doc.on.doc") { copyDetails() }
-                .buttonStyle(.studio(.secondary, size: .small))
-            Button(L10n.t("Show Folder"), systemImage: "folder") { showFolder() }
-                .buttonStyle(.studio(.secondary, size: .small))
-        }
         DetailMenuButton(title: compact ? L10n.t("More") : L10n.t("More Actions"),
                          accessibilityLabel: L10n.t("More actions for %@", task.name)) {
-            if compact {
-                Button(L10n.t("Copy Details")) { copyDetails() }
-                Button(L10n.t("Show Folder")) { showFolder() }
-                Divider()
-            }
+            Button(L10n.t("Copy Details")) { copyDetails() }
+            Button(L10n.t("Show Folder")) { showFolder() }
+            if !otherRecoveries.isEmpty { Divider() }
             ForEach(otherRecoveries, id: \.title) { option in
                 Button(option.title) { perform(option) }
             }

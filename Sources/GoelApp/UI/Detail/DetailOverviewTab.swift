@@ -12,9 +12,12 @@ struct DetailOverviewTab: View {
             if task.status == .completed {
                 CompletedHero(task: task)
             } else {
-                DetailProgressHero(task: task)
+                // What went wrong and the next step come first; the progress it stopped at is context.
                 if case .failed(let error) = task.status {
                     FailureCard(task: task, error: error)
+                    DetailProgressHero(task: task, compact: true)
+                } else {
+                    DetailProgressHero(task: task)
                 }
                 DetailThroughputChart(taskID: task.id, alwaysShown: task.status.isActive)
             }
@@ -27,6 +30,8 @@ struct DetailOverviewTab: View {
 /// arc with the state's glyph inside.
 struct DetailProgressHero: View {
     let task: DownloadTask
+    /// Failed downloads: a smaller read-out beneath the failure card, without the live speed row.
+    var compact = false
     @EnvironmentObject private var telemetry: TelemetryStore
 
     var body: some View {
@@ -49,6 +54,7 @@ struct DetailProgressHero: View {
                             L10n.t("%1$@ of %2$@", A11y.bytes(task.bytesDownloaded), A11y.bytes(task.totalBytes)),
                             A11y.eta(task.estimatedTimeRemaining)))
                 }
+                if !compact {
                 DetailFlowLayout(spacing: Studio.Space.xs, lineSpacing: 2) {
                     if speed.down >= 1 || task.status == .downloading {
                         DetailSpeedText(direction: .down, speed: speed.down)
@@ -63,11 +69,12 @@ struct DetailProgressHero: View {
                             .foregroundStyle(Studio.Palette.ink)
                     }
                 }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             StudioProgressArc(fraction: task.status == .requestingMetadata ? nil : task.fractionCompleted,
-                              tone: StudioProgressTone(task: task), diameter: 86,
+                              tone: StudioProgressTone(task: task), diameter: compact ? 56 : 86,
                               accessibilityLabel: L10n.t("Download progress")) {
                 Image(systemName: state.symbol)
                     .font(StudioFonts.font(.ui, size: 20, weight: 650))
@@ -77,7 +84,7 @@ struct DetailProgressHero: View {
             .accessibilityValue(task.accessibilityProgressValue)
             .accessibilityAddTraits(.updatesFrequently)
         }
-        .padding(Studio.Space.l)
+        .padding(compact ? Studio.Space.m : Studio.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Studio.Palette.well, in: RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
@@ -111,14 +118,19 @@ struct DetailOverviewFacts: View {
             if task.kind == .torrent {
                 DetailFactRow(L10n.t("Share ratio"), value: String(format: "%.2f", task.shareRatio), mono: true)
                 DetailFactRow(L10n.t("Uploaded"), value: task.bytesUploaded.byteString, mono: true)
-                DetailFactRow(L10n.t("Peers"), value: task.swarmSummary.value, mono: true)
-                DetailFactRow(L10n.t("Leechers"), value: "\(task.leecherCount)", mono: true)
+                if !(task.status.isFailed && task.connectionCount == 0) {
+                    DetailFactRow(L10n.t("Peers"), value: task.swarmSummary.value, mono: true)
+                    DetailFactRow(L10n.t("Leechers"), value: "\(task.leecherCount)", mono: true)
+                }
                 if let limit = task.seedRatioLimit, limit > 0 {
                     let pct = Int(((task.seedRatioProgress ?? 0) * 100).rounded())
                     DetailFactRow(L10n.t("Seed target"), value: L10n.t("ratio %.1f · %d%%", limit, pct), tone: .upload)
                 }
             } else {
-                DetailFactRow(L10n.t("Connections"), value: "\(task.connectionCount)", mono: true)
+                // A failed download holds no connections; "0" says nothing.
+                if !(task.status.isFailed && task.connectionCount == 0) {
+                    DetailFactRow(L10n.t("Connections"), value: "\(task.connectionCount)", mono: true)
+                }
             }
             if let label = task.label {
                 DetailFactRow(L10n.t("Label"), value: label, tone: .accent)
