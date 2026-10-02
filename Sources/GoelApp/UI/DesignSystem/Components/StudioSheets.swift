@@ -191,22 +191,25 @@ struct StudioMenuRow: View {
     var shortcut: String?
     var isChecked = false
     var isDestructive = false
+    /// The keyboard's highlight (``MenuKeyboard``): drawn like the hover.
+    var isHighlighted = false
     let action: () -> Void
 
     @State private var hovered = false
 
     var body: some View {
+        let lit = hovered || isHighlighted
         Button(action: action) {
             HStack(spacing: Studio.Space.sm) {
                 if isChecked {
                     Image(systemName: "checkmark")
                         .font(StudioFonts.font(.ui, size: 12, weight: 700))
-                        .foregroundStyle(hovered ? Studio.Palette.onAccent : Studio.Palette.accent)
+                        .foregroundStyle(lit ? Studio.Palette.onAccent : Studio.Palette.accent)
                         .frame(width: 15)
                 } else if let symbol {
                     Image(systemName: symbol)
                         .font(StudioFonts.font(.ui, size: 13, weight: 600))
-                        .foregroundStyle(hovered ? Studio.Palette.onAccent
+                        .foregroundStyle(lit ? Studio.Palette.onAccent
                                          : isDestructive ? Studio.Palette.bad : Studio.Palette.ink3)
                         .frame(width: 15)
                 }
@@ -217,14 +220,14 @@ struct StudioMenuRow: View {
                 if let shortcut {
                     Text(shortcut)
                         .studioFont(.monoSmall)
-                        .foregroundStyle(hovered ? Studio.Palette.onAccent : Studio.Palette.ink3)
+                        .foregroundStyle(lit ? Studio.Palette.onAccent : Studio.Palette.ink3)
                 }
             }
-            .foregroundStyle(hovered ? Studio.Palette.onAccent
+            .foregroundStyle(lit ? Studio.Palette.onAccent
                              : isDestructive ? Studio.Palette.bad : Studio.Palette.ink)
             .padding(.horizontal, Studio.Space.sm)
             .frame(minHeight: 30)
-            .background(hovered ? Studio.Palette.accent : .clear,
+            .background(lit ? Studio.Palette.accent : .clear,
                         in: RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous))
             .contentShape(Rectangle())
         }
