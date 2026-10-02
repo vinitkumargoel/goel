@@ -98,6 +98,44 @@ Fixes from a full-codebase audit, grouped by area.
   A local or vendored ffmpeg needs a SHA-256 digest. A tag-only, approval-gated
   `release.yml` skeleton builds, signs and notarizes release artifacts once secrets exist.
 
+### UI audit follow-up
+
+- **Recovering from failures takes one action.** Downloads ▸ Retry Failed (⇧⌘R), Retry
+  Selected (⌥⌘R), Select Failed, a Retry All button on the "Needs you" lane and a clickable
+  "N failed" in the status bar. ⌘R stays Show in Finder; the palette no longer claims it
+  retries. A failed download's detail shows the error and its fix first, with one Retry.
+  More HTTP errors (400, 416, other 4xx) get a hint, and network errors offer Retry Later.
+- **Filters combine.** Status, type and tag filters are ANDed ("failed videos tagged
+  work"); active type and tag filters show as removable chips. The detail sheet lets go of
+  a download that the filter hides.
+- **The list shows progress.** ETA is a default column, Size reads "2.9 GB of 4.7 GB"
+  while downloading, and ETA, progress, remaining, ratio and peers sort. Dates read
+  "Today 1:12 AM", "Yesterday 8:15 PM", "1 Oct". Row actions sit in a fixed column on the
+  right. Speed is no longer repeated in the header. Magnets fetching metadata show their
+  name instead of a hash.
+- **Keyboard and VoiceOver.** Focus rings now draw on the rail, segmented controls,
+  switches and tiles; the confirm dialog takes focus and locks the window behind it;
+  moving through the queue is announced; dropdowns, the weekly speed-profile grid and RSS
+  articles work from the keyboard; small targets grow to at least 24 pt; server status no
+  longer relies on colour alone; fixed heights grow with text size. `docs/vpat.md` is
+  rewritten for the Studio UI.
+- **Flows.** Settings search understands phrasings like "speed limit", "dark mode" and
+  "shutdown". Number fields show their range and say when a value was capped. History and
+  Create Torrent report results in their own window (removing several history entries is
+  one action with Undo); Create Torrent validates tracker and web-seed URLs and refuses a
+  private torrent with no trackers. Help ▸ Show Setup Again…, fix buttons for missing
+  yt-dlp/ffmpeg, and the palette covers every menu action. The menu bar extra gains
+  Settings, Quit and Add from Clipboard. "Speed profile" is the one name for profiles.
+  Firefox setup no longer tells you to restart Firefox after loading the temporary add-on.
+- **Web portal.** Status text is translated; the focus ring is solid; dialogs take focus;
+  the live connection notices a stall and reconnects (on wake, on return to the tab, with
+  backoff); actions update instantly; long lists render in pages; assets are served
+  gzipped; amounts and dates follow the chosen language. The installed app accepts shared
+  links (Share → Goel°). On Linux the portal now edits General, BitTorrent and Schedule
+  settings. Remote clients cannot turn on "overwrite existing files" — only the app can.
+- **Faster redraws.** The download list no longer redraws on every speed tick; board
+  lanes, the queue overview and the selection summary are computed once per change.
+
 ### Changed
 
 - **The Mac app has a new look: Studio.** Every window was redrawn from scratch — the main
