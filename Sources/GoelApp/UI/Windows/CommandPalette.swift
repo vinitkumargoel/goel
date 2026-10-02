@@ -230,7 +230,7 @@ private struct PaletteRow: View {
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isHighlighted ? Studio.Palette.accentSoft : .clear,
-                        in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: Studio.Radius.segment, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -31,7 +31,7 @@ struct MultiSelectionPanel: View {
                 Button(L10n.t("Deselect")) { vm.selectNone() }
                     .buttonStyle(.studio(.ghost, size: .small))
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-                HStack(spacing: 2) {
+                HStack(spacing: Studio.Space.hair) {
                     DetailDockToggle()
                     DetailCloseButton()
                 }
@@ -53,7 +53,7 @@ struct MultiSelectionPanel: View {
     }
 
     private func titles(_ summary: SelectionAggregate) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Studio.Space.hair) {
             Text(summary.title)
                 .studioFont(horizontal ? .title3 : .title2)
                 .foregroundStyle(Studio.Palette.ink)
@@ -123,7 +123,7 @@ struct MultiSelectionPanel: View {
                 Text(L10n.t("and %d more", summary.count - summary.preview.count))
                     .studioFont(.caption)
                     .foregroundStyle(Studio.Palette.ink3)
-                    .padding(.leading, 32)
+                    .padding(.leading, Studio.Space.xxxl)
             }
         }
     }
@@ -162,7 +162,7 @@ struct MultiSelectionPanel: View {
                 }
                 .frame(minWidth: 140, maxWidth: .infinity)
 
-                HStack(spacing: 2) {
+                HStack(spacing: Studio.Space.hair) {
                     DetailDockToggle()
                     DetailCloseButton()
                 }

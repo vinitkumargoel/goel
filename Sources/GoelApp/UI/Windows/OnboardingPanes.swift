@@ -34,7 +34,7 @@ struct OnboardingItem<Leading: View, Control: View>: View {
     var body: some View {
         WindowsCompactCard {
             leading()
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 Text(title)
                     .studioFont(.bodyStrong)
                     .foregroundStyle(Studio.Palette.ink)
@@ -100,7 +100,7 @@ struct OnboardingFolderPane: View {
                 + "You can still pick a different folder for any individual download."))
             folderCard
             HStack(spacing: Studio.Space.m) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     Text(L10n.t("Or let Goel° sort them")).studioFont(.bodyStrong).foregroundStyle(Studio.Palette.ink)
                     Text(L10n.t("Video, archives, disc images and documents each get their own subfolder."))
                         .studioFont(.caption)
@@ -123,7 +123,7 @@ struct OnboardingFolderPane: View {
         StudioCard(padding: Studio.Space.ml) {
             HStack(spacing: Studio.Space.m) {
                 StudioFileArtwork(kind: .folder, size: .m)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     Text(currentFolderLabel)
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)

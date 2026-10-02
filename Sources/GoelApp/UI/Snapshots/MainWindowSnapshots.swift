@@ -131,7 +131,7 @@ private struct ToastGallery: View {
     }
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: Studio.Space.ml) {
             ForEach(Array(queues.enumerated()), id: \.offset) { _, queue in
                 ToastOverlay(queue: queue, bottomPadding: 0)
             }
@@ -149,12 +149,12 @@ private struct StatusBarGallery: View {
             StatusBar()
             HStack(alignment: .top, spacing: 24) {
                 GlobalSpeedHistoryPopover(telemetry: model.telemetry)
-                    .padding(14)
-                    .background(Studio.Palette.cardRaised, in: RoundedRectangle(cornerRadius: 13))
+                    .padding(Studio.Space.ml)
+                    .background(Studio.Palette.cardRaised, in: RoundedRectangle(cornerRadius: Studio.Radius.tile))
                 StatusTransfersPopover {}
-                    .clipShape(RoundedRectangle(cornerRadius: 13))
+                    .clipShape(RoundedRectangle(cornerRadius: Studio.Radius.tile))
                 SpeedCapPopover()
-                    .background(Studio.Palette.cardRaised, in: RoundedRectangle(cornerRadius: 13))
+                    .background(Studio.Palette.cardRaised, in: RoundedRectangle(cornerRadius: Studio.Radius.tile))
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)

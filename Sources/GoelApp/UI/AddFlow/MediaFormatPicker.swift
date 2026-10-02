@@ -105,7 +105,7 @@ struct MediaFormatPicker: View {
 
     private var formatList: some View {
         AddListWell(maxHeight: 240) {
-            LazyVStack(spacing: 2) {
+            LazyVStack(spacing: Studio.Space.hair) {
                 row(id: nil,
                     quality: L10n.t("Best available"),
                     detail: Text(L10n.t("Let yt-dlp choose — always a single ready-to-play file.")),

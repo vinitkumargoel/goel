@@ -33,7 +33,7 @@ struct RuleEditorSheet: View {
                     RuleConditionsEditor(rule: $rule)
                     RuleActionsEditor(rule: $rule)
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, Studio.Space.hair)
                 .padding(.trailing, Studio.Space.xxs)
             }
             .frame(maxHeight: 540)

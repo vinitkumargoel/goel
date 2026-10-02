@@ -24,7 +24,7 @@ struct DetailHeader: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if showsChrome {
-                HStack(spacing: 2) {
+                HStack(spacing: Studio.Space.hair) {
                     DetailDockToggle()
                     DetailCloseButton()
                 }

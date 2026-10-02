@@ -15,7 +15,7 @@ struct StatusSpeedLimitChip: View {
         let locked = vm.managedPolicy.isLocked(.speedLimitEnabled)
         let on = vm.settings.speedLimitEnabled
         Button(action: vm.toggleSnail) {
-            HStack(spacing: 6) {
+            HStack(spacing: Studio.Space.xs) {
                 Snail()
                     .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                     .frame(width: 14, height: 14)

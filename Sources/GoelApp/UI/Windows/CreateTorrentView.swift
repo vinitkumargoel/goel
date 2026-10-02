@@ -86,7 +86,7 @@ struct CreateTorrentView: View {
         } else {
             WindowsCompactCard(isSelected: dropTargeted, padding: EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)) {
                 StudioFileArtwork(kind: summary?.isFolder == false ? .other : .folder, size: .l)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     Text((sourcePath as NSString).lastPathComponent)
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)

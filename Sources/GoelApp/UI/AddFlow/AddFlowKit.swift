@@ -65,7 +65,7 @@ struct AddFlowSymbolTile: View {
             .foregroundStyle(Studio.Palette.accent)
             .frame(width: 36, height: 36)
             .background(Studio.Palette.accentSoft,
-                        in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: Studio.Radius.segment, style: .continuous))
             .accessibilityHidden(true)
     }
 }
@@ -257,7 +257,7 @@ private struct AddOptionRowBody: View {
     @Environment(\.isFocused) private var isFocused
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Studio.Radius.segment, style: .continuous)
         configuration.label
             .padding(.horizontal, Studio.Space.sm)
             .padding(.vertical, Studio.Space.s)
@@ -321,7 +321,7 @@ struct AddPastedNote: View {
             .accessibilityLabel(clearHelp)
         }
         .padding(.leading, Studio.Space.s)
-        .padding(.trailing, 2)
+        .padding(.trailing, Studio.Space.hair)
         .frame(minHeight: 22)
         .background(Studio.Palette.accentSoft, in: Capsule())
     }

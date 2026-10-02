@@ -85,14 +85,14 @@ struct DetailFilePriorityMenu: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: Studio.Space.xxs) {
                 Text(priority == .skip ? L10n.t("Skipped") : priority.title)
                 Image(systemName: "chevron.down")
                     .font(StudioFonts.font(.ui, size: 8, weight: 700))
             }
             .studioFont(.caption.weight(600))
             .foregroundStyle(priority == .high ? Studio.Palette.accent : Studio.Palette.ink2)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Studio.Space.s)
             .frame(minWidth: 62, minHeight: 22)
             .background(priority == .high ? Studio.Palette.accentSoft : Studio.Palette.card, in: Capsule())
             .overlay(Capsule().strokeBorder(priority == .high ? Color.clear : Studio.Palette.hairline, lineWidth: 1))

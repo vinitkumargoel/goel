@@ -107,7 +107,7 @@ enum SFTPSnapshots {
     private static func infoPanel(_ entry: SFTPEntry, info: SFTPEntryInfo?, isSizing: Bool = false) -> some View {
         SFTPInfoPanel(entry: entry, info: info, folderSize: nil, isSizing: isSizing,
                       onApplyPermissions: { _ in }, onClose: {}, onDownload: {}, onPreview: {})
-            .padding(20)
+            .padding(Studio.Space.xl)
             .background(Studio.Palette.canvas)
     }
 
@@ -152,7 +152,7 @@ enum SFTPSnapshots {
                 let list = F.transfers().filter { $0.connectionID == F.nas.id }
                 return SFTPTransferPanel(transfers: list, connection: F.nas, volumeSpace: F.volume,
                                          historyOverride: F.history(for: list))
-                    .padding(.top, 20)
+                    .padding(.top, Studio.Space.xl)
                     .background(Studio.Palette.canvas)
                     .studioSampleEnvironment(prepare(context, transfers: list))
             },
@@ -160,7 +160,7 @@ enum SFTPSnapshots {
                 let list = F.transfers().filter { $0.connectionID == F.nas.id }
                 return SFTPTransferPanel(transfers: list, connection: F.nas, volumeSpace: F.volume,
                                          historyOverride: F.history(for: list))
-                    .padding(.top, 20)
+                    .padding(.top, Studio.Space.xl)
                     .background(Studio.Palette.canvas)
                     .studioSampleEnvironment(prepare(context, transfers: list))
             },

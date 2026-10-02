@@ -109,7 +109,7 @@ struct BrowserCard: View {
                 HStack(spacing: Studio.Space.m) {
                     BrowserTile(kind: status.name.localizedCaseInsensitiveContains("firefox") ? .video : .magnet,
                                 symbol: "globe")
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Studio.Space.hair) {
                         Text(status.name)
                             .studioFont(.bodyStrong)
                             .foregroundStyle(Studio.Palette.ink)
@@ -215,7 +215,7 @@ private struct SafariCard: View {
         StudioCard(padding: Studio.Space.ml) {
             HStack(spacing: Studio.Space.m) {
                 BrowserTile(kind: .app, symbol: "safari")
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     Text(verbatim: "Safari")
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)

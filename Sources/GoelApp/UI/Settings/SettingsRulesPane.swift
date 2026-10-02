@@ -114,7 +114,7 @@ private struct RuleCard: View {
     var body: some View {
         HStack(spacing: Studio.Space.m) {
             Button(action: onEdit) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     Text(rule.name)
                         .studioFont(.cardTitle.size(13))
                         .foregroundStyle(rule.enabled ? Studio.Palette.ink : Studio.Palette.ink3)
@@ -126,7 +126,7 @@ private struct RuleCard: View {
                     Text(L10n.t("%d in history", matches))
                         .studioFont(.monoSmall)
                         .foregroundStyle(matches > 0 ? Studio.Palette.accent : Studio.Palette.ink3)
-                        .padding(.top, 2)
+                        .padding(.top, Studio.Space.hair)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -137,7 +137,7 @@ private struct RuleCard: View {
             .accessibilityValue(AutoSortRulePresentation.summary(rule))
             .accessibilityHint(L10n.t("Edit rule"))
 
-            HStack(spacing: 2) {
+            HStack(spacing: Studio.Space.hair) {
                 StudioIconButton("chevron.up", label: L10n.t("Move up"), size: .small) { onMove(-1) }
                     .disabled(isFirst)
                 StudioIconButton("chevron.down", label: L10n.t("Move down"), size: .small) { onMove(1) }

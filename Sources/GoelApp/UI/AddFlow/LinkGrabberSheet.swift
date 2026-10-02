@@ -279,7 +279,7 @@ private struct LinkGrabberResults: View {
                 .toggleStyle(.studioCheckbox)
                 .accessibilityLabel(link.displayName)
             StudioFileArtwork(kind: link.category.artKind, size: .s, isFaded: !isOn)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 Text(link.displayName)
                     .studioFont(.cardTitle.size(13))
                     .foregroundStyle(isOn ? Studio.Palette.ink : Studio.Palette.ink3)

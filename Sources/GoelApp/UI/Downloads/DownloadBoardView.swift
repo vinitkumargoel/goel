@@ -133,7 +133,7 @@ struct DownloadQueueSummaryCard: View {
                         remaining(overview)
                         detail(overview)
                     }
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Studio.Space.hair) {
                         remaining(overview)
                         detail(overview)
                     }

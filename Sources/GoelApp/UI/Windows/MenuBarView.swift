@@ -204,7 +204,7 @@ struct MenuBarPopover: View {
                 .font(StudioFonts.font(.ui, size: 20, weight: 650))
                 .foregroundStyle(Studio.Palette.accent)
                 .frame(width: 48, height: 48)
-                .background(Studio.Palette.accentSoft, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .background(Studio.Palette.accentSoft, in: RoundedRectangle(cornerRadius: Studio.Radius.compactCard, style: .continuous))
                 .accessibilityHidden(true)
             Text(L10n.t("No active downloads"))
                 .studioFont(.title3)

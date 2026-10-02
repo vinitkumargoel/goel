@@ -50,7 +50,7 @@ struct RailFlyoutPanel: View {
 
     @ViewBuilder
     private var list: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Studio.Space.hair) {
             switch kind {
             case .filters:
                 RailFilterSections(onPick: close)

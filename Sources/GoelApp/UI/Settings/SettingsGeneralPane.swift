@@ -214,14 +214,14 @@ private struct SettingsAppearanceTile: View {
             let card = tone(Studio.Tones.card)
             let accent = tone(Studio.Tones.accent)
             let rail = tone(Studio.Tones.rail)
-            HStack(spacing: 4) {
+            HStack(spacing: Studio.Space.xxs) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous).fill(rail).frame(width: 18)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Studio.Space.xxs) {
                     RoundedRectangle(cornerRadius: 2).fill(accent).frame(width: 22, height: 4)
                     RoundedRectangle(cornerRadius: 4, style: .continuous).fill(card)
                 }
             }
-            .padding(6)
+            .padding(Studio.Space.xs)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(canvas)
         }

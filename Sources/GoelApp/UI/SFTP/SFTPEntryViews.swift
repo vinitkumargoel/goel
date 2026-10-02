@@ -52,7 +52,7 @@ struct SFTPEntryRow: View {
             if isDropTarget {
                 RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
                     .strokeBorder(Studio.Palette.accent, lineWidth: 2)
-                    .padding(2)
+                    .padding(Studio.Space.hair)
             }
         }
     }

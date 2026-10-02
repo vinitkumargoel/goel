@@ -182,7 +182,7 @@ struct DetailBottomPanel: View {
                     .layoutPriority(1)
                 Spacer(minLength: Studio.Space.s)
                 if !compact {
-                    HStack(spacing: 2) {
+                    HStack(spacing: Studio.Space.hair) {
                         DetailDockToggle()
                         DetailCloseButton()
                     }

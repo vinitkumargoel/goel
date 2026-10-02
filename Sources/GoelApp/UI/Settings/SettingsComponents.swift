@@ -231,7 +231,7 @@ struct SettingRow<Control: View>: View {
         VStack(spacing: 0) {
             StudioDivider()
             HStack(alignment: alignment, spacing: Studio.Space.l) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     if !title.isEmpty {
                         Text(title)
                             .studioFont(.bodyStrong)

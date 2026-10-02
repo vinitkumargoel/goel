@@ -63,7 +63,7 @@ struct MediaJobCard: View {
         VStack(alignment: .leading, spacing: Studio.Space.s) {
             HStack(alignment: .top, spacing: Studio.Space.sm) {
                 artwork(info)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     Text(info.title)
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)
@@ -105,8 +105,8 @@ struct MediaJobCard: View {
                     .overlay(Circle().strokeBorder(Studio.Palette.cardRaised, lineWidth: 2))
                     .offset(x: 5, y: 5)
             }
-            .padding(.trailing, 4)
-            .padding(.bottom, 4)
+            .padding(.trailing, Studio.Space.xxs)
+            .padding(.bottom, Studio.Space.xxs)
             .accessibilityHidden(true)
     }
 

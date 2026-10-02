@@ -40,7 +40,7 @@ struct SFTPAllTransfersView: View {
                 .background(Studio.Palette.accentSoft,
                             in: RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous))
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 Text(L10n.t("Transfers"))
                     .studioFont(.title2)
                     .foregroundStyle(Studio.Palette.ink)
@@ -101,7 +101,7 @@ private struct SFTPAllTransfersRow: View {
     var body: some View {
         HStack(spacing: Studio.Space.m) {
             SFTPTransferArtwork(transfer: transfer, size: .s)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Studio.Space.xxs) {
                 FileNameText(transfer.name, lineLimit: 1)
                     .studioFont(.callout.size(13).weight(650))
                     .foregroundStyle(Studio.Palette.ink)
@@ -147,7 +147,7 @@ private struct SFTPAllTransfersRow: View {
 
     @ViewBuilder
     private var actions: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Studio.Space.hair) {
             if transfer.canPause {
                 StudioIconButton("pause.fill", label: L10n.t("Pause"), size: .small) { vm.pauseSFTPTransfer(transfer.id) }
             } else if transfer.canResume {

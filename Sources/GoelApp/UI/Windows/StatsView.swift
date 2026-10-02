@@ -80,7 +80,7 @@ private struct StatsTile: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         VStack(alignment: .leading, spacing: Studio.Space.xxs) {
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: Studio.Space.hair) {
                 Text(value)
                     .studioFont(.stat)
                     .foregroundStyle(tone == .neutral ? Studio.Palette.ink : tone.foreground)
@@ -165,7 +165,7 @@ private struct StatsDailyChart: View {
             ForEach(days, id: \.day) { entry in
                 let down = CGFloat(Double(entry.totals.down) / Double(peak)) * Self.chartHeight
                 let up = CGFloat(Double(entry.totals.up) / Double(peak)) * Self.chartHeight
-                VStack(spacing: 2) {
+                VStack(spacing: Studio.Space.hair) {
                     Spacer(minLength: 0)
                     if entry.totals.down + entry.totals.up == 0 {
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -189,7 +189,7 @@ private struct StatsDailyChart: View {
                 .padding(entry.day == today ? 1 : 0)
                 .background {
                     if entry.day == today {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        RoundedRectangle(cornerRadius: Studio.Radius.badge, style: .continuous)
                             .fill(Studio.Palette.accentSoft)
                     }
                 }

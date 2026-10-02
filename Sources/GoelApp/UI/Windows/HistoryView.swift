@@ -98,7 +98,7 @@ struct HistoryView: View {
                         }
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, Studio.Space.hair)
             }
         }
         .padding(.horizontal, Studio.Space.xl)

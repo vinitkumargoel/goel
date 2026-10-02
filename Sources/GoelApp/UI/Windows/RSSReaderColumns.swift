@@ -68,7 +68,7 @@ private struct RSSFeedRow: View {
             .padding(.horizontal, Studio.Space.sm)
             .frame(minHeight: 34)
             .background {
-                let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+                let shape = RoundedRectangle(cornerRadius: Studio.Radius.artSmall, style: .continuous)
                 if isSelected {
                     shape.fill(Studio.Palette.card).studioElevation(.card)
                 } else if hovered {
@@ -171,7 +171,7 @@ struct RSSArticleRow: View {
                     if matches {
                         StudioPill(ruleName.map { L10n.t("Matches · %@", $0) } ?? L10n.t("Matches"),
                                    tone: .accent, showsDot: false)
-                            .padding(.top, 2)
+                            .padding(.top, Studio.Space.hair)
                             .help(L10n.t("This feed’s rule would download it"))
                     }
                 }
@@ -234,7 +234,7 @@ struct RSSPreviewPane: View {
         let type = isMagnet ? FileType.magnet : FileType.classify(fileName: name, isTorrent: name.hasSuffix(".torrent"))
         return WindowsCompactCard {
             StudioFileArtwork(kind: StudioArtKind(type), size: .s)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 Text(isMagnet ? L10n.t("Magnet link") : name)
                     .studioFont(.bodyStrong)
                     .foregroundStyle(Studio.Palette.ink)

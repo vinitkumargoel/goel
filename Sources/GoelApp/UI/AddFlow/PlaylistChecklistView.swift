@@ -97,7 +97,7 @@ struct PlaylistChecklistView: View {
 
     private var itemList: some View {
         AddListWell(height: 250) {
-            LazyVStack(spacing: 2) {
+            LazyVStack(spacing: Studio.Space.hair) {
                 ForEach(expansion.items) { item in
                     itemRow(item)
                 }

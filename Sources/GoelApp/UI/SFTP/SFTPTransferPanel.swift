@@ -81,7 +81,7 @@ struct SFTPTransferPanel: View {
                 .foregroundStyle(Studio.Palette.ink3)
             Spacer(minLength: Studio.Space.s)
             if aggregateSpeed > 0 {
-                HStack(spacing: 4) {
+                HStack(spacing: Studio.Space.xxs) {
                     Image(systemName: aggregateGlyph)
                         .font(StudioFonts.font(.ui, size: 11, weight: 700))
                     Text(aggregateSpeed.speedString).studioFont(Studio.TextStyle.mono.weight(650))

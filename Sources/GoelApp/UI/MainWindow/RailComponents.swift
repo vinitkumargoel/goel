@@ -92,7 +92,7 @@ struct RailRow<Trailing: View>: View {
                 Text(verbatim: "\(count)")
                     .studioFont(.monoSmall.weight(700))
                     .foregroundStyle(Studio.Palette.onAccent)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, Studio.Space.xs)
                     .frame(minHeight: 17)
                     .background(Studio.Palette.bad, in: Capsule())
             } else {

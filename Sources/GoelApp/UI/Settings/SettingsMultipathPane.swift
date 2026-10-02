@@ -238,7 +238,7 @@ private struct AdapterCard: View {
                     .frame(width: 32, height: 32)
                     .background(participating ? Studio.Palette.accentSoft : Studio.Palette.segment,
                                 in: RoundedRectangle(cornerRadius: Studio.Radius.artSmall, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     HStack(spacing: Studio.Space.xs) {
                         Text(name)
                             .studioFont(.bodyStrong)

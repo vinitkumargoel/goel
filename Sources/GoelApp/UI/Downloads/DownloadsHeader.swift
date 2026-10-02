@@ -24,7 +24,7 @@ struct DownloadsHeader: View {
             HStack(spacing: Studio.Space.m) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     DownloadsFilterChips()
-                        .padding(.vertical, 4)
+                        .padding(.vertical, Studio.Space.xxs)
                         .padding(.horizontal, 1)
                         .padding(.trailing, Studio.Space.xl)
                 }
@@ -56,7 +56,7 @@ struct DownloadsHeader: View {
                 .studioFont(Studio.TextStyle.monoSmall.weight(600))
                 .foregroundStyle(Studio.Palette.ink2)
                 .padding(.horizontal, 7)
-                .padding(.vertical, 2)
+                .padding(.vertical, Studio.Space.hair)
                 .background(Studio.Palette.segment, in: Capsule())
                 .accessibilityLabel(vm.visibleTasks.count == 1 ? L10n.t("%d download", 1)
                                                                : L10n.t("%d downloads", vm.visibleTasks.count))
@@ -199,7 +199,7 @@ struct DownloadsFilterChips: View {
         Button {
             vm.filter = .all
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: Studio.Space.xs) {
                 if let symbol { Image(systemName: symbol) }
                 Text(title)
                 Text(verbatim: "\(count)")

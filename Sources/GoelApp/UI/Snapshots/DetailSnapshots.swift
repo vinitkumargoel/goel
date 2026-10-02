@@ -146,7 +146,7 @@ enum DetailSnapshots {
         DetailPanelView()
             .frame(width: sheetWidth, height: sheetHeight)
             .studioSurface(.sheet, radius: Studio.Radius.sheet, elevation: .floating)
-            .padding(14)
+            .padding(Studio.Space.ml)
             .background(Studio.Palette.canvas)
             .studioSampleEnvironment(model)
     }

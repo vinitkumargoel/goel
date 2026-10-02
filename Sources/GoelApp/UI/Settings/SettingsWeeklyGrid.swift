@@ -82,7 +82,7 @@ struct WeeklyProfileGrid: View {
                 .studioFont(.small)
                 .foregroundStyle(Studio.Palette.ink3)
                 .accessibilityHidden(true)
-            HStack(spacing: 2) {
+            HStack(spacing: Studio.Space.hair) {
                 ForEach(names, id: \.self) { name in
                     brushChip(name)
                 }

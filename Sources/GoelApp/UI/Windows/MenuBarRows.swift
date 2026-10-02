@@ -13,7 +13,7 @@ struct MenuBarFailedRow: View {
         WindowsCompactCard(isFailure: true) {
             HStack(spacing: 11) {
                 StudioFileArtwork(kind: StudioArtKind(task: task), size: .s)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     FileNameText(task.compactDisplayName, lineLimit: 1)
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)
@@ -64,7 +64,7 @@ struct MenuBarDownloadRow: View {
                     }
                     StudioLinearProgress(fraction: progressFraction, tone: StudioProgressTone(task: task),
                                          height: StudioLinearProgress.thinHeight)
-                        .padding(.vertical, 2)
+                        .padding(.vertical, Studio.Space.hair)
                         .accessibilityHidden(true)
                     HStack(spacing: 5) {
                         Text(task.statusDetailText)
@@ -169,7 +169,7 @@ struct MenuBarFinishedRow: View {
                 .accessibilityHidden(true)
             HStack(spacing: 11) {
                 StudioFileArtwork(kind: StudioArtKind(task: task), size: .s)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     FileNameText(task.name, lineLimit: 1)
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)
@@ -194,7 +194,7 @@ struct MenuBarFinishedRow: View {
             .accessibilityElement(children: .combine)
             .accessibilityAction(named: L10n.t("Show in Goel°"), onOpen)
             .accessibilityAction(named: L10n.t("Quick Look")) { QuickLookPresenter.shared.present(fileURL) }
-            HStack(spacing: 2) {
+            HStack(spacing: Studio.Space.hair) {
                 StudioIconButton("eye", label: L10n.t("Quick Look %@", task.name), size: .small) {
                     QuickLookPresenter.shared.present(fileURL)
                 }
@@ -241,7 +241,7 @@ struct MenuBarSFTPTransferRow: View {
                         StudioLinearProgress(fraction: transfer.state == .waiting ? nil : transfer.fraction,
                                              tone: transfer.isPaused ? .paused : transfer.direction == .upload ? .upload : .accent,
                                              height: StudioLinearProgress.thinHeight)
-                            .padding(.vertical, 2)
+                            .padding(.vertical, Studio.Space.hair)
                         Text(detailLine)
                             .studioFont(.mono)
                             .foregroundStyle(transfer.isPaused ? Studio.Palette.warn : Studio.Palette.ink3)
@@ -285,7 +285,7 @@ struct MenuBarSFTPTransferRow: View {
 
     @ViewBuilder
     private var controls: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Studio.Space.hair) {
             if transfer.canPause {
                 StudioIconButton("pause.fill", label: L10n.t("Pause transfer of %@", transfer.name), size: .small,
                                  bordered: true) {
@@ -347,7 +347,7 @@ struct MenuBarMediaRow: View {
                 StudioLinearProgress(fraction: job.fraction,
                                      tone: job.state == .cancelling ? .paused : .warn,
                                      height: StudioLinearProgress.thinHeight)
-                    .padding(.vertical, 2)
+                    .padding(.vertical, Studio.Space.hair)
                 Text(info.subtitle)
                     .studioFont(.caption)
                     .foregroundStyle(info.tone == .warn ? Studio.Palette.warn : Studio.Palette.ink3)
@@ -398,7 +398,7 @@ struct MenuBarCountdownSection: View {
                                systemImage: AutoShutdownCountdownCard.symbol(for: intent)) { countdown.performNow() }
                             .buttonStyle(.studio(.primary, size: .small))
                     }
-                    .padding(.top, 2)
+                    .padding(.top, Studio.Space.hair)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

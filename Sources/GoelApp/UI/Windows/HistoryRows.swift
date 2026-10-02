@@ -19,7 +19,7 @@ struct HistoryRow: View {
     var body: some View {
         WindowsCompactCard(isSelected: isSelected, isHovered: hovered && !isSelected) {
             StudioFileArtwork(kind: StudioArtKind(item.type), size: .m, isFaded: !item.exists)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 FileNameText(item.entry.name, lineLimit: 1)
                     .studioFont(.bodyStrong)
                     .foregroundStyle(item.exists ? Studio.Palette.ink : Studio.Palette.ink2)

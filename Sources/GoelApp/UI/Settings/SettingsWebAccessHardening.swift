@@ -46,7 +46,7 @@ struct WebAccessHardeningCard: View {
                     .foregroundStyle(Studio.Palette.accent)
                     .frame(width: 20)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     Text(L10n.t("Hardening"))
                         .studioFont(.title3)
                         .foregroundStyle(Studio.Palette.ink)

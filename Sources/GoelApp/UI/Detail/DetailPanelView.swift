@@ -39,7 +39,7 @@ struct DetailTaskSheet: View {
             ScrollView {
                 DetailTabBody(task: task, tab: vm.detailTab.resolved(for: task))
                     .padding(.horizontal, Studio.Space.l)
-                    .padding(.top, 2)
+                    .padding(.top, Studio.Space.hair)
                     .padding(.bottom, Studio.Space.l)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

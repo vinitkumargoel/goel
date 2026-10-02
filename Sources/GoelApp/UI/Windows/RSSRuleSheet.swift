@@ -157,7 +157,7 @@ private struct RSSRulePreview: View {
                        message: previewItems == nil ? (status ?? countLine) : countLine)
             if !shown.isEmpty {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Studio.Space.hair) {
                         ForEach(shown, id: \.key) { item in
                             let matches = RSSRuleMatcher.matches(title: item.title, feed: draft)
                             HStack(spacing: Studio.Space.s) {

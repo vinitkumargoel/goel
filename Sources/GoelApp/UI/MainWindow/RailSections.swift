@@ -16,7 +16,7 @@ struct RailFilterSections: View {
     var onPick: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Studio.Space.hair) {
             RailSectionHeader(L10n.t("Library"))
             entries(SidebarCatalog.library)
             RailSectionHeader(L10n.t("Status"))
@@ -118,7 +118,7 @@ struct RailTagSection: View {
     var body: some View {
         let tags = ListPresentation.tagCounts(vm.tasks)
         if !tags.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 if showsHeader { RailSectionHeader(L10n.t("Tags")) }
                 ForEach(tags, id: \.tag) { entry in
                     let filter = SidebarFilter.tag(entry.tag)
@@ -196,7 +196,7 @@ struct RailMediaSection: View {
 
     var body: some View {
         if !center.jobs.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 if showsHeader { RailSectionHeader(L10n.t("Media")) }
                 RailRow(
                     title: L10n.t("Converting"),

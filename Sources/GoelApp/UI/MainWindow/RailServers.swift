@@ -13,7 +13,7 @@ struct RailServerSection: View {
     var onPick: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Studio.Space.hair) {
             if showsHeader {
                 RailSectionHeader(title: L10n.t("Servers")) { addButton }
             }
@@ -65,7 +65,7 @@ struct RailServerSection: View {
                 Text(verbatim: "\(summary.failed)")
                     .studioFont(.monoSmall.weight(700))
                     .foregroundStyle(Studio.Palette.onAccent)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, Studio.Space.xs)
                     .frame(minHeight: 17)
                     .background(Studio.Palette.bad, in: Capsule())
                     .help(L10n.t("%d failed", summary.failed))
@@ -95,7 +95,7 @@ private struct RailServerRow: View {
                     .font(StudioFonts.font(.ui, size: 13, weight: 600))
                     .foregroundStyle(selected ? Studio.Palette.accent : Studio.Palette.ink3)
                     .frame(width: 18)
-                    .padding(.top, 2)
+                    .padding(.top, Studio.Space.hair)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: Studio.Space.xs) {
                         Text(server.label)
@@ -189,7 +189,7 @@ private struct RailServerRow: View {
                 Text(os.label).studioFont(.tiny.size(10).weight(650)).lineLimit(1)
             }
             .foregroundStyle(Studio.Palette.ink2)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, Studio.Space.xs)
             .padding(.vertical, 1.5)
             .background(Studio.Palette.segment, in: Capsule())
             .help(os.pretty)

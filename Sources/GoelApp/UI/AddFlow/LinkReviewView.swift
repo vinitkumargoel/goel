@@ -160,7 +160,7 @@ private struct LinkReviewList: View {
 
     var body: some View {
         AddListWell(height: 288) {
-            LazyVStack(spacing: 2) {
+            LazyVStack(spacing: Studio.Space.hair) {
                 ForEach(visibleIDs, id: \.self) { id in
                     if let index = items.firstIndex(where: { $0.id == id }) {
                         LinkReviewRow(item: $items[index])

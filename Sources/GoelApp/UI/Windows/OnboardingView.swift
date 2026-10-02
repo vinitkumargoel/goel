@@ -148,7 +148,7 @@ private struct OnboardingLogo: View {
             Circle()
                 .strokeBorder(Studio.Palette.onAccent, lineWidth: 3)
                 .frame(width: 12, height: 12)
-                .padding(10)
+                .padding(Studio.Space.sm)
         }
         .frame(width: 64, height: 64)
         .accessibilityHidden(true)

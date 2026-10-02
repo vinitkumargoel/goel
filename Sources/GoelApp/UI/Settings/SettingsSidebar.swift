@@ -101,7 +101,7 @@ private struct SettingsSidebarRow: View {
     @State private var hovered = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Studio.Radius.artSmall, style: .continuous)
         Button(action: action) {
             HStack(spacing: Studio.Space.sm) {
                 Image(systemName: pane.symbol)
@@ -148,7 +148,7 @@ private struct SettingsRowHit: View {
                     .studioFont(.ui, size: 11, weight: 650)
                     .foregroundStyle(Studio.Palette.accent)
                     .frame(width: 18)
-                    .padding(.top, 2)
+                    .padding(.top, Studio.Space.hair)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
@@ -164,7 +164,7 @@ private struct SettingsRowHit: View {
             .padding(.horizontal, Studio.Space.sm)
             .padding(.vertical, Studio.Space.xs)
             .background(hovered ? Studio.Palette.segment : .clear,
-                        in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: Studio.Radius.artSmall, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

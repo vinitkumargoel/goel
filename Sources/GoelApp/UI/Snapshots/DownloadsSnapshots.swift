@@ -132,7 +132,7 @@ enum DownloadsSnapshots {
     private static func menuCard(_ nodes: [DownloadMenuNode], width: CGFloat = 270) -> some View {
         DownloadStudioMenu(nodes: nodes, width: width)
             .studioSurface(.raised, radius: Studio.Radius.tile, elevation: .floating)
-            .padding(20)
+            .padding(Studio.Space.xl)
     }
 
     /// The sample queue plus the two states it lacks: verifying and a missing file.

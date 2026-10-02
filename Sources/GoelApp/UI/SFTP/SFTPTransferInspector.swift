@@ -168,7 +168,7 @@ struct SFTPTransferInspector: View {
     }
 
     private func reading(_ label: String, _ value: String, highlight: Bool = false, spoken: String) -> some View {
-        VStack(spacing: 2) {
+        VStack(spacing: Studio.Space.hair) {
             Text(value)
                 .studioFont(Studio.TextStyle.mono.weight(700))
                 .foregroundStyle(highlight ? transfer.studioDirectionColor : Studio.Palette.ink)

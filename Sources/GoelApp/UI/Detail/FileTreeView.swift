@@ -4,6 +4,16 @@ import GoelCore
 /// A torrent's files as a folder tree: tri-state checks (Included / Skipped / Partly), per-folder
 /// totals, a filter field and a Select menu. The caller owns the wanted set and applies changes;
 /// `trailing` draws a file's own control (the priority menu).
+/// The file trees' shared indentation (the detail panel's Files tab and the Add sheet's list).
+enum FileTreeMetrics {
+    /// Each folder level shifts its rows right by this much.
+    static let indentPerLevel: CGFloat = 18
+
+    static func indent(depth: Int) -> CGFloat {
+        CGFloat(depth) * indentPerLevel + Studio.Space.xs
+    }
+}
+
 struct FileTreeView<Trailing: View>: View {
     let items: [FileTreeItem]
     let wanted: Set<Int>
@@ -26,7 +36,7 @@ struct FileTreeView<Trailing: View>: View {
             if rows.isEmpty {
                 DetailEmptyLine(text: L10n.t("No files match “%@”", query))
             }
-            LazyVStack(alignment: .leading, spacing: 2) {
+            LazyVStack(alignment: .leading, spacing: Studio.Space.hair) {
                 ForEach(rows) { row in
                     rowView(row, isOpen: open.contains(row.id) || !query.isEmpty)
                 }
@@ -73,9 +83,9 @@ struct FileTreeView<Trailing: View>: View {
                 trailing(item)
             }
         }
-        .padding(.leading, CGFloat(row.depth) * 18 + Studio.Space.xs)
+        .padding(.leading, FileTreeMetrics.indent(depth: row.depth))
         .padding(.trailing, Studio.Space.xs)
-        .padding(.vertical, 6)
+        .padding(.vertical, Studio.Space.xs)
         .background {
             if node.isFolder && row.depth == 0 {
                 RoundedRectangle(cornerRadius: Studio.Radius.control, style: .continuous).fill(Studio.Palette.well)

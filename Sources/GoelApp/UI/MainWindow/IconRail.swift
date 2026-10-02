@@ -137,7 +137,7 @@ struct IconRail: View {
     private var expanded: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     RailFilterSections()
                     RailTagSection()
                     RailMediaSection(center: vm.mediaJobs)
@@ -151,7 +151,7 @@ struct IconRail: View {
                 .padding(.bottom, Studio.Space.sm)
             }
             .scrollIndicators(.never)
-            VStack(spacing: 2) {
+            VStack(spacing: Studio.Space.hair) {
                 StudioRailSeparator(isExpanded: true)
                 bottomItems(expanded: true)
             }

@@ -84,7 +84,7 @@ struct DetailProgressHero: View {
     }
 
     private var bigNumber: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 2) {
+        HStack(alignment: .firstTextBaseline, spacing: Studio.Space.hair) {
             Text(verbatim: "\(task.percentComplete)")
                 .studioFont(.bigNumber)
                 .foregroundStyle(Studio.Palette.ink)

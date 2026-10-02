@@ -14,9 +14,9 @@ struct DownloadStatusCell: View {
 
     var body: some View {
         if let reason = task.failureMessage {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 Label(L10n.t("Failed"), systemImage: "exclamationmark.triangle.fill")
-                    .labelStyle(StudioButtonLabelStyle(spacing: 4, iconSize: 10))
+                    .labelStyle(StudioButtonLabelStyle(spacing: Studio.Space.xxs, iconSize: 10))
                     .studioFont(Studio.TextStyle.caption.weight(650))
                     .foregroundStyle(Studio.Palette.bad)
                     .padding(.horizontal, 9)
@@ -87,7 +87,7 @@ struct ExtraColumnHeader: View {
         Text(column.title)
             .lineLimit(1)
             .frame(width: width, alignment: column.cellAlignment)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, Studio.Space.xs)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -126,8 +126,8 @@ struct ListSectionHeader: View {
                 .lineLimit(1)
         }
         .padding(.horizontal, 18)
-        .padding(.top, 10)
-        .padding(.bottom, 4)
+        .padding(.top, Studio.Space.sm)
+        .padding(.bottom, Studio.Space.xxs)
         .frame(maxWidth: .infinity)
         .background(Studio.Palette.card)
         .accessibilityElement(children: .ignore)
@@ -174,7 +174,7 @@ struct DownloadTableHeader: View {
                          title: L10n.t("Speed"), alsoSortedBy: [.uploadSpeed])
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Studio.Space.m)
         .frame(height: 32)
         .studioFont(Studio.TextStyle.tiny.weight(650))
         .foregroundStyle(Studio.Palette.ink3)
@@ -208,7 +208,7 @@ struct DownloadTableHeader: View {
         .buttonStyle(.plain)
         .frame(width: width, alignment: alignment)
         .frame(maxWidth: width == nil ? .infinity : nil)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, Studio.Space.xs)
         .a11yButton(title ?? key.title,
                     hint: isSortKey
                         ? L10n.t("Currently sorting %@. Activate to reverse.",

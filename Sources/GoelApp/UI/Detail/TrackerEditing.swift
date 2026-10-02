@@ -54,7 +54,7 @@ struct TrackerRow: View {
             HStack(alignment: .firstTextBaseline, spacing: Studio.Space.s) {
                 StudioPill(status.title, tone: status.tone, showsDot: false)
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Studio.Space.hair) {
                     Text(tracker.url)
                         .studioFont(.monoSmall)
                         .foregroundStyle(Studio.Palette.ink)

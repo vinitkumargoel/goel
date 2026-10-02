@@ -221,7 +221,7 @@ extension SFTPBrowserView {
                     .id(entry.id)
             }
         }
-        .padding(.top, 2)
+        .padding(.top, Studio.Space.hair)
     }
 
     /// A transfer of this very item, still moving or paused: its tile and row show the progress.

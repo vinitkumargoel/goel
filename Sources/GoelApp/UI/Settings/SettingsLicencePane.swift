@@ -134,7 +134,7 @@ struct LicenceSettingsPane: View {
                     HStack(spacing: Studio.Space.s) { commercialButtons }
                     VStack(alignment: .leading, spacing: Studio.Space.xs) { commercialButtons }
                 }
-                .padding(.top, 2)
+                .padding(.top, Studio.Space.hair)
             }
         }
     }

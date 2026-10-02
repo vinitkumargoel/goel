@@ -4,6 +4,12 @@ import GoelCore
 /// The confirm step's files as a tree (folders from the paths, via `FileTree`). For a torrent each
 /// file and folder can be ticked off; a folder shows a bar when only some of its files are kept.
 struct AddFileTreeList: View {
+    private static let rowHeight: CGFloat = 30
+    /// Room around the rows for the well's padding and rim, added once.
+    private static let listInset: CGFloat = 10
+    /// About six rows; longer torrents scroll inside the well.
+    private static let maxListHeight: CGFloat = 190
+
     let files: [TransferFile]
     let selectable: Bool
     @Binding var deselectedFileIDs: Set<Int>
@@ -30,7 +36,7 @@ struct AddFileTreeList: View {
                         .foregroundStyle(Studio.Palette.ink3)
                 }
             }
-            AddListWell(height: min(CGFloat(rows.count) * 30 + 10, 190)) {
+            AddListWell(height: min(CGFloat(rows.count) * Self.rowHeight + Self.listInset, Self.maxListHeight)) {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(rows) { row in
                         rowView(row, open: open)
@@ -84,9 +90,9 @@ struct AddFileTreeList: View {
                 .foregroundStyle(Studio.Palette.ink3)
                 .accessibilityLabel(A11y.bytes(node.size))
         }
-        .padding(.leading, CGFloat(row.depth) * 18 + Studio.Space.xs)
+        .padding(.leading, FileTreeMetrics.indent(depth: row.depth))
         .padding(.trailing, Studio.Space.s)
-        .frame(height: 30)
+        .frame(height: Self.rowHeight)
     }
 
     private func toggleExpanded(_ id: String, current: Set<String>) {

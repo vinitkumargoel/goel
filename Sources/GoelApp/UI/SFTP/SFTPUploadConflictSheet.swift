@@ -4,6 +4,9 @@ import GoelCore
 /// Some of an upload's items already exist on the server: pick Overwrite, Resume, Rename or Skip
 /// for each (Rename by default), or one choice for all, then Upload.
 struct SFTPUploadConflictSheet: View {
+    /// Starts each divider under the file names: the row's inset, the artwork, and the gap after it.
+    private static let dividerInset = Studio.Space.xl + StudioArtSize.xs.side + Studio.Space.sm
+
     let request: SFTPUploadConflictRequest
     let onResolve: ([UUID: SFTPUploadConflictRequest.Policy]) -> Void
     let onCancel: () -> Void
@@ -86,7 +89,7 @@ struct SFTPUploadConflictSheet: View {
         ScrollView {
             VStack(spacing: 0) {
                 ForEach(Array(request.colliding.enumerated()), id: \.element.id) { index, item in
-                    if index > 0 { StudioDivider().padding(.leading, Studio.Space.xl + 34) }
+                    if index > 0 { StudioDivider().padding(.leading, Self.dividerInset) }
                     row(item)
                 }
             }

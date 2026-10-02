@@ -17,6 +17,12 @@ struct DownloadBoardCard: DownloadHoverable {
 
     @Environment(\.quickLookAction) private var quickLook
 
+    /// The large card's progress arc straddles the artwork band's lower edge: its top sits 42 pt
+    /// down, so 24 pt of it overlaps the 66 pt band.
+    private static let arcTop: CGFloat = 42
+    /// Keeps the title and meta line clear of that arc in the top-right corner.
+    private static let arcClearance: CGFloat = 58
+
     nonisolated static func == (lhs: DownloadBoardCard, rhs: DownloadBoardCard) -> Bool {
         lhs.task == rhs.task
             && lhs.queueRank == rhs.queueRank
@@ -60,18 +66,18 @@ struct DownloadBoardCard: DownloadHoverable {
                     StudioKindBadge(kind: task.kind, style: .glass)
                 }
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 FileNameText(task.compactDisplayName, lineLimit: 2)
                     .studioFont(.cardTitle)
                     .foregroundStyle(Studio.Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, Studio.Space.sm)
-                    .padding(.trailing, 58)
+                    .padding(.trailing, Self.arcClearance)
                 Text(DownloadCardText.largeMeta(task))
                     .studioFont(.small)
                     .foregroundStyle(Studio.Palette.ink3)
                     .lineLimit(1)
-                    .padding(.trailing, 58)
+                    .padding(.trailing, Self.arcClearance)
                 stats
                     .padding(.top, Studio.Space.sm)
             }
@@ -82,7 +88,7 @@ struct DownloadBoardCard: DownloadHoverable {
             StudioProgressArc(fraction: task.fractionCompleted, tone: StudioProgressTone(task: task), diameter: 46)
                 .padding(3)
                 .background(Circle().fill(Studio.Palette.card).studioElevation(.raised))
-                .padding(.top, 66 - 24)
+                .padding(.top, Self.arcTop)
                 .padding(.trailing, Studio.Space.ml)
                 .a11yDecorative()
         }
@@ -126,7 +132,7 @@ struct DownloadBoardCard: DownloadHoverable {
             StudioFileArtwork(kind: kind, size: .s,
                               isFaded: task.status == .paused || task.isFileMissing,
                               isFetchingMetadata: task.status == .requestingMetadata)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 FileNameText(task.compactDisplayName, lineLimit: 1)
                     .studioFont(Studio.TextStyle.bodyStrong.weight(650))
                     .foregroundStyle(Studio.Palette.ink)
@@ -229,7 +235,7 @@ struct DownloadCardHoverBar: View {
     let vm: AppViewModel
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Studio.Space.hair) {
             if let action = RowStateAction(task: task) {
                 StudioIconButton(action.symbol, label: L10n.t("%1$@ %2$@", action.title, task.name), size: .small) {
                     action.perform(on: task, vm: vm)

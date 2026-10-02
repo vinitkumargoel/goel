@@ -148,8 +148,8 @@ enum WindowsSnapshots {
                 GlobalSpeedHistoryPopover(telemetry: context.model.telemetry)
             },
             StudioSnapshotEntry("windows.speed.sparklines", width: 360) { context in
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: Studio.Space.ml) {
+                    HStack(spacing: Studio.Space.m) {
                         GlobalSpeedSparkline(direction: .down)
                         GlobalSpeedSparkline(direction: .up)
                     }
@@ -158,7 +158,7 @@ enum WindowsSnapshots {
                     SparklineView(values: [1, 3, 2, 5, 4, 6, 5, 8], tint: Studio.Palette.upload)
                         .frame(height: 30)
                 }
-                .padding(20)
+                .padding(Studio.Space.xl)
                 .studioSampleEnvironment(context.model)
             },
             StudioSnapshotEntry("windows.speedcap", width: 300) { context in
@@ -176,20 +176,20 @@ enum WindowsSnapshots {
                                      WindowsSampleData.job(.failed), WindowsSampleData.job(.stalled),
                                      WindowsSampleData.job(.queued), WindowsSampleData.job(.queued)],
                               center: context.model.mediaJobs)
-                    .padding(.top, 20)
+                    .padding(.top, Studio.Space.xl)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             },
             StudioSnapshotEntry("windows.jobs.stopping", width: 380) { context in
                 MediaJobStack(jobs: [WindowsSampleData.job(.queued), WindowsSampleData.job(.cancelling),
                                      WindowsSampleData.job(.stuck), WindowsSampleData.job(.cancelled)],
                               center: context.model.mediaJobs)
-                    .padding(.top, 20)
+                    .padding(.top, Studio.Space.xl)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             },
             StudioSnapshotEntry("windows.countdown", width: 760, height: 420) { _ in
                 ZStack {
                     Studio.Palette.scrim
-                    HStack(alignment: .top, spacing: 20) {
+                    HStack(alignment: .top, spacing: Studio.Space.xl) {
                         AutoShutdownCountdownCard(intent: .sleep, remaining: 30, total: 60, onCancel: {}, onNow: {})
                         AutoShutdownCountdownCard(intent: .quit, remaining: 12, total: 60, onCancel: {}, onNow: {})
                     }

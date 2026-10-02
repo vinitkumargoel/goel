@@ -115,7 +115,7 @@ struct GlobalSpeedSparkline: View {
             SparklineView(values: values, tint: direction.tint)
                 .frame(width: 60, height: 18)
                 .padding(.horizontal, 3)
-                .padding(.vertical, 2)
+                .padding(.vertical, Studio.Space.hair)
                 .background(hovered ? Studio.Palette.segment : .clear,
                             in: RoundedRectangle(cornerRadius: Studio.Radius.badge, style: .continuous))
                 .contentShape(Rectangle())

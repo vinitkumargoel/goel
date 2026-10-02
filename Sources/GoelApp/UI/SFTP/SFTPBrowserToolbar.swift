@@ -45,7 +45,7 @@ extension SFTPBrowserView {
     }
 
     private var navigationButtons: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Studio.Space.hair) {
             StudioIconButton("chevron.backward", label: L10n.t("Back"), size: .small, shortcutHint: "⌘[") {
                 Task { await model.goBack() }
             }
@@ -123,7 +123,7 @@ extension SFTPBrowserView {
                 crumbButton(crumb, isLast: index == crumbs.count - 1)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Studio.Space.hair)
     }
 
     private var crumbChevron: some View {
@@ -163,7 +163,7 @@ extension SFTPBrowserView {
                     .studioFont(Studio.TextStyle.monoSmall.weight(600))
                     .foregroundStyle(Studio.Palette.ink2)
                     .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
+                    .padding(.vertical, Studio.Space.hair)
                     .background(Studio.Palette.segment, in: Capsule())
                     .fixedSize()
                     .accessibilityLabel(L10n.t("%d matches", visibleEntries.count))
@@ -305,7 +305,7 @@ private struct SFTPCrumbBody: View {
     @State private var hovered = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Studio.Radius.badge, style: .continuous)
         configuration.label
             .padding(.horizontal, 5)
             .padding(.vertical, 3)
@@ -325,7 +325,7 @@ struct SFTPViewOptionsMenu: View {
     let onClose: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Studio.Space.hair) {
             section(L10n.t("View style"))
             StudioMenuRow(symbol: "list.bullet", title: L10n.t("List"), isChecked: !isGrid) {
                 isGrid = false; onClose()
@@ -358,7 +358,7 @@ struct SFTPViewOptionsMenu: View {
             .foregroundStyle(Studio.Palette.ink3)
             .padding(.horizontal, Studio.Space.sm)
             .padding(.top, Studio.Space.xxs)
-            .padding(.bottom, 2)
+            .padding(.bottom, Studio.Space.hair)
             .accessibilityAddTraits(.isHeader)
     }
 }

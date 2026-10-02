@@ -76,7 +76,7 @@ struct DetailCopyButton: View {
                 .foregroundStyle(hovered ? Studio.Palette.accent : Studio.Palette.ink3)
                 .frame(width: 20, height: 20)
                 .background(hovered ? Studio.Palette.segment : .clear,
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            in: RoundedRectangle(cornerRadius: Studio.Radius.badge, style: .continuous))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

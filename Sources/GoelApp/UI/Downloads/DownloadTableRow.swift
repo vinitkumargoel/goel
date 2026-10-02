@@ -46,7 +46,7 @@ struct DownloadTableRow: DownloadHoverable {
 
     var body: some View {
         cells
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Studio.Space.m)
             .padding(.vertical, isCompact ? 3 : 7)
             .frame(minHeight: columns.density.rowHeight)
             .background(rowBackground)
@@ -60,23 +60,23 @@ struct DownloadTableRow: DownloadHoverable {
             DownloadIndexCell(task: task, displayIndex: displayIndex, queueRank: queueRank,
                               showsGrip: reorderable && isHovered, vm: vm)
                 .frame(width: columns.index)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, Studio.Space.xs)
 
             nameCell
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, Studio.Space.xs)
 
             if columns.showsSize {
                 sizeCell
                     .frame(width: columns.size, alignment: .trailing)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, Studio.Space.xs)
             }
             if columns.showsStatus {
                 DownloadStatusCell(task: task, speed: speed, queueRank: queueRank,
                                    foldsSpeed: !columns.showsSpeed, showsReason: isCompact)
                     .help(task.studioStatusTooltip)
                     .frame(width: columns.status, alignment: .leading)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, Studio.Space.xs)
             }
             if columns.showsAdded {
                 Text(task.addedColumnString)
@@ -85,17 +85,17 @@ struct DownloadTableRow: DownloadHoverable {
                     .lineLimit(1)
                     .help(task.addedString)
                     .frame(width: columns.added, alignment: .trailing)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, Studio.Space.xs)
             }
             ForEach(columns.extras) { extra in
                 ExtraColumnCell(column: extra, task: task)
                     .frame(width: columns.width(of: extra), alignment: extra.cellAlignment)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, Studio.Space.xs)
             }
             if columns.showsSpeed {
                 DownloadSpeedCell(task: task, speed: speed)
                     .frame(width: columns.speed, alignment: .trailing)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, Studio.Space.xs)
             }
         }
     }

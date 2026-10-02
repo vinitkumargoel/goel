@@ -75,7 +75,7 @@ struct QueueOverviewPanel: View {
 
     private func header(_ overview: QueueOverview) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Studio.Space.s) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 Text(L10n.t("Queue overview"))
                     .studioFont(.title2)
                     .foregroundStyle(Studio.Palette.ink)
@@ -88,7 +88,7 @@ struct QueueOverviewPanel: View {
             }
             Spacer(minLength: Studio.Space.s)
             if horizontal { DetailForcedDockNote() }
-            HStack(spacing: 2) {
+            HStack(spacing: Studio.Space.hair) {
                 DetailDockToggle()
                 DetailCloseButton()
             }
@@ -118,7 +118,7 @@ struct QueueOverviewPanel: View {
         let nothingLeft = overview.remainingBytes == 0 && !overview.hasUnknownSize
         let fraction = DetailQueueProgress.fraction(vm.tasks)
         return HStack(spacing: Studio.Space.l) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Studio.Space.hair) {
                 Text(L10n.t("Remaining")).studioFont(.eyebrow).foregroundStyle(Studio.Palette.ink3)
                 Text(nothingLeft ? L10n.t("Nothing left") : overview.remainingBytes.byteString)
                     .studioFont(nothingLeft ? .title3 : .title1)
