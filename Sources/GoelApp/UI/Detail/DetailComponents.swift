@@ -63,7 +63,7 @@ struct DetailFactText: View {
     }
 }
 
-/// The 20 pt copy glyph that sits after a fact's value.
+/// The 20 pt copy glyph that sits after a fact's value; 24 pt to click.
 struct DetailCopyButton: View {
     let help: String
     let action: () -> Void
@@ -77,7 +77,7 @@ struct DetailCopyButton: View {
                 .frame(width: 20, height: 20)
                 .background(hovered ? Studio.Palette.segment : .clear,
                             in: RoundedRectangle(cornerRadius: Studio.Radius.badge, style: .continuous))
-                .contentShape(Rectangle())
+                .studioHitOutset(2)
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }

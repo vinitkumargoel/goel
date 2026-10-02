@@ -118,7 +118,7 @@ Use `StudioScaled { factor in … }` to scale a layout metric with the text size
 | `StudioLaneHeader` | `StudioLaneHeader(title: L10n.t("Downloading"), count: 4, detail: "↓ 43 MB/s", detailIsMono: true)` |
 | `StudioWordmark` | the Goel° wordmark |
 | `.studioFocusRing(isFocused, shape:)` | the 3 pt accent halo for custom focusable controls; read `isFocused` in a `ButtonStyle` body, never in the view that builds the `Button` (that reports its ancestor) |
-| `.studioPlain`, `.studioButtonFocusRing(shape:)` | a hand-drawn button: `Button { tile.studioButtonFocusRing(shape: s) }.buttonStyle(.studioPlain)`; `.studioPlain(hitPadding:)` adds invisible click margin for small controls |
+| `.studioPlain`, `.studioButtonFocusRing(shape:)` | a hand-drawn button: `Button { tile.studioButtonFocusRing(shape: s) }.buttonStyle(.studioPlain)`; `.studioHitOutset(_:)` grows a small control's click target to 24 pt without moving it |
 
 Icons are SF Symbols; the mockup's icon names map to: board `rectangle.3.group`, list
 `list.bullet`, history `clock.arrow.circlepath`, server `server.rack`, rss

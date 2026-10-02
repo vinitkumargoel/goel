@@ -223,7 +223,8 @@ private struct StudioSegmentButton<Value: Hashable>: View {
                 }
             }
             .studioButtonFocusRing(shape: shape)
-            .contentShape(shape)
+            // Reaches over the track's padding: a small segment is 22 pt to see, 26 to click.
+            .studioHitOutset(2)
         }
         .buttonStyle(.studioPlain)
         .disabled(!segment.isEnabled)

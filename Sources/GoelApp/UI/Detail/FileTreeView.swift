@@ -78,7 +78,10 @@ struct FileTreeView<Trailing: View>: View {
         return HStack(spacing: Studio.Space.s) {
             disclosure(node, isOpen: isOpen)
             checkbox(node, state: state)
+            // The name toggles too, as a checkbox's label does; VoiceOver uses the checkbox.
             FileTreeRowLabel(node: node, state: state, showsProgress: showsProgress)
+                .contentShape(Rectangle())
+                .onTapGesture { onChange(FileTree.toggling(node, in: wanted)) }
             if let fileID = node.fileID, let item = items.first(where: { $0.id == fileID }) {
                 trailing(item)
             }
@@ -101,7 +104,8 @@ struct FileTreeView<Trailing: View>: View {
                     .font(StudioFonts.font(.ui, size: 9.5, weight: 700))
                     .foregroundStyle(Studio.Palette.ink3)
                     .frame(width: 12, height: 17)
-                    .contentShape(Rectangle())
+                    // 24 × 25 to click, still 12 × 17 to see.
+                    .contentShape(Rectangle().size(width: 24, height: 25).offset(x: -6, y: -4))
             }
             .buttonStyle(.plain)
             .a11yButton(isOpen ? L10n.t("Collapse %@", node.name) : L10n.t("Expand %@", node.name))
@@ -113,6 +117,7 @@ struct FileTreeView<Trailing: View>: View {
     private func checkbox(_ node: FileTreeNode, state: FileCheckState) -> some View {
         Button { onChange(FileTree.toggling(node, in: wanted)) } label: {
             DetailCheckMark(state: state)
+                .studioHitOutset(3.5)
         }
         .buttonStyle(.plain)
         .a11yButton(state == .on ? L10n.t("Skip %@", node.name) : L10n.t("Download %@", node.name))

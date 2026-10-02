@@ -284,37 +284,22 @@ private struct StudioPillButtonBody: View {
 ///
 ///     Button(action: pick) { tile.studioButtonFocusRing(shape: shape) }
 ///         .buttonStyle(.studioPlain)
-///
-/// `hitPadding` adds an invisible clickable margin around the label, so a small control is
-/// still a 24 pt target without growing visibly.
 struct StudioPlainButtonStyle: ButtonStyle {
-    var hitPadding = EdgeInsets()
-
     func makeBody(configuration: Configuration) -> some View {
-        StudioPlainButtonBody(configuration: configuration, hitPadding: hitPadding)
+        StudioPlainButtonBody(configuration: configuration)
     }
 }
 
 extension ButtonStyle where Self == StudioPlainButtonStyle {
     static var studioPlain: StudioPlainButtonStyle { StudioPlainButtonStyle() }
-
-    static func studioPlain(hitPadding: EdgeInsets) -> StudioPlainButtonStyle {
-        StudioPlainButtonStyle(hitPadding: hitPadding)
-    }
 }
 
 private struct StudioPlainButtonBody: View {
     let configuration: ButtonStyleConfiguration
-    let hitPadding: EdgeInsets
     @Environment(\.isFocused) private var isFocused
 
     var body: some View {
-        let label = configuration.label.environment(\.studioButtonIsFocused, isFocused)
-        if hitPadding == EdgeInsets() {
-            label
-        } else {
-            label.padding(hitPadding).contentShape(Rectangle())
-        }
+        configuration.label.environment(\.studioButtonIsFocused, isFocused)
     }
 }
 
@@ -344,6 +329,12 @@ extension View {
     /// inside the button's label.
     func studioButtonFocusRing<S: InsettableShape>(shape: S) -> some View {
         modifier(StudioButtonFocusRing(shape: shape))
+    }
+
+    /// Grows the click target by `outset` on every side without moving or redrawing anything,
+    /// so a small glyph control is still a 24 pt target (WCAG 2.5.8).
+    func studioHitOutset(_ outset: CGFloat) -> some View {
+        contentShape(Rectangle().inset(by: -outset))
     }
 
     /// The Studio keyboard-focus ring: a 3 pt accent halo outside `shape` (`.field.focus`).

@@ -317,6 +317,8 @@ struct AddPastedNote: View {
             }
             .buttonStyle(StudioIconButtonStyle(size: .small))
             .frame(width: 18, height: 18)
+            // Drawn in an 18 pt slot, clickable over 24.
+            .studioHitOutset(3)
             .help(clearHelp)
             .accessibilityLabel(clearHelp)
         }
