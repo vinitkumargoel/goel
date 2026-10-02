@@ -43,6 +43,8 @@ enum NotificationPlanning {
     /// Why, in the words the failure card uses: the advice when there is some, else the error itself.
     static func failureBody(for status: DownloadStatus) -> String {
         guard case .failed(let error) = status else { return L10n.t("The download stopped with an error.") }
+        // An unrecognised error's own text beats the card's generic "something went wrong" hint.
+        if case .unknown(let message) = error, !FailureAdvice.looksLikeDiskFull(message) { return error.message }
         return FailureAdvice.hint(for: error) ?? error.message
     }
 
