@@ -12,11 +12,19 @@ struct HeaderBar: View {
     var showsOmnibox = true
 
     @AppStorage(ToolbarSlot.storageKey) private var slotsRaw = ""
+    @Environment(\.mainWindowPreview) private var preview
     @State private var showsCustomize = false
     /// The live totals give way first when the window narrows, so the omnibox keeps its room.
     @State private var isWide = true
+    /// With Search hidden, the compact button (or ⌘F) opened the omnibox; leaving it empty folds it.
+    @State private var searchOpened = false
 
-    private var slots: Set<ToolbarSlot> { ToolbarSlot.decode(slotsRaw) }
+    private var slots: Set<ToolbarSlot> { preview?.toolbarSlots ?? ToolbarSlot.decode(slotsRaw) }
+
+    private var showsFullOmnibox: Bool {
+        HeaderSearch.showsOmnibox(searchShown: slots.contains(.search), isOpened: searchOpened,
+                                  text: omniboxText, hasClipboardSuggestion: vm.clipboardSuggestion != nil)
+    }
 
     static let omniboxMaxWidth: CGFloat = 820
     static let inputHeight: CGFloat = 58
@@ -24,9 +32,15 @@ struct HeaderBar: View {
     var body: some View {
         HStack(alignment: .top, spacing: Studio.Space.ml) {
             if showsOmnibox {
-                MainOmnibox(text: $omniboxText, isFocused: omniboxFocus)
-                    .frame(maxWidth: Self.omniboxMaxWidth)
-                    .layoutPriority(1)
+                if showsFullOmnibox {
+                    MainOmnibox(text: $omniboxText, isFocused: omniboxFocus)
+                        .frame(maxWidth: Self.omniboxMaxWidth)
+                        .layoutPriority(1)
+                        .onAppear { if searchOpened { omniboxFocus.wrappedValue = true } }
+                } else {
+                    compactSearchButton
+                        .frame(height: Self.inputHeight)
+                }
             }
             Spacer(minLength: 0)
             controls
@@ -37,6 +51,22 @@ struct HeaderBar: View {
         .padding(.bottom, Studio.Space.sm)
         .contextMenu { HeaderCustomizeMenu(raw: $slotsRaw) }
         .onGeometryChange(for: Bool.self) { $0.size.width >= 940 } action: { isWide = $0 }
+        // ⌘F reaches the omnibox through RootView; a hidden Search has to unfold first.
+        .onReceive(NotificationCenter.default.publisher(for: FocusBus.focusSearch)) { _ in
+            searchOpened = true
+        }
+        .onChange(of: omniboxFocus.wrappedValue) { wasFocused, isFocused in
+            if wasFocused && !isFocused { searchOpened = false }
+        }
+    }
+
+    /// Search hidden under Customize: a magnifier that unfolds the omnibox and focuses it.
+    private var compactSearchButton: some View {
+        StudioIconButton("magnifyingglass", label: L10n.t("Search downloads"), bordered: true,
+                         shortcutHint: "⌘F") {
+            searchOpened = true
+            omniboxFocus.wrappedValue = true
+        }
     }
 
     private var controls: some View {
@@ -113,8 +143,8 @@ struct HeaderCustomizeMenu: View {
 struct HeaderCustomizePopover: View {
     @Binding var raw: String
 
-    /// The omnibox always searches now, so "Search" is no longer optional.
-    static var customizable: [ToolbarSlot] { ToolbarSlot.allCases.filter { $0 != .search } }
+    /// Every optional item. Hiding Search folds the omnibox to a magnifier until it is needed.
+    static var customizable: [ToolbarSlot] { ToolbarSlot.allCases }
 
     var body: some View {
         StudioPopover(title: L10n.t("Show in Toolbar"), width: 240) {

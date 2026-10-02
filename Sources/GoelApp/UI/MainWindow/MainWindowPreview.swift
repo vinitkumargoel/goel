@@ -14,6 +14,8 @@ struct MainWindowPreview: Equatable {
     var omniboxFocused = false
     /// The empty state's clipboard link, instead of reading the real pasteboard.
     var clipboardLink: String?
+    /// The header's Customize choices, instead of the stored ones.
+    var toolbarSlots: Set<ToolbarSlot>?
 }
 
 private struct MainWindowPreviewKey: EnvironmentKey {
@@ -37,6 +39,7 @@ enum MainWindowPreview: Equatable {
     var omniboxText: String? { switch self {} }
     var omniboxFocused: Bool { switch self {} }
     var clipboardLink: String? { switch self {} }
+    var toolbarSlots: Set<ToolbarSlot>? { switch self {} }
 }
 
 extension EnvironmentValues {

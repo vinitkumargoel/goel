@@ -34,6 +34,14 @@ enum MainWindowSnapshots {
                 railExpanded: true,
                 clipboardLink: "https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/debian-12.7.0-arm64-netinst.iso"),
                    empty: true),
+            // Search hidden under Customize: the omnibox folds to a magnifier...
+            window("main.search.hidden", preview: MainWindowPreview(
+                railExpanded: false, toolbarSlots: [.pauseResume, .inspector])),
+            // ...and unfolds again to carry a copied link, so paste-to-add still works.
+            window("main.search.hidden.clipboard", preview: MainWindowPreview(
+                railExpanded: false, toolbarSlots: [.pauseResume, .inspector])) { model in
+                model.clipboardSuggestion = "https://releases.ubuntu.com/24.04.1/ubuntu-24.04.1-live-server-amd64.iso"
+            },
             window("main.drop", preview: MainWindowPreview(railExpanded: false, isDropTargeted: true)),
             window("main.confirm") { model in
                 model.requestConfirm(

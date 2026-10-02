@@ -45,3 +45,14 @@ enum ToolbarSlot: String, CaseIterable, Identifiable, Sendable {
         return encode(set)
     }
 }
+
+/// Whether the header shows the full omnibox. With Search hidden it folds to a magnifier, but it
+/// still unfolds whenever it has something to show: the user opened it (click or ⌘F), it holds
+/// text (a search or links being added), or it carries the copied-link suggestion. So paste-to-add
+/// keeps working with Search hidden.
+enum HeaderSearch {
+    static func showsOmnibox(searchShown: Bool, isOpened: Bool, text: String,
+                             hasClipboardSuggestion: Bool) -> Bool {
+        searchShown || isOpened || !text.isEmpty || hasClipboardSuggestion
+    }
+}
