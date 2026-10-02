@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { memo, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TYPE_FILTERS, type Filter, type FilterCounts, type TypeFilter } from '../../lib/filters'
 import type { RouteView } from '../../lib/route'
@@ -52,7 +52,7 @@ interface RailProps {
  * The Studio rail: every library filter with its count, the tags, History and Settings. On the
  * desktop it is the slim icon column (expandable to labels); on a phone the same list is a drawer.
  */
-export function Rail(props: RailProps) {
+export const Rail = memo(function Rail(props: RailProps) {
   const { t } = useTranslation()
   const {
     view,
@@ -251,4 +251,4 @@ export function Rail(props: RailProps) {
       {nav}
     </>
   )
-}
+})

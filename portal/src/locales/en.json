@@ -134,7 +134,8 @@
     "colAdded": "Added",
     "actionNamed": "{{action}} {{name}}",
     "rowLabelFailed": "{{name}}, {{kind}}, failed: {{error}}",
-    "left": "{{eta}} left"
+    "left": "{{eta}} left",
+    "showMore": "Show {{count}} more of {{remaining}} remaining"
   },
   "menu": {
     "copySourceLink": "Copy source link",
@@ -222,7 +223,8 @@
     "saveNamed": "Save {{name}} to this device",
     "saveHint": "Save to this device",
     "summary_one": "{{count}} item · {{size}}",
-    "summary_other": "{{count}} items · {{size}}"
+    "summary_other": "{{count}} items · {{size}}",
+    "showMore": "Show {{count}} more of {{remaining}} remaining"
   },
   "detail": {
     "closePanel": "Close panel",

@@ -285,4 +285,13 @@ describe('HistoryView', () => {
     expect(within(side).getByText(en.fileType.iso)).toBeInTheDocument()
     expect(within(side).getByText('All time: 2 entries · 2.0 KB')).toBeInTheDocument()
   })
+
+  it('draws a long history in pages', async () => {
+    api.history.mockResolvedValue(Array.from({ length: 350 }, (_, i) => entry(`h${i}`, `f${i}.bin`, 'http', i % 30)))
+    renderHistory()
+    await screen.findByRole('button', { name: /Show 50 more of 50 remaining/ })
+    expect(document.querySelectorAll('.hist-item')).toHaveLength(300)
+    await userEvent.click(screen.getByRole('button', { name: /Show 50 more/ }))
+    expect(document.querySelectorAll('.hist-item')).toHaveLength(350)
+  }, 20_000)
 })

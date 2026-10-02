@@ -8,6 +8,7 @@ import { allTags, byQueuePosition, hasTag } from '../lib/queueControls'
 import type { Selection } from '../lib/selection'
 import { sortTasks, type SortState } from '../lib/sort'
 import type { TaskRow } from '../lib/types'
+import { useStableValue } from './useStableValue'
 
 interface Inputs {
   tasks: TaskRow[]
@@ -24,8 +25,8 @@ interface Inputs {
 /** What the window shows, derived from the snapshot and the user's filter, sort and selection. */
 export function useLibraryModel(inputs: Inputs) {
   const { tasks, filter, search, sort, tag, group, selection, panelOpen, panelAutoHide } = inputs
-  const counts = useMemo(() => countFilters(tasks), [tasks])
-  const tagCounts = useMemo(() => allTags(tasks), [tasks])
+  const counts = useStableValue(useMemo(() => countFilters(tasks), [tasks]))
+  const tagCounts = useStableValue(useMemo(() => allTags(tasks), [tasks]))
   // History reloads when this changes: a download finished, or a finished one left the list.
   const finishedKey = useMemo(
     () =>
@@ -61,7 +62,7 @@ export function useLibraryModel(inputs: Inputs) {
   // Auto-hide only takes the panel away while nothing is selected; the toggle still closes it.
   const panelShown = panelVisible(panelOpen, panelAutoHide, detailId != null)
 
-  const estimate = useMemo(() => queueEstimate(tasks), [tasks])
+  const estimate = useStableValue(useMemo(() => queueEstimate(tasks), [tasks]))
   const totals = useMemo(
     () =>
       tasks.reduce(

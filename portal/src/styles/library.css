@@ -467,3 +467,8 @@
   top: 10px;
   left: 10px;
 }
+
+.lib-more {
+  align-self: center;
+  margin: 12px 0 20px;
+}

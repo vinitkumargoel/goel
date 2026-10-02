@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { BandwidthState } from '../../lib/bandwidth'
 import type { Filter } from '../../lib/filters'
@@ -71,7 +72,7 @@ function SpeedPopover() {
  * The bottom bar: live totals and when the queue should be done, the count of each state (each a
  * shortcut to its filter), pause/resume everything, the speed graph and the bandwidth profile.
  */
-export function StatusBar({
+export const StatusBar = memo(function StatusBar({
   queue,
   downSpeed,
   upSpeed,
@@ -155,4 +156,4 @@ export function StatusBar({
       {readOnly && <span className="pill warn nodot">{t('statusbar.readOnly')}</span>}
     </footer>
   )
-}
+})

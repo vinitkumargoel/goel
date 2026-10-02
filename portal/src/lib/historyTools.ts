@@ -53,6 +53,18 @@ export function groupHistory(rows: readonly HistoryRow[], nowMs: number = Date.n
   )
 }
 
+/** The groups cut after `limit` rows in all, for incremental rendering; whole groups when they fit. */
+export function limitGroups(groups: readonly HistoryGroup[], limit: number): HistoryGroup[] {
+  let left = limit
+  const out: HistoryGroup[] = []
+  for (const g of groups) {
+    if (left <= 0) break
+    out.push(g.rows.length <= left ? g : { ...g, rows: g.rows.slice(0, left) })
+    left -= g.rows.length
+  }
+  return out
+}
+
 /**
  * One CSV cell. A value a spreadsheet would run as a formula (leading = + - @, or a tab/CR that
  * some apps strip first) is prefixed with `'`; anything with a quote, comma or line break is quoted.

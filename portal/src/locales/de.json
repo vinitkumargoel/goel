@@ -134,7 +134,8 @@
     "colAdded": "Hinzugefügt",
     "actionNamed": "{{action}}: {{name}}",
     "rowLabelFailed": "{{name}}, {{kind}}, fehlgeschlagen: {{error}}",
-    "left": "noch {{eta}}"
+    "left": "noch {{eta}}",
+    "showMore": "{{count}} weitere von {{remaining}} anzeigen"
   },
   "menu": {
     "copySourceLink": "Quell-Link kopieren",
@@ -222,7 +223,8 @@
     "saveNamed": "{{name}} auf diesem Gerät sichern",
     "saveHint": "Auf diesem Gerät sichern",
     "summary_one": "{{count}} Eintrag · {{size}}",
-    "summary_other": "{{count}} Einträge · {{size}}"
+    "summary_other": "{{count}} Einträge · {{size}}",
+    "showMore": "{{count}} weitere von {{remaining}} anzeigen"
   },
   "detail": {
     "closePanel": "Bereich schließen",
