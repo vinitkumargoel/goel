@@ -3,7 +3,7 @@ import GoelCore
 
 /// What fills the window under the header: a server's files, the RSS reader, the restoring
 /// placeholder, the first-run screen, or the downloads (Downloads area's `DownloadListView`).
-/// The detail panel floats over the downloads as a trailing sheet, or docks underneath them —
+/// The detail panel floats beside the downloads as a trailing sheet, or docks underneath them —
 /// the user's "Move Detail Panel" choice, or forced while the window is too narrow.
 struct MainContentArea: View {
     @EnvironmentObject private var vm: AppViewModel
@@ -21,7 +21,7 @@ struct MainContentArea: View {
     /// The content's height, so the panel can't squeeze the list out of a short window.
     @State private var columnHeight: Double = 0
 
-    static let detailSheetWidth: CGFloat = 372
+    static let detailSheetWidth = WindowLayout.detailSheetWidth
 
     /// With nothing selected the panel shows the queue overview, so it follows the toggle alone.
     /// It inspects downloads, so it stays out of a server browser, the RSS reader and the first run.
@@ -40,6 +40,9 @@ struct MainContentArea: View {
     var body: some View {
         VStack(spacing: 0) {
             content
+                // The board and list reflow beside the floating sheet instead of running under
+                // it; the content's own gutter is the gap between the last lane and the sheet.
+                .padding(.trailing, floatsDetail ? WindowLayout.detailPanelWidth : 0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             bottomDock
         }
@@ -72,14 +75,14 @@ struct MainContentArea: View {
         }
     }
 
-    /// Studio's floating sheet: over the board, trailing, so the board never narrows.
+    /// Studio's floating sheet: trailing, over the canvas, with the board reflowed beside it.
     private var detailSheet: some View {
         DetailPanelView()
             .frame(width: Self.detailSheetWidth)
             .frame(maxHeight: .infinity)
             .studioSurface(.sheet, radius: Studio.Radius.sheet, elevation: .floating)
             .padding(.top, Studio.Space.xs)
-            .padding(.trailing, Studio.Space.ml)
+            .padding(.trailing, WindowLayout.detailSheetMargin)
             .padding(.bottom, Studio.Space.ml)
     }
 
