@@ -134,6 +134,7 @@
 "%path% is replaced with the file." = "%path% is replaced with the file.";
 "+%d more waiting" = "+%d more waiting";
 "0 = unlimited." = "0 = unlimited.";
+"1 connection" = "1 connection";
 "1 file" = "1 file";
 "1 item" = "1 item";
 "1 pane matches" = "1 pane matches";
@@ -1206,7 +1207,7 @@
 "Moved “%@” to the Trash" = "Moved “%@” to the Trash";
 "Moved “%@” · retrying" = "Moved “%@” · retrying";
 "Multi-path" = "Multi-path";
-"Multi-path HTTP downloads across network adapters" = "Multi-path HTTP downloads across network adapters";
+"Multi-path HTTP downloads across network adapters." = "Multi-path HTTP downloads across network adapters.";
 "Multi-path idle" = "Multi-path idle";
 "Multi-path is blocked with a system/manual proxy, or when a VPN is up (unless allowed)." = "Multi-path is blocked with a system/manual proxy, or when a VPN is up (unless allowed).";
 "Multi-path off" = "Multi-path off";
@@ -1300,7 +1301,7 @@
 "Not fetched yet." = "Not fetched yet.";
 "Not found — install it (brew install yt-dlp) to save videos from web pages." = "Not found — install it (brew install yt-dlp) to save videos from web pages.";
 "Not included" = "Not included";
-"Not loaded — re-import from %@" = "Not loaded — re-import from %@";
+"Not loaded — attach them again" = "Not loaded — attach them again";
 "Not progressing. ffmpeg may be stuck." = "Not progressing. ffmpeg may be stuck.";
 "Not provided" = "Not provided";
 "Not sorted" = "Not sorted";

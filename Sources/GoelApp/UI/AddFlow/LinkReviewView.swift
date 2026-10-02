@@ -206,7 +206,9 @@ private struct LinkReviewRow: View {
                 .foregroundStyle(item.size == nil ? Studio.Palette.ink3 : Studio.Palette.ink2)
                 .frame(width: 70, alignment: .trailing)
             status
-                .frame(width: 128, alignment: .trailing)
+                .fixedSize()
+                .frame(minWidth: 128, alignment: .trailing)
+                .padding(.leading, Studio.Space.xs)
         }
         .padding(.horizontal, Studio.Space.sm)
         .padding(.vertical, Studio.Space.xs)

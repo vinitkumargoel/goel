@@ -173,11 +173,14 @@ struct AddAdvancedOptions: View {
 struct AddChecksumField: View {
     @Binding var text: String
 
+    private var isInvalid: Bool {
+        !text.trimmingCharacters(in: .whitespaces).isEmpty && Checksum.parse(text) == nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Studio.Space.xs) {
             TextField(L10n.t("MD5, SHA-1, or SHA-256 hex"), text: $text)
-                .textFieldStyle(.studio(size: .small))
-                .studioFont(.monoBody)
+                .textFieldStyle(.studio(size: .small, font: .monoBody.weight(400), isInvalid: isInvalid))
                 .disableAutocorrection(true)
                 .accessibilityLabel(L10n.t("Expected checksum"))
             if !text.trimmingCharacters(in: .whitespaces).isEmpty {

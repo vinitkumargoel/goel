@@ -80,7 +80,8 @@ struct TaskSpeedGraph: View {
                 StudioSparkline(values: uploadOnly ? history.map(\.up) : history.map(\.down),
                                 secondary: !uploadOnly && peakUp > 0 ? history.map(\.up) : nil,
                                 gridLines: 1, showsEndDot: true,
-                                color: uploadOnly ? Studio.Palette.upload : Studio.Palette.accent)
+                                color: uploadOnly ? Studio.Palette.upload : Studio.Palette.accent,
+                                fillColor: uploadOnly ? Studio.Palette.uploadSoft : Studio.Palette.accentSoft)
                     .frame(maxWidth: .infinity)
                     .frame(height: height)
                     .accessibilityHidden(true)
@@ -195,10 +196,12 @@ struct GlobalSpeedHistoryPopover: View {
             Text(current.speedString)
                 .studioFont(.mono.weight(600))
                 .foregroundStyle(direction.tint)
-            Spacer(minLength: Studio.Space.s)
+                .fixedSize()
+            Spacer(minLength: Studio.Space.xs)
             Text(L10n.t("peak %1$@ · avg %2$@", peak.speedString, average.speedString))
                 .studioFont(.monoSmall)
                 .foregroundStyle(Studio.Palette.ink3)
+                .minimumScaleFactor(0.8)
         }
         .lineLimit(1)
         .padding(.horizontal, Studio.Space.sm)

@@ -119,6 +119,11 @@ struct StudioPill: View {
         .padding(.horizontal, 9)
         .frame(minHeight: 22)
         .background(tone.background, in: Capsule())
+        // `segment` sits within a few points of `card` and `well` in dark: a hairline keeps a
+        // neutral pill visible on either.
+        .overlay {
+            if tone == .neutral { Capsule().strokeBorder(Studio.Palette.hairline, lineWidth: 1) }
+        }
         .fixedSize()
     }
 }
@@ -159,7 +164,9 @@ struct StudioBadge: View {
             .foregroundStyle(style == .plain ? Studio.Palette.ink2 : style == .accent ? Studio.Palette.accent : Studio.Palette.ink)
             .background {
                 switch style {
-                case .plain: shape.fill(Studio.Palette.segment)
+                case .plain:
+                    shape.fill(Studio.Palette.segment)
+                        .overlay(shape.strokeBorder(Studio.Palette.hairline, lineWidth: 1))
                 case .accent: shape.fill(Studio.Palette.accentSoft)
                 case .glass: shape.fill(.ultraThinMaterial).overlay(shape.fill(Studio.Palette.glass))
                 }

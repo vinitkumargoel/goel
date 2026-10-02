@@ -24,7 +24,7 @@ struct MultipathSettingsPane: View {
 
     var body: some View {
         SettingsPane(title: L10n.t("Multi-path"),
-                     subtitle: L10n.t("Multi-path HTTP downloads across network adapters")) {
+                     subtitle: L10n.t("Multi-path HTTP downloads across network adapters.")) {
             statusCard
             if enabled {
                 adaptersCard
@@ -149,17 +149,9 @@ struct MultipathSettingsPane: View {
                        isOn: setting(vm, \.aggregationAllowOutsideVPN))
             SettingRow(L10n.t("Streams per adapter"),
                        detail: L10n.t("Parallel range connections targeted on each adapter (1–8).")) {
-                HStack(spacing: Studio.Space.s) {
-                    Text(verbatim: "\(vm.settings.aggregationStreamsPerAdapter)")
-                        .studioFont(.monoBody)
-                        .foregroundStyle(Studio.Palette.ink)
-                        .frame(minWidth: 18, alignment: .trailing)
-                        .accessibilityHidden(true)
-                    Stepper("", value: streamsBinding, in: 1...8)
-                        .labelsHidden()
-                        .accessibilityLabel(L10n.t("Streams per adapter"))
-                        .accessibilityValue("\(vm.settings.aggregationStreamsPerAdapter)")
-                }
+                SettingsSelect(selection: streamsBinding,
+                               options: (1...8).map { SettingsOption($0, "\($0)") },
+                               width: 80, accessibilityName: L10n.t("Streams per adapter"))
             }
             SettingRow(L10n.t("Check path diversity"),
                        detail: L10n.t("Warn when adapters appear to share one public IP (same WAN)."),
@@ -274,7 +266,7 @@ private struct AdapterCard: View {
             .overlay(shape.strokeBorder(participating ? Studio.Palette.accentLine
                                         : hovered ? Studio.Palette.hairlineStrong : Studio.Palette.hairline,
                                         lineWidth: 1))
-            .opacity(disabled ? 0.45 : 1)
+            .opacity(disabled ? 0.6 : 1)
             .contentShape(shape)
         }
         .buttonStyle(.plain)

@@ -19,7 +19,7 @@ struct SFTPTransferPanel: View {
 
     /// Tall enough for the graph plus the fact rows without either column scrolling in the
     /// common case; both columns still scroll, so a short window degrades rather than clips.
-    static let panelHeight: CGFloat = 320
+    static let panelHeight: CGFloat = 360
     static let listWidth: CGFloat = 280
 
     var body: some View {

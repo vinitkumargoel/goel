@@ -179,7 +179,7 @@ enum AddFlowSnapshots {
 
     private static func confirm(_ name: String, preview: DownloadPreview, captured: String? = nil,
                                 _ setUp: @escaping (AddSheetModel) -> Void = { _ in }) -> StudioSnapshotEntry {
-        entry(name, sheetWidth: 620, height: 1000) { model in
+        entry(name, sheetWidth: 620) { model in
             AddDownloadSheet(capturedCookies: captured, configure: { flow in
                 flow.text = preview.source.locator
                 flow.phase = .confirm(preview)

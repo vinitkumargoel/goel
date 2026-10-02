@@ -235,9 +235,9 @@ struct SFTPInfoPanel: View {
         if onDownload != nil || onPreview != nil {
             HStack(spacing: Studio.Space.s) {
                 if let onDownload {
-                    Button(entry.isDirectory ? L10n.t("Download Folder") : L10n.t("Download"),
-                           systemImage: "arrow.down.doc", action: onDownload)
+                    Button(L10n.t("Download"), systemImage: "arrow.down.doc", action: onDownload)
                         .buttonStyle(.studio(.primary, fullWidth: true))
+                        .accessibilityLabel(entry.isDirectory ? L10n.t("Download Folder") : L10n.t("Download"))
                 }
                 if let onPreview {
                     Button(entry.isDirectory ? L10n.t("Open") : L10n.t("Quick Look"),

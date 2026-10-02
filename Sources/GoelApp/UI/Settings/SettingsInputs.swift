@@ -29,7 +29,7 @@ struct SettingsTextField: View {
                     .textFieldStyle(.plain)
                     .focused(focus)
             }
-            .studioFont(isMonospaced ? .monoBody : size.text)
+            .studioFont(isMonospaced ? .monoBody.weight(400) : size.text)
         }
         .frame(width: width)
         .accessibilityLabel(accessibilityName ?? rowName)
@@ -100,7 +100,7 @@ private struct SettingsNumberChrome<Field: View>: View {
         StudioFocusedField(size: .small) { focus in
             HStack(spacing: Studio.Space.xs) {
                 field(focus)
-                    .studioFont(.monoBody)
+                    .studioFont(.monoBody.weight(400))
                 if let unit {
                     Text(unit)
                         .studioFont(.small)

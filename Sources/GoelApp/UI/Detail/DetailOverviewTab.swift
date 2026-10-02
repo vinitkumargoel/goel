@@ -143,7 +143,7 @@ struct DetailOverviewFacts: View {
                 DetailFactRow(L10n.t("Cookies"),
                               value: task.cookieHeader.map {
                                   L10n.t("%1$@ attached · %2$@", String(CookieHeader.count(in: $0)), cookieSource.displayName)
-                              } ?? L10n.t("Not loaded — re-import from %@", cookieSource.displayName),
+                              } ?? L10n.t("Not loaded — attach them again"),
                               tone: task.cookieHeader == nil ? .warn : nil)
             }
             DetailFactRow(L10n.t("Priority"), value: task.priority.title)

@@ -34,6 +34,7 @@ struct RSSFeedColumn: View {
                     .padding(.top, Studio.Space.xs)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Studio.Space.sm)
             .padding(.vertical, Studio.Space.ml)
         }

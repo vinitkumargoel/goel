@@ -107,7 +107,8 @@ struct RSSRuleSheet: View {
                 .buttonStyle(.studio(.secondary, size: .small))
             }
             .padding(.leading, Studio.Space.m)
-            .padding(.trailing, 2)
+            .padding(.trailing, 3)
+            .padding(.vertical, 3)
             .frame(minHeight: 30)
             .modifier(StudioFieldChrome(isFocused: false, radius: Studio.Radius.small))
             .accessibilityElement(children: .contain)

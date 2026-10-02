@@ -178,20 +178,26 @@ private struct FileTreeRowLabel: View {
                     .foregroundStyle(skipped ? Studio.Palette.ink3 : Studio.Palette.ink)
                     .strikethrough(skipped && !node.isFolder, color: Studio.Palette.ink3)
                 HStack(spacing: Studio.Space.s) {
+                    // The bar takes what is left; size and percent sit in fixed trailing columns
+                    // so they line up from row to row.
                     if showsProgress && !skipped {
                         StudioLinearProgress(fraction: node.fraction, tone: node.fraction >= 1 ? .good : .accent,
                                              height: 3)
-                            .frame(maxWidth: 120)
+                            .frame(maxWidth: .infinity)
                             .accessibilityHidden(true)
+                    } else {
+                        Spacer(minLength: 0)
                     }
                     Text(node.size.byteString)
                         .studioFont(.monoSmall)
                         .foregroundStyle(skipped ? Studio.Palette.ink3 : Studio.Palette.ink2)
+                        .frame(minWidth: 58, alignment: .trailing)
                         .accessibilityLabel(A11y.bytes(node.size))
                     if showsProgress {
                         Text(skipped ? L10n.t("Skipped") : DetailNetworkText.percent(node.fraction))
                             .studioFont(skipped ? .caption : .monoSmall)
                             .foregroundStyle(!skipped && node.fraction >= 1 ? Studio.Palette.good : Studio.Palette.ink3)
+                            .frame(minWidth: 40, alignment: .trailing)
                             .accessibilityLabel(skipped ? L10n.t("Skipped") : A11y.percent(node.fraction))
                     }
                 }

@@ -287,7 +287,8 @@ struct MenuBarSFTPTransferRow: View {
     private var controls: some View {
         HStack(spacing: 2) {
             if transfer.canPause {
-                StudioIconButton("pause.fill", label: L10n.t("Pause transfer of %@", transfer.name), size: .small) {
+                StudioIconButton("pause.fill", label: L10n.t("Pause transfer of %@", transfer.name), size: .small,
+                                 bordered: true) {
                     vm.pauseSFTPTransfer(transfer.id)
                 }
                 .help(L10n.t("Pause"))

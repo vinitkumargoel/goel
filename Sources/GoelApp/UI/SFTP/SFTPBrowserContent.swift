@@ -112,7 +112,8 @@ extension SFTPBrowserView {
     /// While files are dragged over the folder (not over one of its subfolders).
     private var dropHint: some View {
         ZStack {
-            Studio.Palette.scrim.opacity(0.35)
+            // Opaque: the listing (and its inline drop strip) must not show through the target.
+            Studio.Palette.canvas
             VStack(spacing: Studio.Space.sm) {
                 Image(systemName: "arrow.up.doc")
                     .font(StudioFonts.font(.ui, size: 30, weight: 600))

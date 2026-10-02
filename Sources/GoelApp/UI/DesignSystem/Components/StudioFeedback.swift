@@ -111,6 +111,8 @@ struct StudioSparkline: View {
     var showsEndDot = false
     var color: Color = Studio.Palette.accent
     var secondaryColor: Color = Studio.Palette.upload
+    /// The area under the line; follow `color` (e.g. `uploadSoft` for an upload-only chart).
+    var fillColor: Color = Studio.Palette.accentSoft
     var accessibilityLabel: String = L10n.t("Speed history")
 
     var body: some View {
@@ -125,17 +127,19 @@ struct StudioSparkline: View {
                     context.stroke(grid, with: .color(Studio.Palette.hairline), lineWidth: 1)
                 }
             }
-            let points = Self.points(values, in: size, top: top)
+            // The end dot is 7 pt wide: keep it inside the canvas instead of half-clipped.
+            let dotInset: CGFloat = showsEndDot ? 4.5 : 0
+            let points = Self.points(values, in: size, top: top, inset: dotInset)
             if showsFill, let first = points.first, let last = points.last {
                 var area = Path()
                 area.move(to: CGPoint(x: first.x, y: size.height))
                 points.forEach { area.addLine(to: $0) }
                 area.addLine(to: CGPoint(x: last.x, y: size.height))
                 area.closeSubpath()
-                context.fill(area, with: .color(Studio.Palette.accentSoft))
+                context.fill(area, with: .color(fillColor))
             }
             if let secondary {
-                let upPoints = Self.points(secondary, in: size, top: top)
+                let upPoints = Self.points(secondary, in: size, top: top, inset: dotInset)
                 context.stroke(Self.line(upPoints), with: .color(secondaryColor),
                                style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
             }
@@ -152,14 +156,16 @@ struct StudioSparkline: View {
         .accessibilityValue(values.last.map { A11y.speed($0) } ?? "")
     }
 
-    private static func points(_ values: [Double], in size: CGSize, top: Double) -> [CGPoint] {
+    /// `inset` keeps the last point (and the top) that far inside the canvas, for the end dot.
+    private static func points(_ values: [Double], in size: CGSize, top: Double, inset dotInset: CGFloat = 0) -> [CGPoint] {
+        let width = max(0, size.width - dotInset)
         guard values.count > 1 else {
-            return values.map { CGPoint(x: size.width, y: size.height * (1 - CGFloat($0 / top))) }
+            return values.map { CGPoint(x: width, y: size.height * (1 - CGFloat($0 / top))) }
         }
-        let inset: CGFloat = 1
-        let usable = size.height - inset * 2
+        let inset = max(1, dotInset)
+        let usable = size.height - inset - 1
         return values.enumerated().map { index, value in
-            CGPoint(x: size.width * CGFloat(index) / CGFloat(values.count - 1),
+            CGPoint(x: width * CGFloat(index) / CGFloat(values.count - 1),
                     y: inset + usable * (1 - CGFloat(max(0, value) / top)))
         }
     }

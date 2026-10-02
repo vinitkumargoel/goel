@@ -67,12 +67,13 @@ struct DetailNetworkTab: View {
         let checksum = DetailNetworkText.checksum(task)
         return DetailFacts {
             DetailFactRow(L10n.t("URL"), value: task.sourceLocator, mono: true, copyable: true)
-            DetailFactRow(L10n.t("MIME type"), value: task.remoteInfo?.mimeType ?? "—", mono: true)
+            DetailFactRow(L10n.t("MIME type"), value: task.remoteInfo?.mimeType ?? "—", mono: task.remoteInfo?.mimeType != nil)
             DetailFactRow(L10n.t("Server"), value: task.remoteInfo?.server ?? "—")
             DetailFactRow(L10n.t("Range support"), value: range.text, tone: range.tone)
-            DetailFactRow(L10n.t("Segments"), value: L10n.t("%d connections", max(1, task.connectionCount)))
+            DetailFactRow(L10n.t("Segments"), value: task.connectionCount <= 1
+                          ? L10n.t("1 connection") : L10n.t("%d connections", task.connectionCount))
             DetailFactRow(L10n.t("Resumable"), value: resumable.text, tone: resumable.tone)
-            DetailFactRow(L10n.t("ETag"), value: task.remoteInfo?.etag ?? "—", mono: true)
+            DetailFactRow(L10n.t("ETag"), value: task.remoteInfo?.etag ?? "—", mono: task.remoteInfo?.etag != nil)
             DetailFactRow(key: L10n.t("Checksum"), spokenValue: checksum.text) {
                 if let tone = checksum.tone {
                     StudioPill(checksum.text, tone: tone, showsDot: false)

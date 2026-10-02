@@ -170,9 +170,11 @@ struct AddTextArea: View {
     @Binding var text: String
     var placeholder: String = ""
     var height: CGFloat = 96
-    var style: Studio.TextStyle = .monoBody
+    var style: Studio.TextStyle = .monoBody.weight(400)
     var accessibilityLabel: String
     var accessibilityHint: String?
+    /// Draws the warning rim (an input error is shown under the field).
+    var isInvalid = false
 
     @FocusState private var focused: Bool
 
@@ -180,7 +182,7 @@ struct AddTextArea: View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty, !placeholder.isEmpty {
                 Text(placeholder)
-                    .studioFont(style)
+                    .studioFont(style.weight(400))
                     .foregroundStyle(Studio.Palette.ink3)
                     .padding(.horizontal, 5)
                     .accessibilityHidden(true)
@@ -197,7 +199,7 @@ struct AddTextArea: View {
         .padding(.horizontal, 7)
         .padding(.vertical, Studio.Space.s)
         .frame(height: height)
-        .modifier(StudioFieldChrome(isFocused: focused))
+        .modifier(StudioFieldChrome(isFocused: focused, isInvalid: isInvalid))
     }
 }
 

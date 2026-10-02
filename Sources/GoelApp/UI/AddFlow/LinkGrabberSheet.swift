@@ -114,7 +114,11 @@ struct LinkGrabberSheet: View {
                         }
                 }
             }
-            Button(isFetching ? L10n.t("Fetching…") : L10n.t("Fetch"), systemImage: "arrow.down.doc") { fetch() }
+            // A fixed width: "Fetching…" must not squeeze the URL field.
+            Button { fetch() } label: {
+                Label(isFetching ? L10n.t("Fetching…") : L10n.t("Fetch"), systemImage: "arrow.down.doc")
+                    .frame(minWidth: 96)
+            }
                 .buttonStyle(.studio(.primary))
                 .disabled(isFetching || pageText.trimmingCharacters(in: .whitespaces).isEmpty)
         }
@@ -255,7 +259,8 @@ private struct LinkGrabberResults: View {
                         card(link)
                     }
                 }
-                .padding(Studio.Space.xxs)
+                .padding(.horizontal, Studio.Space.xxs)
+                .padding(.vertical, Studio.Space.s)
             }
             .frame(height: 300)
         }

@@ -149,7 +149,8 @@ private struct MediaPresetTile: View {
                 Text(preset.detail)
                     .studioFont(.tiny)
                     .foregroundStyle(Studio.Palette.ink3)
-                    .lineLimit(1)
+                    .lineLimit(2, reservesSpace: true)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(Studio.Space.sm)
             .frame(maxWidth: .infinity, alignment: .leading)

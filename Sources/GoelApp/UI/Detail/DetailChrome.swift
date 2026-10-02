@@ -244,7 +244,7 @@ struct DetailThroughputChart: View {
                             accessibilityLabel: L10n.t("Recent throughput"))
         } else {
             StudioSparkline(values: up, gridLines: 2, showsEndDot: true, color: Studio.Palette.upload,
-                            accessibilityLabel: L10n.t("Recent throughput"))
+                            fillColor: Studio.Palette.uploadSoft, accessibilityLabel: L10n.t("Recent throughput"))
         }
     }
 

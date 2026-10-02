@@ -36,7 +36,7 @@ struct RuleEditorSheet: View {
                 .padding(.vertical, 2)
                 .padding(.trailing, Studio.Space.xxs)
             }
-            .frame(maxHeight: 440)
+            .frame(maxHeight: 540)
             .fixedSize(horizontal: false, vertical: true)
             // Outside the scroll view: the live count stays in sight while the rule is edited.
             previewLine

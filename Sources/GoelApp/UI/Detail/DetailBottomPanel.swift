@@ -143,7 +143,7 @@ struct DetailBottomPanel: View {
                     .frame(maxWidth: .infinity, minHeight: 46)
             }
             Spacer(minLength: 0)
-            HStack(alignment: .top, spacing: Studio.Space.l) {
+            HStack(alignment: .top, spacing: Studio.Space.m) {
                 telStat(L10n.t("Up")) {
                     DetailSpeedText(direction: .up, speed: speed.up, style: .monoBody.weight(600))
                 }
@@ -155,7 +155,9 @@ struct DetailBottomPanel: View {
                         .studioFont(.monoBody.weight(600))
                         .foregroundStyle(Studio.Palette.ink)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
+                .layoutPriority(1)
             }
         }
         .padding(Studio.Space.l)

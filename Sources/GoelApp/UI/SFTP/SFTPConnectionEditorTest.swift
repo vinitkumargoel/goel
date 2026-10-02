@@ -316,17 +316,26 @@ struct SFTPSSHConfigMenu: View {
                 }
             }
         } label: {
-            Label(L10n.t("~/.ssh/config"), systemImage: "terminal")
-                .studioFont(.control.size(12))
+            HStack(spacing: Studio.Space.xs) {
+                Label(L10n.t("~/.ssh/config"), systemImage: "terminal")
+                    .studioFont(.control.size(12))
+                    .foregroundStyle(Studio.Palette.ink)
+                Image(systemName: "chevron.down")
+                    .studioFont(.ui, size: 10, weight: 700)
+                    .foregroundStyle(Studio.Palette.ink3)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, Studio.Space.sm)
+            .frame(height: 30)
+            .background(Studio.Palette.card, in: RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
+                .strokeBorder(Studio.Palette.hairlineStrong, lineWidth: 1))
+            .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.visible)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .fixedSize()
-        .padding(.horizontal, Studio.Space.sm)
-        .frame(height: 30)
-        .background(Studio.Palette.card, in: RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
-            .strokeBorder(Studio.Palette.hairlineStrong, lineWidth: 1))
         .help(L10n.t("Import a Host entry from ~/.ssh/config"))
     }
 }

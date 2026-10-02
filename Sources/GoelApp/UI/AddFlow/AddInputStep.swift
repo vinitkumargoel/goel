@@ -41,7 +41,8 @@ struct AddInputStep: View {
                         placeholder: L10n.t("Paste links here, one per line"),
                         height: 120,
                         accessibilityLabel: L10n.t("URL, magnet, or m3u8 stream"),
-                        accessibilityHint: L10n.t("Paste one link per line to add several at once."))
+                        accessibilityHint: L10n.t("Paste one link per line to add several at once."),
+                        isInvalid: model.inputError != nil)
             if let error = model.inputError {
                 AddStatusLine(symbol: "exclamationmark.triangle.fill", text: error, tone: .warn, tintsText: true)
                     .accessibilityElement(children: .ignore)
@@ -62,7 +63,8 @@ struct AddInputStep: View {
             Text(MarkdownText.attributed(L10n.t("Drag a URL or **.torrent** file here")))
                 .studioFont(.small)
         }
-        .foregroundStyle(Studio.Palette.accent)
+        // Targeted: a stronger tint with ink text — accent text on `accentLine` washed out in dark.
+        .foregroundStyle(isDropTargeted ? Studio.Palette.ink : Studio.Palette.accent)
         .frame(maxWidth: .infinity)
         .padding(.vertical, Studio.Space.l)
         .background(shape.fill(isDropTargeted ? Studio.Palette.accentLine : Studio.Palette.accentSoft))

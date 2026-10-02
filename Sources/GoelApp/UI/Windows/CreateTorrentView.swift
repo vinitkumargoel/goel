@@ -170,35 +170,9 @@ struct CreateTorrentView: View {
     }
 
     private var pieceSizeMenu: some View {
-        Menu {
-            Picker(L10n.t("Piece size"), selection: $pieceSize) {
-                ForEach(TorrentCreator.pieceSizes, id: \.self) { size in
-                    Text(Self.pieceLabel(size)).tag(size)
-                }
-            }
-            .pickerStyle(.inline)
-            .labelsHidden()
-        } label: {
-            HStack(spacing: Studio.Space.s) {
-                Text(Self.pieceLabel(pieceSize))
-                    .studioFont(.body.size(12.5))
-                    .foregroundStyle(Studio.Palette.ink)
-                Spacer(minLength: Studio.Space.xs)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(StudioFonts.font(.ui, size: 10, weight: 650))
-                    .foregroundStyle(Studio.Palette.ink3)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, Studio.Space.m)
-            .frame(maxWidth: .infinity, minHeight: StudioFieldSize.small.height)
-            .modifier(StudioFieldChrome(isFocused: false, radius: Studio.Radius.small))
-            .contentShape(Rectangle())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .accessibilityLabel(L10n.t("Piece size"))
-        .accessibilityValue(Self.pieceLabel(pieceSize))
+        Dropdown(selection: $pieceSize,
+                 items: TorrentCreator.pieceSizes.map { .option($0, Self.pieceLabel($0)) },
+                 accessibilityName: L10n.t("Piece size"))
     }
 
     static func pieceLabel(_ size: Int) -> String {

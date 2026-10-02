@@ -148,7 +148,7 @@ enum SFTPSnapshots {
 
     private static var transfers: [StudioSnapshotEntry] {
         [
-            StudioSnapshotEntry("sftp.transfers.panel", width: 1100, height: 340) { context in
+            StudioSnapshotEntry("sftp.transfers.panel", width: 1100) { context in
                 let list = F.transfers().filter { $0.connectionID == F.nas.id }
                 return SFTPTransferPanel(transfers: list, connection: F.nas, volumeSpace: F.volume,
                                          historyOverride: F.history(for: list))
@@ -156,7 +156,7 @@ enum SFTPSnapshots {
                     .background(Studio.Palette.canvas)
                     .studioSampleEnvironment(prepare(context, transfers: list))
             },
-            StudioSnapshotEntry("sftp.transfers.panel.narrow", width: 720, height: 340) { context in
+            StudioSnapshotEntry("sftp.transfers.panel.narrow", width: 720) { context in
                 let list = F.transfers().filter { $0.connectionID == F.nas.id }
                 return SFTPTransferPanel(transfers: list, connection: F.nas, volumeSpace: F.volume,
                                          historyOverride: F.history(for: list))

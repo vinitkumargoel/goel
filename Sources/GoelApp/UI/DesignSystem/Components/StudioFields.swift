@@ -5,10 +5,14 @@ import GoelCore
 /// Use as a `TextFieldStyle`: `TextField("Name", text: $name).textFieldStyle(.studio)`.
 struct StudioTextFieldStyle: TextFieldStyle {
     var size: StudioFieldSize = .regular
+    /// Overrides the size's text style, e.g. `.monoBody` for a digest or a path.
+    var font: Studio.TextStyle?
+    /// Draws the rim in the warning colour while the value doesn't parse.
+    var isInvalid = false
 
     // swiftlint:disable:next identifier_name
     func _body(configuration: TextField<Self._Label>) -> some View {
-        StudioFocusedField(size: size) { focus in
+        StudioFocusedField(size: size, font: font, isInvalid: isInvalid) { focus in
             configuration
                 .textFieldStyle(.plain)
                 .focused(focus)
@@ -18,7 +22,10 @@ struct StudioTextFieldStyle: TextFieldStyle {
 
 extension TextFieldStyle where Self == StudioTextFieldStyle {
     static var studio: StudioTextFieldStyle { StudioTextFieldStyle() }
-    static func studio(size: StudioFieldSize) -> StudioTextFieldStyle { StudioTextFieldStyle(size: size) }
+    static func studio(size: StudioFieldSize = .regular, font: Studio.TextStyle? = nil,
+                       isInvalid: Bool = false) -> StudioTextFieldStyle {
+        StudioTextFieldStyle(size: size, font: font, isInvalid: isInvalid)
+    }
 }
 
 enum StudioFieldSize: Sendable {
@@ -32,17 +39,27 @@ enum StudioFieldSize: Sendable {
 /// Wraps any input in Studio field chrome and tracks its focus.
 struct StudioFocusedField<Content: View>: View {
     var size: StudioFieldSize = .regular
+    var font: Studio.TextStyle?
+    var isInvalid = false
     @ViewBuilder var content: (FocusState<Bool>.Binding) -> Content
 
     @FocusState private var focused: Bool
 
+    init(size: StudioFieldSize = .regular, font: Studio.TextStyle? = nil, isInvalid: Bool = false,
+         @ViewBuilder content: @escaping (FocusState<Bool>.Binding) -> Content) {
+        self.size = size
+        self.font = font
+        self.isInvalid = isInvalid
+        self.content = content
+    }
+
     var body: some View {
         content($focused)
-            .studioFont(size.text)
+            .studioFont(font ?? size.text)
             .foregroundStyle(Studio.Palette.ink)
             .padding(.horizontal, Studio.Space.m)
             .frame(minHeight: size.height)
-            .modifier(StudioFieldChrome(isFocused: focused, radius: size.radius))
+            .modifier(StudioFieldChrome(isFocused: focused, radius: size.radius, isInvalid: isInvalid))
     }
 }
 
@@ -50,15 +67,18 @@ struct StudioFocusedField<Content: View>: View {
 struct StudioFieldChrome: ViewModifier {
     var isFocused: Bool
     var radius: CGFloat = Studio.Radius.control
+    /// A value that doesn't parse: warning rim (and halo while focused).
+    var isInvalid = false
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let rim = isInvalid ? Studio.Palette.warn : isFocused ? Studio.Palette.accent : Studio.Palette.hairlineStrong
         content
             .background(shape.fill(Studio.Palette.field))
-            .overlay(shape.strokeBorder(isFocused ? Studio.Palette.accent : Studio.Palette.hairlineStrong, lineWidth: 1))
+            .overlay(shape.strokeBorder(rim, lineWidth: 1))
             .background {
                 if isFocused {
-                    shape.inset(by: -3).fill(Studio.Palette.accentSoft)
+                    shape.inset(by: -3).fill(isInvalid ? Studio.Palette.warnSoft : Studio.Palette.accentSoft)
                 }
             }
     }

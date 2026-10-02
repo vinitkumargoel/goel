@@ -120,7 +120,7 @@ private struct ProfileCard: View {
                     Image(systemName: symbol)
                         .studioFont(.ui, size: 17, weight: 650)
                         .foregroundStyle(tint)
-                        .frame(width: 22)
+                        .frame(width: 22, height: 22)
                         .accessibilityHidden(true)
                     Text(profile.name)
                         .studioFont(.title3)
@@ -131,6 +131,7 @@ private struct ProfileCard: View {
                             .frame(height: 20)
                     }
                 }
+                .frame(height: 22)
                 Text(speedLine)
                     .studioFont(.mono)
                     .foregroundStyle(Studio.Palette.ink2)
@@ -178,7 +179,7 @@ private struct ProfileCard: View {
     private var tint: Color {
         switch profile.name {
         case "Low": return Studio.Palette.upload
-        case "High": return Studio.Palette.warn
+        case "High": return Studio.Palette.ink2
         default: return Studio.Palette.accent
         }
     }

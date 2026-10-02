@@ -67,8 +67,8 @@ struct MediaJobCard: View {
                     Text(info.title)
                         .studioFont(.bodyStrong)
                         .foregroundStyle(Studio.Palette.ink)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(info.subtitle)
                         .studioFont(.caption)
                         .foregroundStyle(info.tone == .neutral || info.tone == .accent
