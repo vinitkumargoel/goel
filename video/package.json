@@ -15,12 +15,12 @@
   },
   "dependencies": {
     "@remotion/cli": "4.0.398",
-    "react": "19.0.0",
+    "react": "19.3.0",
     "react-dom": "19.0.0",
     "remotion": "4.0.398"
   },
   "devDependencies": {
-    "@types/react": "19.0.0",
+    "@types/react": "19.3.0",
     "puppeteer": "23.11.1",
     "typescript": "5.7.2"
   }
